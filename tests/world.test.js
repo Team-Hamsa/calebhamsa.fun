@@ -5,8 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AIR, EDGE, WORLD_HEIGHT, WORLD_WIDTH, createWorld, defaultWorld, getBlock,
-  inBounds, neighbors, setBlock, tick,
+  AIR, EDGE, WORLD_HEIGHT, WORLD_WIDTH, clearFluid, createWorld, defaultWorld, getBlock,
+  getFluid, inBounds, moveBlock, neighbors, setBlock, setFluid, swapBlock, tick,
 } from '../js/world.js';
 
 test('a new world is all air', () => {
@@ -101,4 +101,45 @@ test('every tick counts up the clock, before the systems run', () => {
   assert.equal(seenTicks, 1);
   tick(world, [], () => undefined);
   assert.equal(world.ticks, 2);
+});
+
+test('a new world is dry: no water or steam anywhere', () => {
+  const world = createWorld(2, 2);
+  assert.deepEqual([...world.fluid.water], [0, 0, 0, 0]);
+  assert.deepEqual([...world.fluid.steam], [0, 0, 0, 0]);
+});
+
+test('building into a wet cell washes the water away; swapBlock keeps it', () => {
+  const world = createWorld(2, 1);
+  setFluid(world, 'water', 0, 0, 1);
+  swapBlock(world, 0, 0, 'valveOpen');
+  assert.equal(getFluid(world, 'water', 0, 0), 1);
+  setBlock(world, 0, 0, 'stone');
+  assert.equal(getFluid(world, 'water', 0, 0), 0);
+});
+
+test('moveBlock: sand sinking into water trades places with it', () => {
+  const world = createWorld(1, 2);
+  setBlock(world, 0, 0, 'sand');
+  setFluid(world, 'water', 0, 1, 0.7);
+  assert.equal(moveBlock(world, 0, 0, 0, 1), true);
+  assert.equal(getBlock(world, 0, 1), 'sand');
+  assert.equal(getFluid(world, 'water', 0, 0), 0.7);
+  assert.equal(getFluid(world, 'water', 0, 1), 0);
+  setBlock(world, 0, 0, 'stone');
+  assert.equal(moveBlock(world, 0, 1, 0, 0), false); // blocks only move into air
+});
+
+test('clearFluid empties a cell and says whether there was anything', () => {
+  const world = createWorld(1, 1);
+  assert.equal(clearFluid(world, 0, 0), false);
+  setFluid(world, 'steam', 0, 0, 0.3);
+  assert.equal(clearFluid(world, 0, 0), true);
+  assert.equal(getFluid(world, 'steam', 0, 0), 0);
+});
+
+test('fluid outside the world is 0, and setting it there does nothing', () => {
+  const world = createWorld(1, 1);
+  assert.equal(getFluid(world, 'water', 5, 5), 0);
+  assert.doesNotThrow(() => setFluid(world, 'water', -1, 0, 1));
 });

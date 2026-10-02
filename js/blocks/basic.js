@@ -6,7 +6,7 @@
  * ("systems") that make them do things. Later packs (⚡ wires, 💧 water,
  * ⚙️ gears) are new files shaped just like this one.
  */
-import { AIR, getBlock, setBlock } from '../world.js';
+import { AIR, getBlock, moveBlock } from '../world.js';
 import { drawDots } from './electric.js';
 
 /**
@@ -44,9 +44,9 @@ export function fallingBlocks(world, blockInfo) {
     for (let x = 0; x < world.width; x++) {
       const name = getBlock(world, x, y);
       if (blockInfo(name)?.falls && getBlock(world, x, y + 1) === AIR) {
-        setBlock(world, x, y + 1, name);
-        setBlock(world, x, y, AIR);
-        changed = true;
+        // moveBlock also lifts any water below up into the gap, so sand
+        // sinks through water instead of deleting it.
+        changed = moveBlock(world, x, y, x, y + 1) || changed;
       }
     }
   }
