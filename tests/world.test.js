@@ -84,3 +84,21 @@ test('tick hands each system the world and the block lookup', () => {
   assert.equal(seen[0], world);
   assert.equal(seen[1], lookup);
 });
+
+test('a new world starts its clock at 0, with no signals or events yet', () => {
+  const world = createWorld(2, 2);
+  assert.equal(world.ticks, 0);
+  assert.deepEqual(world.signals, {});
+  assert.deepEqual(world.events, []);
+  assert.equal(world.animating, false);
+  assert.equal(defaultWorld().ticks, 0);
+});
+
+test('every tick counts up the clock, before the systems run', () => {
+  const world = createWorld(2, 2);
+  let seenTicks = null;
+  tick(world, [(w) => { seenTicks = w.ticks; return false; }], () => undefined);
+  assert.equal(seenTicks, 1);
+  tick(world, [], () => undefined);
+  assert.equal(world.ticks, 2);
+});

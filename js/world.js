@@ -34,12 +34,27 @@ export const GROUND_DEPTH = 4;
 
 /**
  * Make an empty world: every cell is air.
+ *
+ * Besides the blocks, a world carries a few things that are NOT saved:
+ *   ticks      how many times the clock has ticked (clickers keep time with it)
+ *   signals    what the systems worked out, for drawing (like current in wires)
+ *   events     things for the page to do, like { type: 'note', midi: 64, x, y }
+ *   animating  set by systems when the picture moves even though no block did
+ *
  * @param {number} width - how many blocks across
  * @param {number} height - how many blocks down
- * @returns {{width: number, height: number, cells: string[]}} the world
+ * @returns {{width: number, height: number, cells: string[], ticks: number, signals: object, events: object[], animating: boolean}} the world
  */
 export function createWorld(width, height) {
-  return { width, height, cells: new Array(width * height).fill(AIR) };
+  return {
+    width,
+    height,
+    cells: new Array(width * height).fill(AIR),
+    ticks: 0,
+    signals: {},
+    events: [],
+    animating: false,
+  };
 }
 
 /**
@@ -115,15 +130,16 @@ export function neighbors(world, x, y) {
 }
 
 /**
- * One tick of the world's clock: let every "system" (a rule like "sand
- * falls") have a turn, in order. Each system changes the world and says
- * true if it changed anything.
+ * One tick of the world's clock: count it in world.ticks, then let
+ * every "system" (a rule like "sand falls") have a turn, in order. Each
+ * system changes the world and says true if it changed any BLOCKS.
  * @param {{width: number, height: number, cells: string[]}} world - the world
  * @param {Function[]} systems - (world, blockInfo) => boolean, run in this order
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {boolean} true if any system changed the world
  */
 export function tick(world, systems, blockInfo) {
+  world.ticks += 1;
   let changed = false;
   for (const system of systems) {
     // Run the system FIRST, so a change from an earlier one never skips it.
