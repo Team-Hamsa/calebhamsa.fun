@@ -211,3 +211,13 @@ test('a pushing turbine wired straight back to itself sparks, like a battery', (
   world.turbinePush = 1;
   assert.equal(solveCircuit(world, blockInfo).cells.get(1 * 2 + 0).spark, true);
 });
+
+test('a turbine pushing almost nothing pushes nothing, so a stopped turbine stops the circuit', () => {
+  // The push is rounded to 0.1 for the solve, the same as the circuit key,
+  // so a dying turbine can't leave a tiny current flowing forever.
+  const world = worldFrom(['WWW', 'T.W', 'WLW']);
+  world.turbinePush = 0.04;
+  const { cells, flowing } = solveCircuit(world, blockInfo);
+  assert.equal(cells.get(2 * 3 + 1).level, 0);
+  assert.equal(flowing, false);
+});

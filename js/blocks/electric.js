@@ -8,7 +8,7 @@
  * world changes, and draws the results: glowing lamps, humming buzzers,
  * sparking batteries, and little dots flowing along the wires.
  */
-import { FLOW_MIN, solveCircuit } from '../circuit.js';
+import { FLOW_MIN, partPush, solveCircuit } from '../circuit.js';
 import { setBlock } from '../world.js';
 
 /**
@@ -60,10 +60,7 @@ export function circuitKey(world, blockInfo) {
   const pushes = [];
   world.cells.forEach((name, index) => {
     const part = blockInfo(name)?.part;
-    if (part?.pushNow) {
-      const push = part.pushNow(world, index % world.width, Math.floor(index / world.width));
-      pushes.push(Math.round(push * 10) / 10);
-    }
+    if (part?.pushNow) pushes.push(partPush(part, world, index % world.width, Math.floor(index / world.width)));
   });
   return `${world.cells.join(',')}|${beat}|${pushes.join(',')}`;
 }

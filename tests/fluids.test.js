@@ -243,3 +243,22 @@ test('steam leaving a turbine is counted (that is what makes it spin)', () => {
   for (let i = 0; i < 20; i++) out += stepFluids(world, blockInfo).steamOut.get(1 * 3 + 1) ?? 0;
   assert.ok(out > 0.5);
 });
+
+test('a kettle (faucet into a pot on a burner) does not fill the world with endless steam', () => {
+  // A sealed box: the faucet drips into a pot (x = 3) that sits on the burner.
+  const world = worldFrom([
+    '#..F..#',
+    '#.....#',
+    '#.....#',
+    '#.#.#.#',
+    '#.#.#.#',
+    '###B###',
+    '#######',
+  ]);
+  run(world, 3000);
+  const before = total(world, 'steam');
+  run(world, 1000);
+  const after = total(world, 'steam');
+  assert.ok(after - before < 0.5, `steam kept growing: ${before.toFixed(2)} → ${after.toFixed(2)}`);
+  assert.ok(Math.max(...world.fluid.steam) < 3, `steam squished to ${Math.max(...world.fluid.steam).toFixed(2)}`);
+});

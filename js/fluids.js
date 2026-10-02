@@ -360,6 +360,13 @@ export const PUMP_ON_LEVEL = 0.25;
 const PUMP_FRONT_CAP = FULL + SQUISH;
 
 /**
+ * A burner stops boiling when the cell above it already holds this much
+ * steam, like a lid rattling on a full kettle. Without it, a faucet
+ * dripping onto a burner would pack the sky with steam forever.
+ */
+const BOIL_STEAM_CAP = FULL + SQUISH;
+
+/**
  * Let the special blocks do their jobs: faucets add water, drains take
  * it away, burners boil water into steam, chillers turn steam back
  * into water, and powered pumps push water from behind them to in front.
@@ -400,7 +407,7 @@ export function runSpecials(world, blockInfo, sides) {
     if (info.burns) {
       const above = beside(index, 'up');
       if (above >= 0 && sides[above].length > 0) {
-        const boil = Math.min(BOIL_RATE, water[above]);
+        const boil = Math.min(BOIL_RATE, water[above], Math.max(0, BOIL_STEAM_CAP - steam[above]));
         water[above] -= boil;
         steam[above] += boil;
         changed += boil;
