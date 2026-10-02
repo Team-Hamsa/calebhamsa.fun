@@ -36,6 +36,8 @@ Then open <http://localhost:8000>. Change a file, save, and reload the page.
 | `js/blocks/basic.js` | ⛏️ Basic blocks: falling sand, singing note blocks |
 | `js/blocks/electric.js` | ⚡ Power blocks: batteries, wires, switches, lamps, buzzers, clickers |
 | `js/circuit.js` | The electricity math: loops, brightness, short circuits (pure) |
+| `js/blocks/water.js` | 💧 Water blocks: pipes, valves, faucets, drains, burners, chillers, turbines, pumps |
+| `js/fluids.js` | How water and steam move: falling, spreading, squishing (pure) |
 | `js/blocks/registry.js` | The list of block packs (add new packs here) |
 | `js/block-art.js` | Draws blocks pixel-art style |
 | `js/saves.js` | Keeps the three Build worlds saved |
@@ -71,6 +73,7 @@ Search the code for `🧪 Try this!` to find them all. Some favorites:
 11. **Redraw the app icon:** change letters in `img/icon-pixels.txt` (try a different letter instead of the C), then run `node tools/make-icons.js`.
 12. **Slow-motion sand:** in `js/build.js`, set `TICKS_PER_SECOND` to 2.
 13. **Dimmer lamps:** in `js/blocks/electric.js`, change the lamp's `resistance` to 2.
+14. **Slow-motion water:** in `js/fluids.js`, set `FLUID_STEPS` to 1.
 
 ## Using it like an app (offline)
 
