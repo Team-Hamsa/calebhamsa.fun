@@ -56,8 +56,8 @@ test('allSystems lists every pack\'s systems in pack order', () => {
   assert.ok(allSystems().includes(fallingBlocks));
 });
 
-test('the packs run basic first, then electric', () => {
-  assert.deepEqual(PACKS.map((pack) => pack.tab.id), ['basic', 'electric']);
+test('the packs run basic first, then water, then electric', () => {
+  assert.deepEqual(PACKS.map((pack) => pack.tab.id), ['basic', 'water', 'electric']);
 });
 
 test('blocksInPack gives the palette for one tab', () => {

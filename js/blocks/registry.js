@@ -8,6 +8,7 @@
 import { AIR } from '../world.js';
 import basic from './basic.js';
 import electric from './electric.js';
+import water from './water.js';
 
 /**
  * Every pack, in the order their systems run each tick. Order matters
@@ -16,7 +17,7 @@ import electric from './electric.js';
  * for steam. The plan for later phases is:
  *   basic → water → mechanical → electric
  */
-export const PACKS = [basic, electric];
+export const PACKS = [basic, water, electric];
 
 /**
  * The names of the signals packs pass to each other: ⚡ power (wires,
@@ -83,4 +84,16 @@ export function blocksInPack(id) {
  */
 export function refreshSignals(world) {
   for (const pack of PACKS) pack.refresh?.(world, blockInfo);
+}
+
+/**
+ * Draw every pack's whole-world layer (like water and steam) on top of
+ * the blocks. Packs without a `drawLayer` are skipped.
+ * @param {CanvasRenderingContext2D} ctx - the canvas paintbrush
+ * @param {object} world - the world
+ * @param {number} size - how big each cell is, in pixels
+ * @returns {void}
+ */
+export function drawLayers(ctx, world, size) {
+  for (const pack of PACKS) pack.drawLayer?.(ctx, world, size);
 }

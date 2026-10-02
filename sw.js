@@ -55,6 +55,7 @@ const PRECACHE = [
   './js/blocks/electric.js',
   './js/circuit.js',
   './js/fluids.js',
+  './js/blocks/water.js',
   './manifest.webmanifest',
   './favicon.ico',
   './img/icon.svg',
