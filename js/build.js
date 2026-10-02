@@ -16,7 +16,7 @@ import { AIR, WORLD_HEIGHT, WORLD_WIDTH, defaultWorld, getBlock, setBlock, tick 
 import { AIR_INFO, PACKS, allSystems, blockInfo, blocksInPack, isKnownBlock, refreshSignals } from './blocks/registry.js';
 import { drawCell, drawWorld } from './block-art.js';
 import { WORLD_COUNT, loadCurrent, loadThumbnail, loadWorld, saveCurrent, saveWorld, worldKey } from './saves.js';
-import { listenForUnlock, playTones, setHum } from './sound.js';
+import { audioRunning, listenForUnlock, playTones, setHum } from './sound.js';
 import { cellsAlongLine, choose, filenameForDate, flash } from './ui.js';
 
 // =============================================================
@@ -624,13 +624,14 @@ function startTicking() {
 
 /**
  * Do what the systems asked for this tick, like playing a note block
- * that just got current. Then empty the list.
+ * that just got current (only once sound is unlocked). Then empty the list.
  * @returns {void}
  */
 function playEvents() {
   for (const event of state.world.events.splice(0)) {
     if (event.type === 'note') {
-      playTones([event.midi]);
+      // Before the first tap, just light up: no sound machine yet.
+      if (audioRunning()) playTones([event.midi]);
       flashCell(event.x, event.y);
     }
   }

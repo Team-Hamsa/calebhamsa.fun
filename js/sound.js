@@ -89,6 +89,17 @@ function unlockAudio() {
 }
 
 /**
+ * Has Caleb tapped yet, so sound is allowed and the sound machine is on?
+ * Things that play by themselves (like a note block in a circuit) check
+ * this first. If they played before the first tap, the iPad would save
+ * them all up and blast them out together on that tap.
+ * @returns {boolean} true once sound is running
+ */
+export function audioRunning() {
+  return audioContext?.state === 'running';
+}
+
+/**
  * Start listening for the first tap that unlocks sound (see unlockAudio).
  * Each page calls this once when it starts.
  * @returns {void}
