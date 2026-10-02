@@ -452,7 +452,9 @@ main {
   max-width: none;
   min-height: 0;
   gap: 8px;
-  padding: 8px 16px 16px;
+  /* Extra room at the bottom so the "ready offline" badge (bottom-left
+     corner, see .offline-badge) never covers the brushes and colors. */
+  padding: 8px 16px 48px;
 }
 
 /* Two canvases stacked exactly on top of each other (see draw.js). */
@@ -555,7 +557,9 @@ main {
   max-width: none;
   min-height: 0;
   gap: 8px;
-  padding: 8px 16px 16px;
+  /* Extra room at the bottom so the "ready offline" badge (bottom-left
+     corner, see .offline-badge) never covers the palette blocks. */
+  padding: 8px 16px 48px;
 }
 
 /* The box the world sits in. build.js makes the canvas as big as fits. */
