@@ -272,6 +272,11 @@ export async function waitForFonts() {
  * @returns {void}
  */
 export function setupTraceControls(settings, onChange) {
+  /**
+   * Shortcut for finding an element by its id="...".
+   * @param {string} id - the element's id
+   * @returns {HTMLElement} the element
+   */
   const byId = (id) => document.getElementById(id);
   const styleButtons = [...document.querySelectorAll('[data-style]')];
   const nameButton = byId('trace-name');

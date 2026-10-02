@@ -35,6 +35,9 @@ const NOTE_SECONDS = 0.9;
  */
 const ATTACK_SECONDS = 0.01;
 
+/** The kinds of taps that browsers accept as "yes, you may make sound" (see unlockAudio). */
+const UNLOCK_EVENTS = ['pointerup', 'touchend', 'click', 'keydown'];
+
 /** How long a block stays lit after it plays, in milliseconds. */
 const LIGHT_MS = 300;
 
@@ -118,6 +121,9 @@ let scaleTimers = [];
 /** The "which note?" / "major or minor?" buttons. Filled by setupGuessIt(). */
 let guessKindButtons = [];
 
+/** The "play the mystery again" timer after a wrong guess (see tryAgain). */
+let replayTimer = null;
+
 /** The browser's sound machine. Made on the first tap (see getAudio). */
 let audioContext = null;
 
@@ -169,6 +175,7 @@ export function initMusic() {
   setupGuessIt();
 
   document.addEventListener('keydown', handleKeyDown);
+  for (const type of UNLOCK_EVENTS) document.addEventListener(type, unlockAudio);
 }
 
 /**
@@ -305,8 +312,26 @@ function handleKeyDown(event) {
  */
 function getAudio() {
   if (!audioContext) audioContext = new AudioContext();
-  if (audioContext.state === 'suspended') audioContext.resume();
+  // Not just 'suspended': iPads also say 'interrupted' after the screen
+  // locks or a phone call, and we want sound back after either.
+  if (audioContext.state !== 'running') audioContext.resume();
   return audioContext;
+}
+
+/**
+ * Wake up the sound machine on Caleb's first real tap.
+ *
+ * Browsers only allow sound after certain kinds of taps: a finger lifting
+ * off (pointerup or touchend), a click, or a key press. The note blocks
+ * play on pointerdown, the instant a finger lands, and some tablets don't
+ * count that. So these events also wake the sound machine, and once it's
+ * running they stop listening.
+ * @returns {void}
+ */
+function unlockAudio() {
+  if (getAudio().state === 'running') {
+    for (const type of UNLOCK_EVENTS) document.removeEventListener(type, unlockAudio);
+  }
 }
 
 /**
@@ -633,7 +658,11 @@ function celebrate(name) {
 function tryAgain() {
   say('Hmm, try again! 👂');
   const mystery = state.mystery;
-  setTimeout(() => {
+  // Lots of quick wrong taps should replay the mystery once, not once per
+  // tap all on top of each other. So each wrong tap cancels the replay
+  // that's waiting and starts the wait again.
+  clearTimeout(replayTimer);
+  replayTimer = setTimeout(() => {
     // Only replay if it's still the same puzzle (he might have started a new one).
     if (state.mystery === mystery) soundNotes(mystery.notes);
   }, REPLAY_DELAY_MS);

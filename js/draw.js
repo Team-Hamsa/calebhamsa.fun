@@ -138,7 +138,12 @@ export function cellsAlongLine(x0, y0, x1, y1, cell) {
  * @returns {string} the filename
  */
 export function filenameForDate(date) {
-  const twoDigits = (n) => String(n).padStart(2, '0'); // 5 → "05"
+  /**
+   * Write a number with at least two digits.
+   * @param {number} n - a month or day
+   * @returns {string} e.g. 5 → "05", 12 → "12"
+   */
+  const twoDigits = (n) => String(n).padStart(2, '0');
   const year = date.getFullYear();
   const month = twoDigits(date.getMonth() + 1); // getMonth() counts from 0!
   const day = twoDigits(date.getDate());
@@ -290,7 +295,10 @@ function setMode(mode) {
  * @returns {void}
  */
 function resizeCanvases() {
-  const box = inkCanvas.parentElement.getBoundingClientRect();
+  // Measure the canvas itself, not its box: the box includes the brown
+  // border, and a canvas sized for the border would put ink a little
+  // away from the finger.
+  const box = inkCanvas.getBoundingClientRect();
   const newWidth = Math.round(box.width);
   const newHeight = Math.round(box.height);
   if (newWidth === cssWidth && newHeight === cssHeight) return; // nothing changed
@@ -464,6 +472,11 @@ function setupClear() {
   const button = byId('clear');
   let timer = null;
 
+  /**
+   * A finger pressed the clear button: start filling it up and start the countdown.
+   * @param {PointerEvent} event - the press
+   * @returns {void}
+   */
   const startHolding = (event) => {
     event.preventDefault();
     button.classList.add('holding'); // blocks.css fills the button while holding
@@ -474,6 +487,10 @@ function setupClear() {
       timer = null;
     }, CLEAR_HOLD_MS);
   };
+  /**
+   * The finger let go (or slid off) too early: cancel the countdown.
+   * @returns {void}
+   */
   const stopHolding = () => {
     clearTimeout(timer);
     timer = null;

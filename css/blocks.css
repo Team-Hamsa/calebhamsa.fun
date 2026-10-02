@@ -419,6 +419,12 @@ main {
   min-height: 280px;
   background: var(--paper);
   border: 6px solid var(--dirt);
+  /* On iPads, pressing and holding still for a moment can pop up the
+     "select text" magnifier, which stops the line being drawn. Little
+     artists press slowly, so we switch selecting and that pop-up off here. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .canvas-stack canvas {
