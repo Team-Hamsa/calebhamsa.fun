@@ -118,6 +118,23 @@ Every other block is solid: no fluid enters it. Air is open on all sides.
 ### Pack order
 `PACKS = [basic, water, electric]`.
 
+## Refinements made while prototyping (they override the details below)
+
+1. **Faster water.**
+   - `SQUISH` is **0.1** (not 0.02), with **no halving** of big flows, and **4 small steps per tick** (`FLUID_STEPS`).
+   - Measured: the original settings needed about 800 ticks (100 s) to level a U-tube; these need about 38 ticks (5 s), and still settle completely.
+   - The pump's front-cell limit is `FULL + SQUISH`.
+2. **Exact conservation.** No amounts are ever deleted. `MIN_AMOUNT` only decides "is it wet?" (drawing, and whether anything moved). `MIN_FLOW` is gone.
+3. **Steam in water.** Steam may always **rise** into water, and spreads sideways only into cells that are at most half water. (The "only up in wet cells" rule trapped steam under ceilings.)
+4. **Valves and turbines face by neighboring fluid *blocks*, not by wet air,** with a favorite when nothing's around (`fluid.prefer`: valve `'h'`, turbine `'v'`). So they never flip as water moves.
+5. **Pumps are one-way doors for ordinary flow.** Fluid enters only from their back and leaves only from their front, so pumped water doesn't fall back through.
+6. **Drawing:**
+   - the water layer is drawn by `registry.drawLayers(ctx, world, size)`, which `build.js` calls after `drawWorld`; `block-art.js` stays pack-agnostic
+   - fluid blocks get drawing records in `world.signals.water.cells` (open sides, turbine flow, pump level)
+   - the steam edge wobble is dropped
+7. **Helpers:** `world.clearFluid(world, x, y)`; `fluids.pour(world, kind, x, y, blockInfo)`.
+8. **`circuitKey(world, blockInfo)`** takes `blockInfo`, to read turbines' `pushNow`.
+
 ## The fluid rules (js/fluids.js, pure)
 
 `stepFluids(world, blockInfo) → movedAmount`, run by the water pack's system each tick.
