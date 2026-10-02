@@ -15,7 +15,7 @@
 import { AIR, WORLD_HEIGHT, WORLD_WIDTH, defaultWorld, getBlock, setBlock, tick } from './world.js';
 import { AIR_INFO, PACKS, allSystems, blockInfo, blocksInPack, isKnownBlock } from './blocks/registry.js';
 import { drawBlock, drawWorld } from './block-art.js';
-import { WORLD_COUNT, loadCurrent, loadThumbnail, loadWorld, saveCurrent, saveWorld } from './saves.js';
+import { WORLD_COUNT, loadCurrent, loadThumbnail, loadWorld, saveCurrent, saveWorld, worldKey } from './saves.js';
 import { listenForUnlock, playTones } from './sound.js';
 import { cellsAlongLine, choose, filenameForDate, flash } from './ui.js';
 
@@ -87,6 +87,13 @@ let paletteButtons = [];
 let tickTimer = null;
 let worldButtons = [];
 let saveTimer = null;
+
+/**
+ * True when the world has changes that aren't saved yet. We only save
+ * when there's something new, so an old browser tab that was left open
+ * can't save its old copy of a world over a newer build.
+ */
+let unsaved = false;
 
 /**
  * Shortcut for finding an element by its id="...".
@@ -170,12 +177,17 @@ export function initBuild() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       stopTicking();
-      saveNow(); // the iPad might close the page while it's hidden
+      saveIfChanged(); // the iPad might close the page while it's hidden
     } else {
+      reloadIfNewer(); // another tab may have built here meanwhile
       startTicking();
     }
   });
-  window.addEventListener('pagehide', saveNow);
+  window.addEventListener('pagehide', saveIfChanged);
+  // Another tab saved this world: show its newer version.
+  window.addEventListener('storage', (event) => {
+    if (event.key === worldKey(state.current)) reloadIfNewer();
+  });
 }
 
 // =============================================================
@@ -328,6 +340,7 @@ function flashCell(x, y) {
  * @returns {void}
  */
 function worldChanged() {
+  unsaved = true;
   draw();
   scheduleSave();
 }
@@ -385,6 +398,29 @@ function saveNow() {
   const saved = saveWorld(state.current, state.world, thumbnail, storage())
     && saveCurrent(state.current, storage());
   byId('save-problem').hidden = saved;
+  if (saved) unsaved = false;
+  updateWorldButtons();
+}
+
+/**
+ * Save the open world, but only if it has changes that aren't saved yet.
+ * @returns {void}
+ */
+function saveIfChanged() {
+  if (unsaved) saveNow();
+}
+
+/**
+ * If we have no unsaved changes, load the open world again from storage,
+ * in case another tab (or the home-screen app) saved a newer version.
+ * @returns {void}
+ */
+function reloadIfNewer() {
+  if (unsaved) return;
+  const saved = loadWorld(state.current, storage(), loadOptions());
+  if (!saved) return;
+  state.world = saved;
+  draw();
   updateWorldButtons();
 }
 
@@ -444,7 +480,7 @@ function updateWorldButtons() {
  */
 function switchWorld(n) {
   if (n === state.current) return;
-  saveNow();
+  saveIfChanged();
   state.current = n;
   state.world = loadWorld(n, storage(), loadOptions()) ?? defaultWorld();
   saveCurrent(n, storage());
@@ -506,8 +542,11 @@ function setupPointer() {
     pointer = { id: pointer.id, ...point };
   });
 
+  // Listen on the whole window, not just the canvas: if the finger lifts
+  // off somewhere else (and capture didn't work), we still hear it, so
+  // the world never gets stuck ignoring taps.
   for (const type of ['pointerup', 'pointercancel']) {
-    canvas.addEventListener(type, (event) => {
+    window.addEventListener(type, (event) => {
       if (pointer?.id === event.pointerId) pointer = null;
     });
   }
