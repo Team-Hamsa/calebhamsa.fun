@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<!--
+  draw.html: the Draw & Trace page.
+
+  Two <canvas> elements are stacked in the white box: "guide" (bottom)
+  for practice letters, and "ink" (top) for Caleb's drawing. js/draw.js
+  makes the drawing work, and js/trace.js draws the practice letters.
+
+  Opening "draw.html?mode=trace" starts in tracing mode (that's what the
+  homepage's WRITE block does).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Draw &amp; Trace · Caleb's Blocky World</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Three fonts: the pixel font, Andika (made for kids learning to read)
+       for print letters, and Playwrite US Trad (made for teaching
+       handwriting) for cursive. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika&family=Playwrite+US+Trad&family=Press+Start+2P&display=swap">
+  <link rel="stylesheet" href="css/blocks.css">
+</head>
+<body class="draw-page">
+  <header class="top-bar">
+    <a class="block home" href="index.html" aria-label="Home">🏠</a>
+    <div class="toolbar">
+      <button class="block" data-mode="draw" aria-pressed="true">✏️ DRAW</button>
+      <button class="block" data-mode="trace" aria-pressed="false">ABC TRACE</button>
+    </div>
+    <button class="block gold" id="save" aria-label="Save picture">💾</button>
+  </header>
+
+  <main class="draw-main">
+    <!-- Tracing controls: only shown in TRACE mode. -->
+    <div class="toolbar" id="trace-tools" hidden>
+      <button class="block" data-style="print" aria-pressed="true">Aa PRINT</button>
+      <button class="block" data-style="cursive" aria-pressed="false"><span class="cursive-sample">Cursive</span></button>
+      <button class="block grass" id="trace-name" aria-pressed="true">CALEB</button>
+      <button class="block" id="letter-prev" aria-label="Previous letter">◀</button>
+      <button class="block" id="trace-letter" aria-pressed="false">A</button>
+      <button class="block" id="letter-next" aria-label="Next letter">▶</button>
+      <button class="block" id="trace-case">ABC</button>
+      <input class="word-input" id="trace-word" type="text" maxlength="12"
+             placeholder="your word" autocomplete="off" autocapitalize="off"
+             spellcheck="false" aria-label="Your word">
+    </div>
+
+    <!-- The two sheets of tracing paper. -->
+    <div class="canvas-stack">
+      <canvas id="guide"></canvas>
+      <canvas id="ink"></canvas>
+    </div>
+
+    <!-- draw.js fills this with color swatches. -->
+    <div class="toolbar" id="swatches"></div>
+
+    <div class="toolbar">
+      <button class="block" data-brush="small" aria-pressed="false">● small</button>
+      <button class="block" data-brush="big" aria-pressed="true">⬤ big</button>
+      <button class="block" data-brush="block" aria-pressed="false">▦ block</button>
+      <button class="block" data-brush="eraser" aria-pressed="false">🧽 eraser</button>
+      <button class="block hold-clear" id="clear">🗑 hold to clear</button>
+    </div>
+  </main>
+
+  <script type="module">
+    import { initDraw } from './js/draw.js';
+    initDraw();
+  </script>
+</body>
+</html>
