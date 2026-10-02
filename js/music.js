@@ -667,7 +667,7 @@ function celebrate(name) {
 function tryAgain() {
   const hadStars = state.score > 0;
   updateScore(false);
-  say(hadStars ? 'Oops! Stars back to 0. Try again! 👂' : 'Hmm, try again! 👂');
+  say(hadStars ? 'Good job! Maybe try next time. 👂' : 'Hmm, try again! 👂');
   const mystery = state.mystery;
   // Lots of quick wrong taps should replay the mystery once, not once per
   // tap all on top of each other. So each wrong tap cancels the replay
