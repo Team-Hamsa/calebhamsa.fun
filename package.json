@@ -1,0 +1,9 @@
+{
+  "name": "calebhamsa-fun",
+  "private": true,
+  "description": "Caleb's blocky homepage. No dependencies! This file only tells Node that our .js files are ES modules, and makes `npm test` run the tests.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
