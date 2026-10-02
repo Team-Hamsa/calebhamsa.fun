@@ -29,6 +29,7 @@ Then open <http://localhost:8000>. Change a file, save, and reload the page.
 | `css/blocks.css` | How everything **looks**: colors, block buttons, animations |
 | `js/music-theory.js` | The music brain: notes as numbers, chords, scales (pure math) |
 | `js/music.js` | Makes Note Blocks work: sound, modes, record, Guess it! |
+| `js/sound.js` | The shared sound machine: voices and playing notes |
 | `js/draw.js` | The drawing pad: brushes, colors, clear, save |
 | `js/trace.js` | Handwriting sheets: lines, print/cursive letters, fade-out rows |
 | `js/ui.js` | Little helpers every page shares (buttons, grid swipes, picture names) |
@@ -50,7 +51,7 @@ Search the code for `🧪 Try this!` to find them all. Some favorites:
 
 1. **Night sky:** in `css/blocks.css`, change `--sky` to `#1a1a40`.
 2. **Old-time tuning:** in `js/music-theory.js`, change `A4_HZ` from 440 to 415.
-3. **Long notes:** in `js/music.js`, set `NOTE_SECONDS` to 3.
+3. **Long notes:** in `js/sound.js`, set `NOTE_SECONDS` to 3.
 4. **Hear the click:** set `ATTACK_SECONDS` to 0, then tap a block.
 5. **A new chord:** add `sus4: [0, 5, 7],` to `CHORDS`, then copy a chord button in `music.html` and change it to `data-chord="sus4"`.
 6. **A new scale:** add `blues: [3, 2, 1, 1, 3, 2],` to `SCALES`, plus a button.
