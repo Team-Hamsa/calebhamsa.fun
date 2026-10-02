@@ -87,6 +87,7 @@ export function shade(hex, factor) {
  * @returns {void}
  */
 export function drawBlock(ctx, info, left, top, size) {
+  if (info.bare) return; // e.g. wire: just the sky behind it (drawSignals draws the rest)
   const px = size / SPECKLE_GRID; // one little "pixel"
 
   if (info.seeThrough) {
@@ -152,6 +153,38 @@ function drawGlass(ctx, info, left, top, size, px) {
 }
 
 /**
+ * Draw one cell: the block, then anything its pack worked out about it
+ * (a lamp's glow, current flowing in a wire...), if the block knows how.
+ * @param {CanvasRenderingContext2D} ctx - the canvas paintbrush
+ * @param {object} info - the block's definition
+ * @param {number} left - where its left edge goes, in pixels
+ * @param {number} top - where its top edge goes, in pixels
+ * @param {number} size - how wide and tall it is, in pixels
+ * @param {object|undefined} cell - this cell's signals (undefined in the palette)
+ * @param {number} ticks - the world's clock, for things that move
+ * @returns {void}
+ */
+export function drawCell(ctx, info, left, top, size, cell, ticks) {
+  drawBlock(ctx, info, left, top, size);
+  info.drawSignals?.(ctx, info, left, top, size, cell, ticks);
+}
+
+/**
+ * Find what the packs worked out about one cell (world.signals holds one
+ * record per pack, each with a `cells` Map from cell index to details).
+ * @param {object} world - the world
+ * @param {number} index - the cell's index (y * width + x)
+ * @returns {object|undefined} the cell's signals, or undefined if none
+ */
+function signalsAt(world, index) {
+  for (const pack of Object.values(world.signals ?? {})) {
+    const cell = pack.cells?.get(index);
+    if (cell) return cell;
+  }
+  return undefined;
+}
+
+/**
  * Draw the whole world: sky everywhere, then every block that isn't air.
  * @param {CanvasRenderingContext2D} ctx - the canvas paintbrush
  * @param {{width: number, height: number, cells: string[]}} world - the world
@@ -168,7 +201,7 @@ export function drawWorld(ctx, world, size, blockInfo, sky) {
       const name = getBlock(world, x, y);
       if (name === AIR) continue;
       const info = blockInfo(name);
-      if (info) drawBlock(ctx, info, x * size, y * size, size);
+      if (info) drawCell(ctx, info, x * size, y * size, size, signalsAt(world, y * world.width + x), world.ticks ?? 0);
     }
   }
 }

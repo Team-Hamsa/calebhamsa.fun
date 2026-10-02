@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, setBlock } from '../js/world.js';
 import { blockInfo } from '../js/blocks/registry.js';
-import { SPECKLE_GRID, drawBlock, drawWorld, hashName, shade, speckles } from '../js/block-art.js';
+import { SPECKLE_GRID, drawBlock, drawCell, drawWorld, hashName, shade, speckles } from '../js/block-art.js';
 
 /**
  * A pretend canvas "context" that records every drawing call.
@@ -91,4 +91,30 @@ test('drawWorld skips block names it does not know', () => {
   const ctx = fakeContext();
   assert.doesNotThrow(() => drawWorld(ctx, world, 10, blockInfo, '#7ec8ff'));
   assert.equal(ctx.calls.length, 1);
+});
+
+test('bare blocks (wire) draw no square of their own', () => {
+  const ctx = fakeContext();
+  drawBlock(ctx, { name: 'x', color: '#7a4a1e', bare: true }, 0, 0, 40);
+  assert.deepEqual(ctx.calls, []);
+});
+
+test('drawCell draws the block, then hands its signals to drawSignals', () => {
+  const ctx = fakeContext();
+  let handed = null;
+  const info = { name: 'x', color: '#808080', drawSignals: (...args) => { handed = args; } };
+  drawCell(ctx, info, 10, 20, 40, { level: 1 }, 7);
+  assert.ok(ctx.calls.length > 0);
+  assert.deepEqual(handed.slice(1), [info, 10, 20, 40, { level: 1 }, 7]);
+});
+
+test('drawWorld finds each cell\'s signals and the clock in the world', () => {
+  const world = createWorld(2, 1);
+  world.cells[1] = 'probe';
+  world.ticks = 5;
+  world.signals = { electric: { cells: new Map([[1, { level: 2 }]]) } };
+  let handed = null;
+  const info = { name: 'probe', color: '#808080', drawSignals: (...args) => { handed = args; } };
+  drawWorld(fakeContext(), world, 10, (name) => (name === 'probe' ? info : undefined), '#7ec8ff');
+  assert.deepEqual(handed.slice(2), [10, 0, 10, { level: 2 }, 5]);
 });
