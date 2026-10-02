@@ -49,17 +49,24 @@ function fakeStorage() {
   };
 }
 
-test('the two-octave choice is remembered, and starts off', () => {
-  const storage = fakeStorage();
-  assert.equal(loadWide(storage), false);
-  saveWide(true, storage);
-  assert.equal(loadWide(storage), true);
-  saveWide(false, storage);
-  assert.equal(loadWide(storage), false);
+test('with nothing saved: two octaves on a big screen (iPad), one on a phone', () => {
+  assert.equal(loadWide(fakeStorage(), { width: 820, height: 1180 }), true);  // iPad Air
+  assert.equal(loadWide(fakeStorage(), { width: 744, height: 1133 }), true);  // iPad mini
+  assert.equal(loadWide(fakeStorage(), { width: 390, height: 844 }), false);  // phone
+  assert.equal(loadWide(fakeStorage(), { width: 844, height: 390 }), false);  // phone, sideways
 });
 
-test('if saving is blocked, the keyboard starts with one octave', () => {
+test('the two-octave choice is remembered, and beats the screen-size guess', () => {
+  const storage = fakeStorage();
+  saveWide(false, storage);
+  assert.equal(loadWide(storage, { width: 820, height: 1180 }), false);
+  saveWide(true, storage);
+  assert.equal(loadWide(storage, { width: 390, height: 844 }), true);
+});
+
+test('if saving is blocked, the screen size still picks', () => {
   const broken = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
-  assert.equal(loadWide(broken), false);
+  assert.equal(loadWide(broken, { width: 820, height: 1180 }), true);
+  assert.equal(loadWide(broken, { width: 390, height: 844 }), false);
   assert.doesNotThrow(() => saveWide(true, broken));
 });

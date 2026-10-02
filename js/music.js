@@ -133,6 +133,14 @@ const BEST_KEY = 'calebhamsa.best.';
 /** The name the "↔ 2 octaves" choice is saved under. */
 const WIDE_KEY = 'calebhamsa.wide';
 
+/**
+ * Screens at least this big on their SHORT side (in CSS pixels) start
+ * with two octaves of blocks. Every iPad is bigger (the mini is 744);
+ * phones are much smaller (about 390), even turned sideways.
+ * 🧪 Try this! Change it to 9999 so every screen starts with one octave.
+ */
+const BIG_SCREEN_PX = 700;
+
 /** The block buttons (12 or 24). Position = half steps above the first C. Filled by buildKeyboard(). */
 let noteBlocks = [];
 
@@ -171,7 +179,7 @@ const byId = (id) => document.getElementById(id);
  * @returns {void}
  */
 export function initMusic() {
-  setWide(loadWide()); // builds the blocks, writes their names, shows the octave
+  showWide(loadWide()); // builds the blocks, writes their names, shows the octave
 
   modeButtons = [...document.querySelectorAll('[data-mode]')];
   for (const button of modeButtons) {
@@ -263,8 +271,18 @@ export function highestOctave(wide) {
  * @returns {void}
  */
 function setWide(wide) {
-  state.wide = wide;
   saveWide(wide);
+  showWide(wide);
+}
+
+/**
+ * Show one octave of blocks or two (without saving the choice, so the
+ * starting guess from the screen size isn't remembered as a choice).
+ * @param {boolean} wide - true for two octaves
+ * @returns {void}
+ */
+function showWide(wide) {
+  state.wide = wide;
   byId('wide-toggle').setAttribute('aria-pressed', String(wide));
   // Everything fits on two octaves, so chords never need squeezing.
   byId('fit-toggle').hidden = wide;
@@ -840,17 +858,21 @@ export function saveBest(kind, best, storage) {
 }
 
 /**
- * Read the saved "↔ 2 octaves" choice. Gives false (one octave) if
- * nothing is saved, or if the browser won't let us look.
- * @param {Storage} [storage] - where it's saved (tests pass a pretend one)
- * @returns {boolean} true if two octaves were chosen last time
+ * Should the keyboard start with two octaves? If the "↔ 2 octaves" button
+ * was used before, do what it was set to. Otherwise, guess from the
+ * screen: two octaves on a big screen like an iPad, one on a phone.
+ * @param {Storage} [storage] - where the choice is saved (tests pass a pretend one)
+ * @param {{width: number, height: number}} [screen] - the screen's size (tests pass a pretend one)
+ * @returns {boolean} true for two octaves
  */
-export function loadWide(storage) {
+export function loadWide(storage, screen = globalThis.screen) {
   try {
-    return (storage ?? globalThis.localStorage).getItem(WIDE_KEY) === 'true';
+    const saved = (storage ?? globalThis.localStorage).getItem(WIDE_KEY);
+    if (saved !== null) return saved === 'true';
   } catch {
-    return false;
+    // Can't look: fall through and guess from the screen instead.
   }
+  return Math.min(screen.width, screen.height) >= BIG_SCREEN_PX;
 }
 
 /**
