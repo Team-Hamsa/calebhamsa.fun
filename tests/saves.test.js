@@ -161,3 +161,33 @@ test('full storage (setItem throws) makes saveWorld say false', () => {
   const full = { ...fakeStorage(), setItem: () => { throw new Error('QuotaExceededError'); } };
   assert.equal(saveWorld(1, defaultWorld(4, 3), 'thumb', full), false);
 });
+
+test('water and steam are saved and come back (rounded to 3 decimals)', () => {
+  const world = createWorld(4, 3);
+  world.fluid.water[5] = 0.12345;
+  world.fluid.steam[2] = 1;
+  const back = deserializeWorld(serializeWorld(world), SMALL);
+  assert.equal(back.fluid.water[5], 0.123);
+  assert.equal(back.fluid.steam[2], 1);
+});
+
+test('version 1 saves (from before water) still load, dry', () => {
+  const text = JSON.stringify({ version: 1, width: 4, height: 3, blocks: ['air', 'gold'], cells: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] });
+  const world = deserializeWorld(text, SMALL);
+  assert.equal(getBlock(world, 0, 0), 'gold');
+  assert.ok(world.fluid.water.every((amount) => amount === 0));
+});
+
+test('a broken water list loads dry, but the blocks still load', () => {
+  for (const water of ['lots', [1, 2], new Array(12).fill(-1), [...new Array(11).fill(0), 'x']]) {
+    const world = deserializeWorld(saveText({ width: 4, height: 3, blocks: ['air', 'gold'], cells: [1, ...new Array(11).fill(0)], water }), SMALL);
+    assert.equal(getBlock(world, 0, 0), 'gold', JSON.stringify(water));
+    assert.ok(world.fluid.water.every((amount) => amount === 0), JSON.stringify(water));
+  }
+});
+
+test('water in a smaller old save lines up at the bottom-left too', () => {
+  const water = [0, 0, 0.5, 0]; // 2 × 2: water in the bottom-left cell
+  const world = deserializeWorld(saveText({ width: 2, height: 2, blocks: ['air'], cells: [0, 0, 0, 0], water }), SMALL);
+  assert.equal(world.fluid.water[2 * 4 + 0], 0.5);
+});

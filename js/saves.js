@@ -4,21 +4,31 @@
  *
  * A saved world is a bit of JSON text, like:
  *
- *   { "version": 1, "width": 24, "height": 14,
+ *   { "version": 2, "width": 24, "height": 14,
  *     "blocks": ["air", "grass", "sand"],
- *     "cells":  [0, 0, 0, ..., 1, 1, 1] }
+ *     "cells":  [0, 0, 0, ..., 1, 1, 1],
+ *     "water":  [0, 0, 0.5, ...],
+ *     "steam":  [0, 0, 0, ...] }
  *
  * Each cell stores a small number (0 = the first name in "blocks"),
- * which is much shorter than writing "grass" 24 times.
+ * which is much shorter than writing "grass" 24 times. "water" and
+ * "steam" say how much of each fluid every cell holds (version 1 saves,
+ * from before water existed, don't have them: they load dry).
  *
  * Every function here takes the storage as an argument, so the tests
  * can hand in a pretend one. Storage can fail (private browsing, a full
  * iPad), so every function here catches that and never crashes the page.
  */
-import { AIR, createWorld, setBlock } from './world.js';
+import { AIR, FLUIDS, createWorld, setBlock, setFluid } from './world.js';
 
-/** Bump this if the save format ever changes, so old pages ignore new saves. */
-export const SAVE_VERSION = 1;
+/**
+ * Bump this if the save format ever changes, so old pages ignore new saves.
+ * Version 2 added water and steam. This page still reads version 1.
+ */
+export const SAVE_VERSION = 2;
+
+/** The save versions this page knows how to read. */
+const READABLE_VERSIONS = [1, 2];
 
 /** How many worlds Caleb can switch between. */
 export const WORLD_COUNT = 3;
@@ -59,7 +69,21 @@ export function serializeWorld(world) {
     }
     return numberOf.get(name);
   });
-  return JSON.stringify({ version: SAVE_VERSION, width: world.width, height: world.height, blocks, cells });
+  /**
+   * Round an amount to 3 decimals, so saves stay short.
+   * @param {number} amount - a fluid amount
+   * @returns {number} the rounded amount
+   */
+  const round = (amount) => Math.round(amount * 1000) / 1000;
+  return JSON.stringify({
+    version: SAVE_VERSION,
+    width: world.width,
+    height: world.height,
+    blocks,
+    cells,
+    water: Array.from(world.fluid.water, round),
+    steam: Array.from(world.fluid.steam, round),
+  });
 }
 
 /**
@@ -69,7 +93,7 @@ export function serializeWorld(world) {
  */
 function isReadableSave(data) {
   return data !== null && typeof data === 'object'
-    && data.version === SAVE_VERSION
+    && READABLE_VERSIONS.includes(data.version)
     && Number.isInteger(data.width) && data.width > 0
     && Number.isInteger(data.height) && data.height > 0
     && Array.isArray(data.blocks)
@@ -105,7 +129,26 @@ export function deserializeWorld(text, { width, height, isKnown }) {
       setBlock(world, x, y + shiftDown, isKnown(name) ? name : AIR);
     }
   }
+  for (const kind of FLUIDS) {
+    const amounts = data[kind];
+    if (!isAmountList(amounts, data.width * data.height)) continue; // missing or broken: this fluid is dry
+    for (let y = 0; y < data.height; y++) {
+      for (let x = 0; x < data.width; x++) setFluid(world, kind, x, y + shiftDown, amounts[y * data.width + x]);
+    }
+  }
   return world;
+}
+
+/**
+ * Is this a proper list of fluid amounts: the right length, and every
+ * amount a real number that isn't negative?
+ * @param {*} amounts - whatever the save had for one fluid
+ * @param {number} length - how many cells the save has
+ * @returns {boolean} true if it can be used
+ */
+function isAmountList(amounts, length) {
+  return Array.isArray(amounts) && amounts.length === length
+    && amounts.every((amount) => typeof amount === 'number' && Number.isFinite(amount) && amount >= 0);
 }
 
 /**
