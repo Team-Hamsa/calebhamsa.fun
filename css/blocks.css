@@ -370,6 +370,10 @@ main {
   gap: 4px;
 }
 
+/* "↔ 2 octaves": the same pattern twice, so 28 thin columns. */
+.keyboard.wide { grid-template-columns: repeat(28, 1fr); }
+.keyboard.wide .block.note { font-size: clamp(7px, 1.3vw, 14px); }
+
 /* min-width: 0 lets note blocks shrink below 56px on narrow phones,
    so all 12 notes still fit across the screen. */
 .block.note {

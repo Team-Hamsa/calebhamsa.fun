@@ -2,7 +2,7 @@
  * music.js — makes the Note Blocks page work.
  *
  * This file is the "hands and mouth" of the music page. It:
- *   1. builds the 12 note blocks on the screen,
+ *   1. builds the note blocks on the screen (one octave, or two),
  *   2. listens for taps and computer-key presses,
  *   3. makes sounds with the browser's Web Audio API (no sound files!),
  *   4. records tunes and plays them back,
@@ -12,7 +12,7 @@
  * questions. music.html calls initMusic() once, when the page loads.
  */
 import {
-  buildChord, buildScale, clampOctave, fitInOctave, isBlackKey, isSameNote,
+  MAX_OCTAVE, buildChord, buildScale, clampOctave, fitInOctave, isBlackKey, isSameNote,
   midiToFrequency, octaveStart, pitchClass, pitchName,
 } from './music-theory.js';
 import { choose, flash } from './ui.js';
@@ -79,8 +79,12 @@ const VOICES = {
  * Which computer key plays which block, counted in half steps above C.
  * The middle row (a s d f g h j) plays the white keys. The row above it
  * (w e t y u) plays the black keys: the same shape as a real piano.
+ * With two octaves on screen, k o l p ; keep going: C C♯ D D♯ E up high.
  */
-const KEY_TO_OFFSET = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11 };
+const KEY_TO_OFFSET = {
+  a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11,
+  k: 12, o: 13, l: 14, p: 15, ';': 16,
+};
 
 /**
  * Which grid column each block starts in. The keyboard grid has 14 thin
@@ -90,6 +94,14 @@ const KEY_TO_OFFSET = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h:
  * Position in this list = half steps above C.
  */
 const KEY_COLUMNS = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13];
+
+/**
+ * How many blocks the keyboard has: one octave, or two side by side.
+ * Two octaves fit every chord and every scale, in every key, with no
+ * notes running off the end.
+ */
+const ONE_OCTAVE = 12;
+const TWO_OCTAVES = 24;
 
 // =============================================================
 // What's happening right now ("state")
@@ -106,6 +118,7 @@ const state = {
   recordedEvents: [],  // [{ time: ms after the start, notes: [midi, ...] }, ...]
   chordType: 'major',  // one of the CHORDS recipes in music-theory.js
   fitChords: true,     // squeeze chords onto the 12 blocks (true) or stack them up high (false)
+  wide: false,         // two octaves of blocks (true) or one (false)
   scaleRoot: 0,        // the scale's key, as half steps above C (0 = C, 7 = G)
   scaleType: 'major',  // one of the SCALES recipes in music-theory.js
   guessKind: 'note',   // 'note' = "Which note?", 'chord' = "Major or minor?"
@@ -117,7 +130,10 @@ const state = {
 /** Start of the name the 🏆 best scores are saved under, e.g. "calebhamsa.best.note". */
 const BEST_KEY = 'calebhamsa.best.';
 
-/** The 12 block buttons. Position = half steps above C. Filled by buildKeyboard(). */
+/** The name the "↔ 2 octaves" choice is saved under. */
+const WIDE_KEY = 'calebhamsa.wide';
+
+/** The block buttons (12 or 24). Position = half steps above the first C. Filled by buildKeyboard(). */
 let noteBlocks = [];
 
 /** The NOTES / CHORDS / SCALES / GUESS IT! buttons. Filled by initMusic(). */
@@ -155,9 +171,7 @@ const byId = (id) => document.getElementById(id);
  * @returns {void}
  */
 export function initMusic() {
-  buildKeyboard();
-  updateLabels();
-  updateOctaveDisplay();
+  setWide(loadWide()); // builds the blocks, writes their names, shows the octave
 
   modeButtons = [...document.querySelectorAll('[data-mode]')];
   for (const button of modeButtons) {
@@ -179,6 +193,7 @@ export function initMusic() {
   });
   byId('octave-down').addEventListener('click', () => changeOctave(-1));
   byId('octave-up').addEventListener('click', () => changeOctave(+1));
+  byId('wide-toggle').addEventListener('click', () => setWide(!state.wide));
   byId('record').addEventListener('click', toggleRecording);
   byId('play-back').addEventListener('click', playBack);
 
@@ -190,18 +205,22 @@ export function initMusic() {
 }
 
 /**
- * Make the 12 note-block buttons and put them in the keyboard grid.
+ * Make the note-block buttons (one octave or two) and put them in the
+ * keyboard grid. Calling it again throws the old blocks away first.
  * @returns {void}
  */
 function buildKeyboard() {
   const keyboard = byId('keyboard');
+  keyboard.replaceChildren(); // empty it first
+  keyboard.classList.toggle('wide', state.wide); // blocks.css: twice as many columns
   noteBlocks = [];
 
-  for (let offset = 0; offset < 12; offset++) {
+  const count = state.wide ? TWO_OCTAVES : ONE_OCTAVE;
+  for (let offset = 0; offset < count; offset++) {
     const block = document.createElement('button');
     block.className = `block note ${isBlackKey(offset) ? 'sharp' : 'natural'}`;
-    block.dataset.pc = String(offset); // blocks.css uses this to pick the color
-    block.style.gridColumn = `${KEY_COLUMNS[offset]} / span 2`;
+    block.dataset.pc = String(pitchClass(offset)); // blocks.css uses this to pick the color
+    block.style.gridColumn = `${blockColumn(offset)} / span 2`;
 
     // "pointerdown" fires the instant a finger touches, which feels snappier
     // for music than "click" (which waits for the finger to lift).
@@ -215,6 +234,44 @@ function buildKeyboard() {
     keyboard.append(block);
     noteBlocks.push(block);
   }
+}
+
+/**
+ * Which grid column a block starts in. The second octave copies the
+ * first one, shifted 14 columns (one octave's width) to the right.
+ * @param {number} offset - which block: half steps above the first C (0–23)
+ * @returns {number} the grid column, counting from 1
+ */
+export function blockColumn(offset) {
+  const octave = Math.floor(offset / 12);
+  return KEY_COLUMNS[pitchClass(offset)] + octave * 14;
+}
+
+/**
+ * The highest octave the ▶ button can reach. With two octaves of blocks,
+ * the top octave is already showing as the right half, so we stop one sooner.
+ * @param {boolean} wide - are two octaves of blocks showing?
+ * @returns {number} the highest octave for the left-hand blocks
+ */
+export function highestOctave(wide) {
+  return wide ? MAX_OCTAVE - 1 : MAX_OCTAVE;
+}
+
+/**
+ * Switch between one octave of blocks and two, and remember the choice.
+ * @param {boolean} wide - true for two octaves
+ * @returns {void}
+ */
+function setWide(wide) {
+  state.wide = wide;
+  saveWide(wide);
+  byId('wide-toggle').setAttribute('aria-pressed', String(wide));
+  // Everything fits on two octaves, so chords never need squeezing.
+  byId('fit-toggle').hidden = wide;
+  buildKeyboard();
+  updateLabels();
+  updateScaleGlow();
+  changeOctave(0); // pull the octave back into range if it's now too high
 }
 
 // =============================================================
@@ -239,7 +296,7 @@ function updateLabels() {
  * @returns {void}
  */
 function changeOctave(change) {
-  state.octave = clampOctave(state.octave + change);
+  state.octave = Math.min(clampOctave(state.octave + change), highestOctave(state.wide));
   updateOctaveDisplay();
 }
 
@@ -248,9 +305,11 @@ function changeOctave(change) {
  * @returns {void}
  */
 function updateOctaveDisplay() {
-  byId('octave-display').textContent = `octave ${state.octave}`;
+  byId('octave-display').textContent = state.wide
+    ? `octaves ${state.octave}–${state.octave + 1}`
+    : `octave ${state.octave}`;
   byId('octave-down').disabled = clampOctave(state.octave - 1) === state.octave;
-  byId('octave-up').disabled = clampOctave(state.octave + 1) === state.octave;
+  byId('octave-up').disabled = state.octave >= highestOctave(state.wide);
 }
 
 // =============================================================
@@ -275,7 +334,7 @@ function setMode(mode) {
 /**
  * Someone tapped a block (or pressed its computer key).
  * What happens depends on the mode.
- * @param {number} offset - which block: half steps above C (0–11)
+ * @param {number} offset - which block: half steps above the first C (0–23)
  * @returns {void}
  */
 function handleBlockTap(offset) {
@@ -295,14 +354,16 @@ function handleBlockTap(offset) {
  *
  * A chord climbs up from its root, so roots high on the blocks (like F)
  * run past the last block. With "fit on the blocks" ON, those notes hop
- * down an octave so every note lights up (see fitInOctave).
+ * down an octave so every note lights up (see fitInOctave). With two
+ * octaves of blocks, every chord fits already, so nothing hops.
  * @param {number} rootMidi - the tapped note
- * @param {number} offset - which block it is (0–11)
+ * @param {number} offset - which block it is (0–23)
  * @returns {void}
  */
 function playChord(rootMidi, offset) {
   const chord = buildChord(rootMidi, state.chordType);
-  playNotes(state.fitChords ? fitInOctave(chord, octaveStart(state.octave)) : chord);
+  const squeeze = state.fitChords && !state.wide;
+  playNotes(squeeze ? fitInOctave(chord, octaveStart(state.octave)) : chord);
   flash(noteBlocks[offset], 'root', ROOT_MS);
 }
 
@@ -321,6 +382,7 @@ function handleKeyDown(event) {
 
   const offset = KEY_TO_OFFSET[event.key.toLowerCase()];
   if (offset === undefined) return; // not one of our music keys
+  if (offset >= noteBlocks.length) return; // k o l p ; only work with two octaves
   handleBlockTap(offset);
 }
 
@@ -410,7 +472,7 @@ function showNotes(midis) {
   const firstOnScreen = octaveStart(state.octave);
   for (const midi of midis) {
     const offset = midi - firstOnScreen;
-    if (offset >= 0 && offset < 12) flash(noteBlocks[offset], 'lit', LIGHT_MS);
+    if (offset >= 0 && offset < noteBlocks.length) flash(noteBlocks[offset], 'lit', LIGHT_MS);
   }
 }
 
@@ -548,7 +610,8 @@ function updateScaleGlow() {
   const inScale = state.mode === 'scales'
     ? new Set(buildScale(state.scaleRoot, state.scaleType).map(pitchClass))
     : null;
-  noteBlocks.forEach((block, pc) => {
+  noteBlocks.forEach((block, offset) => {
+    const pc = pitchClass(offset); // the second octave's blocks are 12–23
     block.classList.toggle('glow', inScale !== null && inScale.has(pc));
     block.classList.toggle('dim', inScale !== null && !inScale.has(pc));
   });
@@ -773,6 +836,34 @@ export function saveBest(kind, best, storage) {
     (storage ?? globalThis.localStorage).setItem(BEST_KEY + kind, String(best));
   } catch {
     // Saving is blocked. That's OK: the best still shows until the page closes.
+  }
+}
+
+/**
+ * Read the saved "↔ 2 octaves" choice. Gives false (one octave) if
+ * nothing is saved, or if the browser won't let us look.
+ * @param {Storage} [storage] - where it's saved (tests pass a pretend one)
+ * @returns {boolean} true if two octaves were chosen last time
+ */
+export function loadWide(storage) {
+  try {
+    return (storage ?? globalThis.localStorage).getItem(WIDE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remember the "↔ 2 octaves" choice for next time, if the browser lets us.
+ * @param {boolean} wide - true for two octaves
+ * @param {Storage} [storage] - where to save it (tests pass a pretend one)
+ * @returns {void}
+ */
+export function saveWide(wide, storage) {
+  try {
+    (storage ?? globalThis.localStorage).setItem(WIDE_KEY, String(wide));
+  } catch {
+    // Saving is blocked. That's OK: it just starts with one octave next time.
   }
 }
 

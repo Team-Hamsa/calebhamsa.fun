@@ -52,13 +52,15 @@
   </header>
 
   <main>
-    <!-- music.js fills this with 12 note blocks. -->
+    <!-- music.js fills this with 12 note blocks (or 24 with "↔ 2 octaves"). -->
     <div id="keyboard" class="keyboard"></div>
 
     <div class="octave-bar">
       <button class="block" id="octave-down">◀ lower</button>
       <span class="label" id="octave-display">octave 4</span>
       <button class="block" id="octave-up">higher ▶</button>
+      <!-- Two octaves of blocks: room for every chord and scale, in every key. -->
+      <button class="block" id="wide-toggle" aria-pressed="false">↔ 2 octaves</button>
     </div>
 
     <div class="toolbar">
