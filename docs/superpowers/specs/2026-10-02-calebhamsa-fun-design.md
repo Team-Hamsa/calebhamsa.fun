@@ -43,18 +43,25 @@ caleb-website/
 ├── .nojekyll             serve files as-is (skip Jekyll processing)
 ├── css/
 │   └── blocks.css        shared theme, color variables, block buttons
+├── package.json          only marks .js files as ES modules for Node + `npm test`; no dependencies
 ├── js/
+│   ├── ui.js             two tiny shared helpers (choose a button in a group, flash a class)
 │   ├── music-theory.js   pure functions: pitch math, chords, scales (ES module)
 │   ├── music.js          music page UI, Web Audio, record/playback, Guess it!
 │   ├── draw.js           canvas drawing: brushes, colors, save, hold-to-clear
 │   └── trace.js          guide layer: print/cursive letters, lines, fade-out rows
-├── tests/
-│   └── music-theory.test.js   node --test, no dependencies
+├── tests/                node --test, no dependencies
+│   ├── music-theory.test.js
+│   ├── trace.test.js     word cleanup, row fitting, letter stepping
+│   ├── draw.test.js      block-brush cell math, save filename
+│   └── modules.test.js   every module imports cleanly (catches syntax errors)
 └── README.md             "how to play with this code" guide
 ```
 
 Scripts are ES modules (`<script type="module">`), so `music.js` imports from
-`music-theory.js` and the test file imports the same module under Node. Because
+`music-theory.js` and the test file imports the same module under Node. Page
+scripts touch the DOM only inside an exported `init…()` function that the HTML
+calls; this keeps every module importable by Node tests. Because
 modules don't load from `file://` URLs, the README documents a one-line local
 server (`python3 -m http.server`).
 
@@ -180,7 +187,7 @@ Other conventions: no clever one-liners where a plain loop reads better; descrip
   - `CNAME` www → `team-hamsa.github.io`
 - **Domain verification:** add `calebhamsa.fun` as a verified domain in the Team-Hamsa org settings (Settings → Pages). This prevents takeover by other accounts.
 - **HTTPS:** enable "Enforce HTTPS" once the certificate is issued.
-- **Fallback URL before DNS:** `https://team-hamsa.github.io/calebhamsa.fun/`. All asset paths are relative so the site works at both URLs.
+- **Staged rollout:** publish first *without* a custom domain, so the site can be checked at `https://team-hamsa.github.io/calebhamsa.fun/`. Once a custom domain is set, GitHub redirects that URL to `calebhamsa.fun`, so the `CNAME` file is added only after the DNS records are in place. All asset paths are relative, so the site works at both URLs.
 
 ## Out of scope for v1 (future ideas)
 
