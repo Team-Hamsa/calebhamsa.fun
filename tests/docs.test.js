@@ -2,7 +2,8 @@
  * docs.test.js — does every function have a docstring?
  *
  * This project promises a /** ... *\/ comment above every function, saying
- * what it does. This test reads each file in js/ and checks that every
+ * what it does. This test reads each file in js/ and tools/, plus sw.js,
+ * and checks that every
  * named function (written as `function name(` or `const name = (...) =>`)
  * has a comment ending in *\/ just above it, so new code can't quietly skip one.
  */
@@ -10,14 +11,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 
-const JS_FOLDER = new URL('../js/', import.meta.url);
+const ROOT = new URL('../', import.meta.url);
+
+/** Every JavaScript file we wrote: js/, tools/, and the service worker. */
+const FILES = [
+  ...readdirSync(new URL('js/', ROOT)).map((name) => `js/${name}`),
+  ...readdirSync(new URL('tools/', ROOT)).map((name) => `tools/${name}`),
+  'sw.js',
+].filter((name) => /\.c?js$/.test(name));
 
 /** Matches the line where a named function starts. */
 const FUNCTION_START = /^\s*(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)\s*\(|const\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>)/;
 
-for (const file of readdirSync(JS_FOLDER).filter((name) => name.endsWith('.js'))) {
-  test(`every function in js/${file} has a docstring`, () => {
-    const lines = readFileSync(new URL(file, JS_FOLDER), 'utf8').split('\n');
+for (const file of FILES) {
+  test(`every function in ${file} has a docstring`, () => {
+    const lines = readFileSync(new URL(file, ROOT), 'utf8').split('\n');
     const missing = [];
     lines.forEach((line, index) => {
       const match = line.match(FUNCTION_START);

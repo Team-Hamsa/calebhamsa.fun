@@ -14,7 +14,31 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Draw &amp; Trace · Caleb's Blocky World</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>">
+  <!-- Icons: the browser tab, the iPad home screen, and old browsers.
+       All drawn from img/icon-pixels.txt by tools/make-icons.js. -->
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="img/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <!-- The app manifest lets the site be added to the home screen and open
+       full-screen like an app (see manifest.webmanifest). -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#7ec8ff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Caleb">
+  <meta name="description" content="Caleb's blocky corner of the internet: music blocks with chords and scales, drawing, and print and cursive handwriting practice.">
+  <!-- Sharing previews: the card that shows up when the link is texted or
+       posted. These must be full https:// addresses, not "img/...". -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Caleb's Blocky World">
+  <meta property="og:title" content="Draw &amp; Trace · Caleb's Blocky World">
+  <meta property="og:description" content="Caleb's blocky corner of the internet: music blocks with chords and scales, drawing, and print and cursive handwriting practice.">
+  <meta property="og:url" content="https://calebhamsa.fun/draw.html">
+  <meta property="og:image" content="https://calebhamsa.fun/img/share-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="HI, I'M CALEB! with music, draw and write blocks on grass">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Three fonts: the pixel font, Andika (made for kids learning to read)
@@ -69,6 +93,8 @@
   <script type="module">
     import { initDraw } from './js/draw.js';
     initDraw();
+    import { registerServiceWorker } from './js/pwa.js';
+    registerServiceWorker(); // the offline helper (see js/pwa.js)
   </script>
 </body>
 </html>

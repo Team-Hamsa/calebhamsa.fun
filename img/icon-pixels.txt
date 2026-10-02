@@ -1,0 +1,31 @@
+# icon-pixels.txt: Caleb's app icon, drawn with letters.
+#
+# Each letter is one pixel. The drawing is 16 pixels wide and 16 tall:
+# a grass block with a white "C" on its side.
+#
+#   G = grass       g = dark grass
+#   D = dirt        d = dark dirt
+#   W = white       s = shadow (dark brown, under the white)
+#   . = see-through
+#
+# Lines that start with # are notes, like this one.
+#
+# 🧪 Try this! Change some letters, then run:
+#      node tools/make-icons.js
+#    and reload the page to see the new icon in the browser tab.
+GGGgGGGGGGgGGGGG
+GGGGGGgGGGGGGgGG
+GgGGGGGGGGGGGGGG
+GGGGGgGGGGgGGGgG
+DGGDGGGDGGGGDGGD
+DDGDDDDDDGDDDDGD
+DDDDDdDDDDDDdDDD
+DdDDDDWWWWWDDDDD
+DDDDDWWWWWWsDDdD
+DDDDDWWsssssDDDD
+DDdDDWWsDDDDDDDD
+DDDDDWWsDDDDDdDD
+DDDDDWWWWWWsDDDD
+DdDDDDWWWWWsDDDD
+DDDDDDsssssDDDdD
+DDDdDDDDDDDDDDDD

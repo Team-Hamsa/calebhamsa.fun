@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<!--
+  share-card.html: the picture that shows up when someone shares a link to
+  the site (in Messages, Slack, Facebook...). It's never shown on the site
+  itself. tools/make-share-card.cjs takes a 1200 × 630 screenshot of this
+  page and saves it as img/share-card.png.
+
+  🧪 Try this! Change the words or colors, then run the tool again.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Share card</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
+  <link rel="stylesheet" href="../css/blocks.css">
+  <style>
+    /* Exactly the size link previews use. */
+    html, body { width: 1200px; height: 630px; min-height: 0; overflow: hidden; }
+
+    .card {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 56px;
+    }
+
+    .card .icon {
+      width: 220px;
+      height: 220px;
+      image-rendering: pixelated; /* keep the pixels sharp when made bigger */
+      box-shadow: 10px 10px 0 rgba(0, 0, 0, 0.25);
+    }
+
+    .card .title { margin: 0 0 28px; font-size: 52px; text-align: left; }
+    .card .big-blocks { justify-content: flex-start; }
+    .card .block.big { width: 150px; height: 150px; font-size: 16px; }
+    .card .block.big .icon-emoji { font-size: 52px; text-shadow: none; }
+
+    .address {
+      position: absolute;
+      right: 28px;
+      bottom: 22px;
+      color: #fff;
+      font-size: 20px;
+      text-shadow: 3px 3px 0 var(--dirt-dark);
+    }
+  </style>
+</head>
+<body class="home-page">
+  <div class="sky" aria-hidden="true">
+    <div class="cloud c1" style="left: 120px; animation: none;"></div>
+    <div class="cloud c2" style="left: 860px; top: 8%; animation: none;"></div>
+  </div>
+
+  <div class="card">
+    <img class="icon" src="icon.svg" alt="">
+    <div>
+      <h1 class="title">HI, I'M CALEB!</h1>
+      <div class="big-blocks">
+        <span class="block big grass"><span class="icon-emoji">🎵</span>MUSIC</span>
+        <span class="block big gold"><span class="icon-emoji">🎨</span>DRAW</span>
+        <span class="block big dirt"><span class="icon-emoji">✍️</span>WRITE</span>
+      </div>
+    </div>
+  </div>
+
+  <footer class="ground">
+    <div class="grass-strip"></div>
+    <div class="dirt-strip"></div>
+  </footer>
+  <div class="address">calebhamsa.fun</div>
+</body>
+</html>
