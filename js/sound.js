@@ -3,7 +3,8 @@
  *
  * It makes notes with the browser's Web Audio API (no sound files!).
  * The Note Blocks page and the Build page's singing note blocks both
- * play through here, so they sound the same.
+ * play through here, so they sound the same. It also makes the Build
+ * page's buzzer hum (setHum).
  */
 import { midiToFrequency } from './music-theory.js';
 
@@ -40,8 +41,18 @@ export const VOICES = {
   bell: { wave: 'triangle', volume: 0.3 },
 };
 
+/**
+ * The buzzer's hum: a buzzy square wave, and how loud it gets at full power.
+ * 🧪 Try this! 440 for a higher hum, 110 for a deep one.
+ */
+const HUM_HZ = 220;
+const HUM_VOLUME = 0.06;
+
 /** The browser's sound machine. Made on the first tap (see getAudio). */
 let audioContext = null;
+
+/** The buzzer hum that's playing now: { oscillator, gain }, or null. */
+let hum = null;
 
 /**
  * Get the browser's sound machine, making it the first time.
@@ -123,4 +134,35 @@ export function playTones(midis, voice = VOICES.soft) {
     oscillator.start(start);
     oscillator.stop(start + NOTE_SECONDS);
   }
+}
+
+/**
+ * Set how loud the buzzers hum: 0 is silent, 1 is normal, 2 is loud.
+ * All buzzers share one hum. Before Caleb's first tap there's no sound
+ * machine yet, and this quietly does nothing (it never makes one).
+ * @param {number} level - how hard the loudest buzzer is buzzing (0 to 2)
+ * @returns {void}
+ */
+export function setHum(level) {
+  if (!audioContext) return;
+  const now = audioContext.currentTime;
+  if (level <= 0) {
+    if (!hum) return;
+    hum.gain.gain.setTargetAtTime(0, now, 0.02); // fade out quickly...
+    hum.oscillator.stop(now + 0.1);               // ...then stop
+    hum = null;
+    return;
+  }
+  if (!hum) {
+    const oscillator = audioContext.createOscillator();
+    oscillator.type = 'square';
+    oscillator.frequency.value = HUM_HZ;
+    const gain = audioContext.createGain();
+    gain.gain.setValueAtTime(0, now);
+    oscillator.connect(gain).connect(audioContext.destination);
+    oscillator.start(now);
+    hum = { oscillator, gain };
+  }
+  // setTargetAtTime glides to the new loudness, so it doesn't click.
+  hum.gain.gain.setTargetAtTime(HUM_VOLUME * Math.min(level, 2) / 2, now, 0.05);
 }

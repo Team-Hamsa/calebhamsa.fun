@@ -13,10 +13,10 @@
  * makes the 📷 picture. build.html calls initBuild() once.
  */
 import { AIR, WORLD_HEIGHT, WORLD_WIDTH, defaultWorld, getBlock, setBlock, tick } from './world.js';
-import { AIR_INFO, PACKS, allSystems, blockInfo, blocksInPack, isKnownBlock } from './blocks/registry.js';
-import { drawBlock, drawWorld } from './block-art.js';
+import { AIR_INFO, PACKS, allSystems, blockInfo, blocksInPack, isKnownBlock, refreshSignals } from './blocks/registry.js';
+import { drawCell, drawWorld } from './block-art.js';
 import { WORLD_COUNT, loadCurrent, loadThumbnail, loadWorld, saveCurrent, saveWorld, worldKey } from './saves.js';
-import { listenForUnlock, playTones } from './sound.js';
+import { listenForUnlock, playTones, setHum } from './sound.js';
 import { cellsAlongLine, choose, filenameForDate, flash } from './ui.js';
 
 // =============================================================
@@ -266,7 +266,7 @@ function makeSwatch(name) {
   swatchCtx.scale(ratio, ratio);
   swatchCtx.fillStyle = AIR_INFO.color; // sky behind see-through blocks
   swatchCtx.fillRect(0, 0, SWATCH_PX, SWATCH_PX);
-  drawBlock(swatchCtx, info, 0, 0, SWATCH_PX);
+  drawCell(swatchCtx, info, 0, 0, SWATCH_PX, undefined, 0); // parts face sideways, nothing flowing
 
   button.append(swatch);
   button.addEventListener('click', () => selectBlock(name));
@@ -319,6 +319,7 @@ function resizeCanvas() {
  */
 function draw() {
   if (!state.cell) return; // not sized yet
+  refreshSignals(state.world); // e.g. a wire was just placed: work out the electricity first
   drawWorld(ctx, state.world, state.cell, blockInfo, AIR_INFO.color);
 }
 
@@ -591,13 +592,14 @@ function useBlockAt(point) {
     flash(frame, 'nope', 400);
     return;
   }
-  info.use({
+  const changed = info.use({
     world: state.world,
     x,
     y,
     playNote: (midi) => playTones([midi]),
     flash: () => flashCell(x, y),
   });
+  if (changed) worldChanged(); // e.g. a switch was flipped: redraw and save
 }
 
 // =============================================================
@@ -611,8 +613,27 @@ function useBlockAt(point) {
 function startTicking() {
   if (tickTimer) return;
   tickTimer = setInterval(() => {
-    if (tick(state.world, SYSTEMS, blockInfo)) worldChanged();
+    state.world.animating = false;
+    const changed = tick(state.world, SYSTEMS, blockInfo);
+    playEvents();
+    if (changed) worldChanged();             // blocks moved: redraw and save
+    else if (state.world.animating) draw();  // only the picture moves (dots): just redraw
+    setHum(state.world.signals.electric?.hum ?? 0);
   }, 1000 / TICKS_PER_SECOND);
+}
+
+/**
+ * Do what the systems asked for this tick, like playing a note block
+ * that just got current. Then empty the list.
+ * @returns {void}
+ */
+function playEvents() {
+  for (const event of state.world.events.splice(0)) {
+    if (event.type === 'note') {
+      playTones([event.midi]);
+      flashCell(event.x, event.y);
+    }
+  }
 }
 
 /**
@@ -622,4 +643,5 @@ function startTicking() {
 function stopTicking() {
   clearInterval(tickTimer);
   tickTimer = null;
+  setHum(0); // no buzzing while the page is hidden
 }
