@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<!--
+  music.html: the Note Blocks page.
+
+  This file lays out the buttons. js/music.js makes them work: it builds
+  the 12 note blocks inside <div id="keyboard"> and connects every button.
+  Buttons that belong together share a "data-" attribute (like data-mode),
+  so music.js can find the whole group at once.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Note Blocks · Caleb's Blocky World</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
+  <link rel="stylesheet" href="css/blocks.css">
+</head>
+<body class="music-page">
+  <header class="top-bar">
+    <a class="block home" href="index.html" aria-label="Home">🏠</a>
+    <h1 class="page-title">NOTE BLOCKS</h1>
+    <!-- Switches black-key names between sharps (C♯) and flats (D♭). -->
+    <button class="block" id="flats-toggle">♯ names</button>
+  </header>
+
+  <main>
+    <!-- music.js fills this with 12 note blocks. -->
+    <div id="keyboard" class="keyboard"></div>
+
+    <div class="octave-bar">
+      <button class="block" id="octave-down">◀ lower</button>
+      <span class="label" id="octave-display">octave 4</span>
+      <button class="block" id="octave-up">higher ▶</button>
+    </div>
+
+    <div class="toolbar">
+      <button class="block grass" data-mode="notes" aria-pressed="true">🎵 NOTES</button>
+      <button class="block grass" data-mode="chords" aria-pressed="false">🎶 CHORDS</button>
+      <button class="block grass" data-mode="scales" aria-pressed="false">🪜 SCALES</button>
+      <button class="block grass" data-mode="guess" aria-pressed="false">👂 GUESS IT!</button>
+    </div>
+
+    <!-- Each panel only shows in its own mode (music.js hides the others). -->
+    <div class="panel" data-panel="chords" hidden>
+      <span class="label">Tap a block to play a chord built on it</span>
+      <div class="toolbar">
+        <button class="block" data-chord="major" aria-pressed="true">major</button>
+        <button class="block" data-chord="minor" aria-pressed="false">minor</button>
+        <button class="block" data-chord="dim" aria-pressed="false">dim</button>
+        <button class="block" data-chord="aug" aria-pressed="false">aug</button>
+        <button class="block" data-chord="dom7" aria-pressed="false">7th</button>
+      </div>
+    </div>
+
+    <div class="panel" data-panel="scales" hidden>
+      <div class="toolbar">
+        <label class="label" for="scale-root">Key</label>
+        <select class="picker" id="scale-root"></select>
+        <button class="block" data-scale="major" aria-pressed="true">major</button>
+        <button class="block" data-scale="minor" aria-pressed="false">minor</button>
+        <button class="block" data-scale="pentatonic" aria-pressed="false">pentatonic</button>
+      </div>
+      <button class="block gold" id="play-scale">▶ play the scale</button>
+    </div>
+
+    <div class="panel" data-panel="guess" hidden>
+      <div class="toolbar">
+        <button class="block" data-guess-kind="note" aria-pressed="true">🎵 which note?</button>
+        <button class="block" data-guess-kind="chord" aria-pressed="false">🎶 major or minor?</button>
+      </div>
+      <div class="toolbar">
+        <button class="block gold" id="new-mystery">▶ NEW MYSTERY</button>
+        <button class="block" id="hear-again">🔁 hear it again</button>
+        <span class="label" id="score">⭐ 0</span>
+      </div>
+      <div class="toolbar" id="chord-answers" hidden>
+        <button class="block grass" data-answer="major">😊 major</button>
+        <button class="block obsidian" data-answer="minor">😢 minor</button>
+      </div>
+      <p class="message" id="guess-message">Tap ▶ NEW MYSTERY!</p>
+    </div>
+
+    <div class="toolbar">
+      <span class="label">Sound:</span>
+      <button class="block" data-voice="soft" aria-pressed="true">🎹 soft</button>
+      <button class="block" data-voice="beep" aria-pressed="false">🤖 beep</button>
+      <button class="block" data-voice="bell" aria-pressed="false">🔔 bell</button>
+    </div>
+
+    <div class="toolbar">
+      <button class="block" id="record">⏺ RECORD</button>
+      <button class="block" id="play-back">▶ PLAY BACK</button>
+    </div>
+  </main>
+
+  <!-- type="module" lets music.js use "import". We call initMusic() to start. -->
+  <script type="module">
+    import { initMusic } from './js/music.js';
+    initMusic();
+  </script>
+</body>
+</html>
