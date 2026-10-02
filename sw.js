@@ -53,6 +53,19 @@ const PRECACHE = [
   './img/apple-touch-icon.png',
 ];
 
+/**
+ * The Google Fonts stylesheets our pages use. They're saved at install
+ * time too (with the font files they point to), because on the very
+ * first visit the helper isn't looking after the page yet, so it can't
+ * catch the page's own font requests.
+ * 🧪 If you change a font <link> in a page, change it here to match
+ *    (tests/sw.test.js checks they agree).
+ */
+const FONT_STYLESHEETS = [
+  'https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap',
+  'https://fonts.googleapis.com/css2?family=Andika&family=Playwrite+US+Trad&family=Press+Start+2P&display=swap',
+];
+
 /** Where the fonts come from (Google Fonts uses two addresses). */
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 
@@ -105,7 +118,9 @@ async function networkFirst(request) {
  */
 async function staleWhileRevalidate(request) {
   const cache = await caches.open(CACHE_NAME);
-  const saved = await cache.match(request);
+  // ignoreVary: Google says its answer depends on who asked (the page or
+  // this helper), but the files are the same, so either saved copy will do.
+  const saved = await cache.match(request, { ignoreVary: true });
   const fresh = fetch(request)
     .then((response) => {
       if (response.ok) cache.put(request, response.clone());
@@ -113,6 +128,45 @@ async function staleWhileRevalidate(request) {
     })
     .catch(() => saved); // offline: the saved copy is all we have
   return saved ?? fresh;
+}
+
+/**
+ * Which PRECACHE files aren't saved yet? The "ready offline" badge
+ * (js/pwa.js) asks, so it can say how many are still to go.
+ * It only compares lists, so tests/sw.test.js can check it.
+ *
+ * @param {string[]} wanted - files to save, like './music.html'
+ * @param {string[]} savedUrls - full addresses already saved, like 'https://calebhamsa.fun/music.html'
+ * @param {string} base - this helper's own address, which './...' is measured from
+ * @returns {string[]} the wanted files that aren't saved yet
+ */
+function missingFiles(wanted, savedUrls, base) {
+  const saved = new Set(savedUrls);
+  return wanted.filter((file) => !saved.has(new URL(file, base).href));
+}
+
+/**
+ * Find the font files a Google Fonts stylesheet points to.
+ * @param {string} css - the stylesheet's text
+ * @returns {string[]} the font files' addresses
+ */
+function fontFilesIn(css) {
+  return [...css.matchAll(/url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)/g)].map((match) => match[1]);
+}
+
+/**
+ * Save the FONT_STYLESHEETS, and every font file they point to.
+ * @param {Cache} cache - the box to save them in
+ * @returns {Promise<void>} finishes when they're all saved
+ */
+async function saveFonts(cache) {
+  for (const url of FONT_STYLESHEETS) {
+    const response = await fetch(url, { mode: 'cors' });
+    if (!response.ok) throw new Error(`${url} answered ${response.status}`);
+    const css = await response.clone().text();
+    await cache.put(url, response);
+    await cache.addAll(fontFilesIn(css).map((file) => new Request(file, { mode: 'cors' })));
+  }
 }
 
 /**
@@ -133,7 +187,12 @@ function fetchWithTimeout(request, ms) {
 
 // "install" happens once per new version: save the PRECACHE files.
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE)));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => Promise.all([
+    cache.addAll(PRECACHE),
+    // The pages still work without the fonts (just in a plainer font),
+    // so a font hiccup shouldn't stop everything else being saved.
+    saveFonts(cache).catch((error) => console.warn('Could not save the fonts:', error)),
+  ])));
   self.skipWaiting(); // start helping right away instead of waiting for every tab to close
 });
 
@@ -143,6 +202,19 @@ self.addEventListener('activate', (event) => {
     caches.keys()
       .then((names) => Promise.all(names.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))))
       .then(() => self.clients.claim()),
+  );
+});
+
+// "message": a page asked "which files are still missing?" (see js/pwa.js).
+// It sends a MessageChannel port along, and we answer on that port.
+self.addEventListener('message', (event) => {
+  if (event.data !== 'missing-files' || !event.ports[0]) return;
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.keys())
+      .then((requests) => missingFiles([...PRECACHE, ...FONT_STYLESHEETS], requests.map((request) => request.url), self.location.href))
+      .catch(() => [...PRECACHE, ...FONT_STYLESHEETS]) // can't look in the box: count everything as missing
+      .then((missing) => event.ports[0].postMessage(missing)),
   );
 });
 

@@ -53,6 +53,12 @@ for (const page of PAGES) {
     assert.equal(metaContent(html, 'name', 'twitter:card'), 'summary_large_image');
   });
 
+  test(`${page} loads Google Fonts with crossorigin, so the offline helper can save the stylesheet`, () => {
+    const links = [...read(page).matchAll(/<link [^>]*href="https:\/\/fonts\.googleapis\.com\/css2[^>]*>/g)].map((m) => m[0]);
+    assert.ok(links.length > 0);
+    for (const link of links) assert.match(link, /crossorigin/, link);
+  });
+
   test(`${page} starts the offline helper`, () => {
     assert.match(read(page), /registerServiceWorker\(\);/);
   });

@@ -64,14 +64,21 @@ Search the code for `🧪 Try this!` to find them all. Some favorites:
 
 On the iPad, open the site in Safari, tap **Share**, then **Add to Home Screen**.
 It gets the grass-block icon, opens full-screen with no browser bars, and
-works **without internet** once it has been opened online. If the handwriting
-fonts look plain offline, open the Write page once more while online.
+works **without internet** once it has been opened online. Fonts are saved
+too, on the first visit.
+
+The little badge in the bottom-left corner says how it's going:
+**⏳ Saving for offline… (N left)** while files download, **✓ Ready offline**
+when everything is saved (check for this before a car trip!), **✓ Playing
+offline** with no internet, and **⚠ …** with the reason if offline can't work.
 
 When you change the code and push it, the app picks up the new version the
 next time it's opened online. The offline helper (`sw.js`) always tries the
 internet first, so you never get stuck with an old copy. If you add a
 **new file** to the site, also add it to `PRECACHE` in `sw.js` and change
 `caleb-v1` to `caleb-v2`.
+If you change a Google Fonts `<link>` in a page, change `FONT_STYLESHEETS`
+in `sw.js` to match (the tests check they agree).
 
 In app mode, 💾 save opens the iPad's share/preview sheet instead of
 downloading. Choose **Save Image** there.
