@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<!--
+  index.html: Caleb's homepage.
+
+  This file says WHAT is on the page: a big title, three blocks that link
+  to the toys, and a list of favorite things. How it LOOKS comes from
+  css/blocks.css. This page has no JavaScript at all!
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- Makes phones show the page at its real size instead of zoomed out. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Caleb's Blocky World</title>
+  <!-- The little icon in the browser tab: a pickaxe emoji drawn as an image. -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⛏️</text></svg>">
+  <!-- The pixel font, from Google Fonts (free to use). -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
+  <link rel="stylesheet" href="css/blocks.css">
+</head>
+<body class="home-page">
+  <!-- Drifting clouds. aria-hidden: screen readers skip decoration. -->
+  <div class="sky" aria-hidden="true">
+    <div class="cloud c1"></div>
+    <div class="cloud c2"></div>
+  </div>
+
+  <main>
+    <!-- 🧪 Try this! Change the words in the title. -->
+    <h1 class="title">HI, I'M CALEB!</h1>
+
+    <nav class="big-blocks" aria-label="Toys">
+      <a class="block big grass" href="music.html"><span class="icon">🎵</span>MUSIC</a>
+      <a class="block big gold" href="draw.html"><span class="icon">🎨</span>DRAW</a>
+      <!-- "?mode=trace" tells the drawing page to open in tracing mode. -->
+      <a class="block big dirt" href="draw.html?mode=trace"><span class="icon">✍️</span>WRITE</a>
+    </nav>
+
+    <section class="favorites">
+      <h2>My favorite things</h2>
+      <!-- 🧪 Try this! Ask Caleb for a new favorite and add a line: <li>🦖 dinosaurs</li> -->
+      <ul>
+        <li>🎵 music</li>
+        <li>🎨 drawing</li>
+        <li>✍️ writing</li>
+        <li>⛏️ building with blocks</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="ground" aria-hidden="true">
+    <div class="grass-strip"></div>
+    <div class="dirt-strip"></div>
+  </footer>
+</body>
+</html>

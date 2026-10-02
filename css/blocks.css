@@ -1,0 +1,541 @@
+/* =================================================================
+   blocks.css: how the whole site LOOKS.
+
+   HTML says WHAT is on the page   (a button, a heading)
+   CSS says how it LOOKS           (green, big, chunky)
+   JavaScript says what it DOES    (play a sound when tapped)
+
+   Every page uses this one file, so changing a color here changes it
+   everywhere. The sections are:
+     1. Colors and sizes        5. Homepage
+     2. The whole page          6. Music page
+     3. Block buttons           7. Draw & Trace page
+     4. Bars and panels         8. Animations
+   ================================================================= */
+
+
+/* -----------------------------------------------------------------
+   1. Colors and sizes
+   These are "custom properties" (CSS variables). We name a color
+   once, like --grass, then use it anywhere with var(--grass).
+   ----------------------------------------------------------------- */
+:root {
+  /* 🧪 Try this! Change --sky to #1a1a40 for a night-time world. */
+  --sky: #7ec8ff;
+  --cloud: #ffffff;
+  --grass: #5dbb3f;
+  --grass-dark: #3f8a2a;
+  --dirt: #8b5a2b;
+  --dirt-dark: #5e3b1a;
+  --stone: #8f8f8f;
+  --stone-dark: #5f5f5f;
+  --obsidian: #2b1f3d;
+  --obsidian-dark: #120b1c;
+  --gold: #f2b705;
+  --gold-dark: #a87f00;
+  --cave: #34344a;   /* the music page's background */
+  --paper: #ffffff;
+  --text: #1d1d1d;
+
+  /* clamp(smallest, preferred, biggest): grows with the screen, within limits.
+     🧪 Try this! Change 180px to 260px for giant homepage blocks on big screens. */
+  --big-block: clamp(120px, 28vw, 180px);
+
+  --pixel-font: 'Press Start 2P', monospace;
+}
+
+/* The `hidden` attribute must always win, even over "display: flex" below.
+   JavaScript hides things by setting element.hidden = true. */
+[hidden] {
+  display: none !important;
+}
+
+/* Make width and height include padding and borders. Much easier to reason about. */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+
+/* -----------------------------------------------------------------
+   2. The whole page
+   ----------------------------------------------------------------- */
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh; /* "dynamic" height: the real visible height on phones */
+  display: flex;
+  flex-direction: column;
+  background: var(--page-bg, var(--sky)); /* each page can set --page-bg */
+  color: var(--text);
+  font-family: var(--pixel-font);
+  overflow-x: hidden;
+}
+
+main {
+  flex: 1;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+
+/* -----------------------------------------------------------------
+   3. Block buttons
+   Every button on the site is a "block": a chunky square with a dark
+   bottom edge that makes it look 3D. Pressing it squishes the edge,
+   so the block looks pushed in.
+   ----------------------------------------------------------------- */
+.block {
+  --face: var(--stone);       /* the front of the block */
+  --edge: var(--stone-dark);  /* the darker bottom edge */
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 56px;            /* big enough for small fingers */
+  min-height: 56px;
+  margin-top: 0;
+  padding: 10px 14px;
+
+  font-family: var(--pixel-font);
+  font-size: 12px;
+  line-height: 1.4;
+  color: #fff;
+  text-decoration: none;      /* links that look like blocks: no underline */
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+
+  background: var(--face);
+  border: none;
+  border-bottom: 8px solid var(--edge);
+  /* A light inner edge on the top-left and a dark one on the bottom-right
+     give every block a little pixel bevel. */
+  box-shadow:
+    inset 4px 4px 0 rgba(255, 255, 255, 0.25),
+    inset -4px -4px 0 rgba(0, 0, 0, 0.15);
+
+  cursor: pointer;
+  touch-action: manipulation;          /* no double-tap-to-zoom delay */
+  user-select: none;                   /* don't select the text when tapped */
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Pressed (finger down) or chosen (aria-pressed="true"):
+   the edge shrinks by 6px and the block moves down 6px, so it looks pushed in
+   without changing the size of anything around it. */
+.block:active,
+.block[aria-pressed="true"] {
+  border-bottom-width: 2px;
+  margin-top: 6px;
+}
+
+/* Chosen blocks also get a white outline, so you can see which one is on. */
+.block[aria-pressed="true"] {
+  outline: 4px solid #fff;
+  outline-offset: 2px;
+}
+
+/* A dashed gold outline when you move around with the Tab key. */
+.block:focus-visible {
+  outline: 4px dashed var(--gold);
+  outline-offset: 2px;
+}
+
+.block:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Color variants: each one just swaps the face and edge colors. */
+.block.grass    { --face: var(--grass);    --edge: var(--grass-dark); }
+.block.dirt     { --face: var(--dirt);     --edge: var(--dirt-dark); }
+.block.gold     { --face: var(--gold);     --edge: var(--gold-dark); }
+.block.obsidian { --face: var(--obsidian); --edge: var(--obsidian-dark); }
+
+
+/* -----------------------------------------------------------------
+   4. Bars and panels (shared by the toy pages)
+   ----------------------------------------------------------------- */
+.top-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px 0;
+}
+
+.page-title {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  color: #fff;
+  font-size: clamp(14px, 4vw, 24px);
+  text-shadow: 3px 3px 0 var(--stone-dark);
+}
+
+/* A row of buttons that wraps onto more lines when the screen is narrow. */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* A dark box that holds one mode's extra buttons. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 4px solid var(--stone-dark);
+}
+
+.label {
+  color: #fff;
+  font-size: 12px;
+}
+
+/* Drop-down lists (<select>). */
+.picker {
+  min-height: 56px;
+  padding: 8px;
+  font-family: var(--pixel-font);
+  font-size: 14px;
+  background: var(--paper);
+  border: 4px solid var(--stone-dark);
+}
+
+.message {
+  margin: 0;
+  min-height: 2.5em;
+  text-align: center;
+  color: #fff;
+  font-size: clamp(12px, 3.5vw, 18px);
+  line-height: 1.6;
+}
+
+
+/* -----------------------------------------------------------------
+   5. Homepage
+   ----------------------------------------------------------------- */
+.home-page main {
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+}
+
+.title {
+  margin: 24px 0 0;
+  text-align: center;
+  color: #fff;
+  font-size: clamp(22px, 7vw, 48px);
+  line-height: 1.4;
+  text-shadow: 4px 4px 0 var(--stone-dark);
+}
+
+.big-blocks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+}
+
+.block.big {
+  flex-direction: column;
+  width: var(--big-block);
+  height: var(--big-block);
+  font-size: clamp(12px, 3vw, 16px);
+}
+
+.block.big .icon {
+  font-size: clamp(36px, 9vw, 56px);
+  text-shadow: none;
+}
+
+.favorites {
+  max-width: 100%;
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 6px solid var(--dirt);
+  font-size: 12px;
+  line-height: 2.2;
+}
+
+.favorites h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.favorites ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The sky layer sits behind everything (z-index: -1) and holds the clouds. */
+.sky {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* A blocky cloud: one wide rectangle plus a smaller one on top (::before). */
+.cloud {
+  position: absolute;
+  left: -200px;
+  width: 128px;
+  height: 32px;
+  background: var(--cloud);
+  animation: drift 70s linear infinite; /* 🧪 Try this! 10s for a windy day. */
+}
+
+.cloud::before {
+  content: '';
+  position: absolute;
+  left: 24px;
+  top: -24px;
+  width: 64px;
+  height: 24px;
+  background: var(--cloud);
+}
+
+.cloud.c1 { top: 12%; }
+.cloud.c2 { top: 30%; width: 180px; animation-duration: 95s; animation-delay: -40s; }
+
+/* The ground: a stripy grass strip on top of pixel-checkered dirt. */
+.ground {
+  flex-shrink: 0;
+}
+
+.grass-strip {
+  height: 20px;
+  background: repeating-linear-gradient(90deg, var(--grass) 0 24px, var(--grass-dark) 24px 32px);
+}
+
+.dirt-strip {
+  height: 56px;
+  /* conic-gradient(... 25%, transparent 0) paints one corner square in each
+     24×24 tile, which makes a pixel pattern. */
+  background:
+    conic-gradient(var(--dirt-dark) 25%, transparent 0) 0 0 / 24px 24px,
+    var(--dirt);
+}
+
+
+/* -----------------------------------------------------------------
+   6. Music page
+   ----------------------------------------------------------------- */
+.music-page {
+  --page-bg: var(--cave);
+}
+
+/* The keyboard is a grid of 14 thin columns and 2 rows.
+   White keys sit on row 2, black keys on row 1. Every key is 2 columns
+   wide, and music.js tells each one which column to start in. */
+.keyboard {
+  display: grid;
+  grid-template-columns: repeat(14, 1fr);
+  grid-template-rows: 80px 110px;
+  gap: 4px;
+}
+
+/* min-width: 0 lets note blocks shrink below 56px on narrow phones,
+   so all 12 notes still fit across the screen. */
+.block.note {
+  min-width: 0;
+  padding: 4px 2px 10px;
+  align-items: flex-end;
+  font-size: clamp(8px, 2.2vw, 14px);
+}
+
+.block.note.natural { grid-row: 2; }
+.block.note.sharp   { grid-row: 1; --face: var(--obsidian); --edge: var(--obsidian-dark); }
+
+/* A rainbow for the white keys, one color per note name.
+   🧪 Try this! Swap two colors and see which notes change. */
+.block.note[data-pc="0"]  { --face: #e53935; --edge: #9e2420; } /* C red */
+.block.note[data-pc="2"]  { --face: #fb8c00; --edge: #a85d00; } /* D orange */
+.block.note[data-pc="4"]  { --face: #fdd835; --edge: #b39a1f; } /* E yellow */
+.block.note[data-pc="5"]  { --face: #43a047; --edge: #2c6b2f; } /* F green */
+.block.note[data-pc="7"]  { --face: #1e88e5; --edge: #145c9b; } /* G blue */
+.block.note[data-pc="9"]  { --face: #5e35b1; --edge: #3d2275; } /* A purple */
+.block.note[data-pc="11"] { --face: #d81b60; --edge: #8f1240; } /* B pink */
+
+.block.note.lit  { filter: brightness(1.5); animation: bounce 300ms ease-out; }
+.block.note.dim  { opacity: 0.3; }
+.block.note.glow { outline: 4px solid var(--gold); outline-offset: -4px; }
+
+.octave-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.block.recording {
+  --face: #e53935;
+  --edge: #9e2420;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+/* On bigger screens the keys get taller. */
+@media (min-width: 700px) {
+  .keyboard {
+    grid-template-rows: 110px 150px;
+    gap: 6px;
+  }
+}
+
+
+/* -----------------------------------------------------------------
+   7. Draw & Trace page
+   ----------------------------------------------------------------- */
+.draw-page {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.draw-main {
+  max-width: none;
+  min-height: 0;
+  gap: 8px;
+  padding: 8px 16px 16px;
+}
+
+/* Two canvases stacked exactly on top of each other (see draw.js). */
+.canvas-stack {
+  position: relative;
+  flex: 1;
+  min-height: 280px;
+  background: var(--paper);
+  border: 6px solid var(--dirt);
+}
+
+.canvas-stack canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* touch-action: none means "a finger on this canvas draws, it does NOT
+   scroll or zoom the page". Without it, drawing on a tablet moves the page. */
+#ink {
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.block.swatch {
+  --edge: rgba(0, 0, 0, 0.35); /* a see-through dark edge works for any color */
+  width: 56px;
+  padding: 0;
+}
+
+.block.rainbow {
+  --face: linear-gradient(135deg, #e53935, #fdd835, #43a047, #1e88e5, #8e24aa);
+  font-size: 24px;
+}
+
+/* Hold-to-clear: a light bar fills the button while you hold it.
+   When it reaches the end (1 second), the drawing is cleared. */
+.block.hold-clear {
+  --face: #c62828;
+  --edge: #7f1a1a;
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.block.hold-clear::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.block.hold-clear.holding::after {
+  width: 100%;
+  transition: width 1s linear;
+}
+
+.word-input {
+  min-height: 56px;
+  width: 11em;
+  max-width: 100%;
+  padding: 8px 12px;
+  font-family: Andika, sans-serif;
+  font-size: 20px;
+  border: 4px solid var(--dirt);
+}
+
+.word-input.active {
+  outline: 4px solid #fff;
+  outline-offset: 2px;
+}
+
+.cursive-sample {
+  font-family: 'Playwrite US Trad', cursive;
+  font-size: 16px;
+  text-shadow: none;
+}
+
+
+/* -----------------------------------------------------------------
+   8. Animations
+   @keyframes describes a little movie: where things are at 0%, 50%, 100%...
+   ----------------------------------------------------------------- */
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  40%      { transform: translateY(-10px); }
+}
+
+@keyframes pulse {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.4); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25%      { transform: translateX(-8px); }
+  75%      { transform: translateX(8px); }
+}
+
+@keyframes cheer {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.3) rotate(-3deg); }
+}
+
+@keyframes drift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(calc(100vw + 400px)); }
+}
+
+.shake,
+.canvas-stack.wiped { animation: shake 400ms; }
+.message.cheer      { animation: cheer 700ms ease-out; }
+
+/* Some people's devices ask for less movement. We respect that. */
+@media (prefers-reduced-motion: reduce) {
+  .cloud,
+  .block.note.lit,
+  .message.cheer,
+  .shake,
+  .canvas-stack.wiped,
+  .block.recording {
+    animation: none;
+  }
+}
