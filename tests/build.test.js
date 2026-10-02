@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AIR, createWorld, getBlock, setBlock } from '../js/world.js';
-import { applyTool, fitCellSize } from '../js/build.js';
+import { applyTool, fitCellSize, saveDelay } from '../js/build.js';
 
 test('blocks are as big as fits, and always square', () => {
   assert.equal(fitCellSize(960, 560, 24, 14), 40);  // fits exactly
@@ -42,4 +42,28 @@ test('USE never changes the world by itself, and nothing happens off the edge', 
   assert.equal(applyTool(world, 'build', 5, 1, 'gold'), false);
   assert.equal(applyTool(world, 'build', -1, 0, 'gold'), false);
   assert.ok(world.cells.every((name) => name === AIR));
+});
+
+test('saving waits 1 second after a change, but never more than 5 seconds after the first one', () => {
+  assert.equal(saveDelay(1000, 1000), 1000);  // just changed
+  assert.equal(saveDelay(4500, 1000), 1000);  // 3.5 s in: still the normal wait
+  assert.equal(saveDelay(5500, 1000), 500);   // 4.5 s in: only half a second left
+  assert.equal(saveDelay(9000, 1000), 0);     // past 5 s: save now
+});
+
+test('BUILD with water pours it; DIG scoops it out', () => {
+  const world = createWorld(2, 1);
+  assert.equal(applyTool(world, 'build', 0, 0, 'water'), true);
+  assert.equal(world.cells[0], AIR);       // pouring never places a block
+  assert.equal(world.fluid.water[0], 1);
+  assert.equal(applyTool(world, 'build', 0, 0, 'water'), false); // already full
+  assert.equal(applyTool(world, 'dig', 0, 0, 'gold'), true);
+  assert.equal(world.fluid.water[0], 0);
+});
+
+test('you cannot pour water into a solid block', () => {
+  const world = createWorld(1, 1);
+  setBlock(world, 0, 0, 'stone');
+  assert.equal(applyTool(world, 'build', 0, 0, 'water'), false);
+  assert.equal(world.fluid.water[0], 0);
 });

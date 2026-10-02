@@ -12,8 +12,11 @@
  * anything moved. It also keeps three worlds saved (see saves.js), and
  * makes the 📷 picture. build.html calls initBuild() once.
  */
-import { AIR, WORLD_HEIGHT, WORLD_WIDTH, defaultWorld, getBlock, setBlock, tick } from './world.js';
-import { AIR_INFO, PACKS, allSystems, blockInfo, blocksInPack, isKnownBlock, refreshSignals } from './blocks/registry.js';
+import { AIR, WORLD_HEIGHT, WORLD_WIDTH, clearFluid, defaultWorld, getBlock, setBlock, tick } from './world.js';
+import {
+  AIR_INFO, PACKS, allSystems, blockInfo, blocksInPack, drawLayers, isKnownBlock, refreshSignals,
+} from './blocks/registry.js';
+import { pour } from './fluids.js';
 import { drawCell, drawWorld } from './block-art.js';
 import { WORLD_COUNT, loadCurrent, loadThumbnail, loadWorld, saveCurrent, saveWorld, worldKey } from './saves.js';
 import { audioRunning, listenForUnlock, playTones, setHum } from './sound.js';
@@ -44,6 +47,14 @@ const WORLD_BORDER_PX = 6;
  * 🧪 Try this! 5000 to save less often.
  */
 const SAVE_DELAY_MS = 1000;
+
+/**
+ * The longest a change may wait to be saved, in milliseconds. Running
+ * water keeps changing the world, which would keep pushing the save
+ * back forever, so after this long we save anyway.
+ * 🧪 Try this! 20000 to save less often while water flows.
+ */
+const SAVE_MAX_WAIT_MS = 5000;
 
 /** Block size for the little world pictures on the 🌍 buttons (24 × 4 = 96 pixels wide). */
 const THUMB_CELL_PX = 4;
@@ -88,6 +99,9 @@ let tickTimer = null;
 let worldButtons = [];
 let saveTimer = null;
 
+/** When the oldest unsaved change happened (performance.now()), or 0 if everything is saved. */
+let firstUnsavedAt = 0;
+
 /**
  * True when the world has changes that aren't saved yet. We only save
  * when there's something new, so an old browser tab that was left open
@@ -120,7 +134,8 @@ export function fitCellSize(boxWidth, boxHeight, columns, rows) {
 }
 
 /**
- * Do what BUILD or DIG does to one cell. (USE is handled by useBlockAt,
+ * Do what BUILD or DIG does to one cell: build (or pour), or dig (which
+ * also scoops out water). (USE is handled by useBlockAt,
  * because it makes sounds instead of changing the world.)
  * @param {{width: number, height: number, cells: string[]}} world - the world
  * @param {string} tool - 'build', 'dig' or 'use'
@@ -130,9 +145,27 @@ export function fitCellSize(boxWidth, boxHeight, columns, rows) {
  * @returns {boolean} true if the world changed
  */
 export function applyTool(world, tool, x, y, selected) {
-  if (tool === 'build') return setBlock(world, x, y, selected);
-  if (tool === 'dig') return setBlock(world, x, y, AIR);
+  if (tool === 'build') {
+    const fluid = blockInfo(selected)?.pours; // 💧 and ☁️ pour instead of building
+    if (fluid) return pour(world, fluid, x, y, blockInfo);
+    return setBlock(world, x, y, selected);
+  }
+  if (tool === 'dig') {
+    const dried = clearFluid(world, x, y); // digging scoops out water too
+    return setBlock(world, x, y, AIR) || dried;
+  }
   return false;
+}
+
+/**
+ * How long to wait before saving: SAVE_DELAY_MS after the last change,
+ * but never past SAVE_MAX_WAIT_MS after the oldest unsaved change.
+ * @param {number} now - the time now, in milliseconds
+ * @param {number} firstUnsaved - when the oldest unsaved change happened
+ * @returns {number} milliseconds to wait (0 = save now)
+ */
+export function saveDelay(now, firstUnsaved) {
+  return Math.max(0, Math.min(SAVE_DELAY_MS, firstUnsaved + SAVE_MAX_WAIT_MS - now));
 }
 
 // =============================================================
@@ -321,6 +354,7 @@ function draw() {
   if (!state.cell) return; // not sized yet
   refreshSignals(state.world); // e.g. a wire was just placed: work out the electricity first
   drawWorld(ctx, state.world, state.cell, blockInfo, AIR_INFO.color);
+  drawLayers(ctx, state.world, state.cell); // water and steam on top
 }
 
 /**
@@ -383,7 +417,9 @@ function pictureOf(world, cell) {
   const picture = document.createElement('canvas');
   picture.width = world.width * cell;
   picture.height = world.height * cell;
-  drawWorld(picture.getContext('2d'), world, cell, blockInfo, AIR_INFO.color);
+  const pictureCtx = picture.getContext('2d');
+  drawWorld(pictureCtx, world, cell, blockInfo, AIR_INFO.color);
+  drawLayers(pictureCtx, world, cell);
   return picture;
 }
 
@@ -395,6 +431,7 @@ function pictureOf(world, cell) {
 function saveNow() {
   clearTimeout(saveTimer);
   saveTimer = null;
+  firstUnsavedAt = 0; // even if saving fails, so we don't retry every tick
   const thumbnail = pictureOf(state.world, THUMB_CELL_PX).toDataURL('image/png');
   const saved = saveWorld(state.current, state.world, thumbnail, storage())
     && saveCurrent(state.current, storage());
@@ -426,12 +463,14 @@ function reloadIfNewer() {
 }
 
 /**
- * Save soon: SAVE_DELAY_MS after the last change.
+ * Save soon: SAVE_DELAY_MS after the last change (see saveDelay).
  * @returns {void}
  */
 function scheduleSave() {
+  const now = performance.now();
+  if (!firstUnsavedAt) firstUnsavedAt = now;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveNow, SAVE_DELAY_MS);
+  saveTimer = setTimeout(saveNow, saveDelay(now, firstUnsavedAt));
 }
 
 /**
@@ -614,9 +653,10 @@ function startTicking() {
   if (tickTimer) return;
   tickTimer = setInterval(() => {
     state.world.animating = false;
-    const changed = tick(state.world, SYSTEMS, blockInfo);
+    state.world.fluidChanged = false;
+    const changed = tick(state.world, SYSTEMS, blockInfo) || state.world.fluidChanged;
     playEvents();
-    if (changed) worldChanged();             // blocks moved: redraw and save
+    if (changed) worldChanged();             // blocks or water moved: redraw and save
     else if (state.world.animating) draw();  // only the picture moves (dots): just redraw
     setHum(state.world.signals.electric?.hum ?? 0);
   }, 1000 / TICKS_PER_SECOND);
