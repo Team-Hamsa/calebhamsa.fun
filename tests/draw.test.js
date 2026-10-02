@@ -2,12 +2,12 @@
  * draw.test.js — checks for the drawing pad's math.
  *
  * Drawing itself needs a screen, but two pieces are pure math we can
- * check here: which grid squares the block brush fills, and the
- * filename a saved picture gets.
+ * check here (they live in ui.js, shared with the Build page): which
+ * grid squares the block brush fills, and the filename a saved picture gets.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cellsAlongLine, filenameForDate } from '../js/draw.js';
+import { cellsAlongLine, filenameForDate } from '../js/ui.js';
 
 test('a tap with the block brush fills exactly one square', () => {
   assert.deepEqual(cellsAlongLine(5, 5, 5, 5, 24), [[0, 0]]);
@@ -37,4 +37,8 @@ test('diagonal swipes have no gaps and no repeats', () => {
 
 test('saved pictures are named with the date, with leading zeros', () => {
   assert.equal(filenameForDate(new Date(2026, 0, 5)), 'caleb-drawing-2026-01-05.png');
+});
+
+test('other pages can name their pictures too', () => {
+  assert.equal(filenameForDate(new Date(2026, 9, 2), 'build'), 'caleb-build-2026-10-02.png');
 });

@@ -15,7 +15,7 @@
  * hold-to-clear, saving a picture, and switching between DRAW and TRACE.
  * draw.html calls initDraw() once, when the page loads.
  */
-import { choose, flash } from './ui.js';
+import { cellsAlongLine, choose, filenameForDate, flash } from './ui.js';
 import { createTraceSettings, drawGuides, setupTraceControls, waitForFonts } from './trace.js';
 
 // =============================================================
@@ -95,60 +95,6 @@ let traceSettings = null;
  * @returns {HTMLElement} the element
  */
 const byId = (id) => document.getElementById(id);
-
-// =============================================================
-// Pure math (no screen needed, so tests/draw.test.js checks it)
-// =============================================================
-
-/**
- * Which grid squares a line passes through, for the block brush.
- *
- * Fingers move fast. Between two moments a finger might jump 100 pixels,
- * which would leave gaps. So we take little steps along the line (half a
- * square at a time) and collect every square we land in, without repeats.
- *
- * @param {number} x0 - where the line starts (pixels from the left)
- * @param {number} y0 - where the line starts (pixels from the top)
- * @param {number} x1 - where the line ends
- * @param {number} y1 - where the line ends
- * @param {number} cell - the size of one square, in pixels
- * @returns {Array<[number, number]>} [column, row] of each square, in order
- */
-export function cellsAlongLine(x0, y0, x1, y1, cell) {
-  const distance = Math.hypot(x1 - x0, y1 - y0);
-  const steps = Math.max(1, Math.ceil(distance / (cell / 2)));
-  const seen = new Set();
-  const cells = [];
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps; // 0 at the start, 1 at the end
-    const col = Math.floor((x0 + (x1 - x0) * t) / cell);
-    const row = Math.floor((y0 + (y1 - y0) * t) / cell);
-    const key = `${col},${row}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      cells.push([col, row]);
-    }
-  }
-  return cells;
-}
-
-/**
- * The filename for a saved picture, like "caleb-drawing-2026-10-02.png".
- * @param {Date} date - when it was saved
- * @returns {string} the filename
- */
-export function filenameForDate(date) {
-  /**
-   * Write a number with at least two digits.
-   * @param {number} n - a month or day
-   * @returns {string} e.g. 5 → "05", 12 → "12"
-   */
-  const twoDigits = (n) => String(n).padStart(2, '0');
-  const year = date.getFullYear();
-  const month = twoDigits(date.getMonth() + 1); // getMonth() counts from 0!
-  const day = twoDigits(date.getDate());
-  return `caleb-drawing-${year}-${month}-${day}.png`;
-}
 
 // =============================================================
 // Starting up

@@ -1,9 +1,9 @@
 /**
- * ui.js — two tiny helpers that every page borrows.
+ * ui.js — small helpers that every page borrows: choosing and flashing
+ * buttons, the squares a finger-swipe passes through, and picture filenames.
  *
- * music.js, draw.js and trace.js all need these small jobs done.
- * Keeping them here means the code is written once instead of
- * copied three times.
+ * Several pages need these small jobs done. Keeping them here means
+ * the code is written once instead of copied onto every page.
  */
 
 /**
@@ -52,4 +52,57 @@ export function flash(element, className, ms) {
 
   timers[className] = setTimeout(() => element.classList.remove(className), ms);
   flashTimers.set(element, timers);
+}
+
+// ---- Grid and file helpers (draw.js and build.js use these) ----
+
+/**
+ * Which grid squares a line passes through, for the block brush.
+ *
+ * Fingers move fast. Between two moments a finger might jump 100 pixels,
+ * which would leave gaps. So we take little steps along the line (half a
+ * square at a time) and collect every square we land in, without repeats.
+ *
+ * @param {number} x0 - where the line starts (pixels from the left)
+ * @param {number} y0 - where the line starts (pixels from the top)
+ * @param {number} x1 - where the line ends
+ * @param {number} y1 - where the line ends
+ * @param {number} cell - the size of one square, in pixels
+ * @returns {Array<[number, number]>} [column, row] of each square, in order
+ */
+export function cellsAlongLine(x0, y0, x1, y1, cell) {
+  const distance = Math.hypot(x1 - x0, y1 - y0);
+  const steps = Math.max(1, Math.ceil(distance / (cell / 2)));
+  const seen = new Set();
+  const cells = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps; // 0 at the start, 1 at the end
+    const col = Math.floor((x0 + (x1 - x0) * t) / cell);
+    const row = Math.floor((y0 + (y1 - y0) * t) / cell);
+    const key = `${col},${row}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      cells.push([col, row]);
+    }
+  }
+  return cells;
+}
+
+/**
+ * The filename for a saved picture, like "caleb-drawing-2026-10-02.png".
+ * @param {Date} date - when it was saved
+ * @param {string} [kind] - what the picture is of: 'drawing' or 'build'
+ * @returns {string} the filename
+ */
+export function filenameForDate(date, kind = 'drawing') {
+  /**
+   * Write a number with at least two digits.
+   * @param {number} n - a month or day
+   * @returns {string} e.g. 5 → "05", 12 → "12"
+   */
+  const twoDigits = (n) => String(n).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = twoDigits(date.getMonth() + 1); // getMonth() counts from 0!
+  const day = twoDigits(date.getDate());
+  return `caleb-${kind}-${year}-${month}-${day}.png`;
 }

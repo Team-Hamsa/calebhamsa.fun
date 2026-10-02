@@ -15,7 +15,8 @@ const ROOT = new URL('../', import.meta.url);
 
 /** Every JavaScript file we wrote: js/, tools/, and the service worker. */
 const FILES = [
-  ...readdirSync(new URL('js/', ROOT)).map((name) => `js/${name}`),
+  // recursive: also js/blocks/ (the Build page's block packs)
+  ...readdirSync(new URL('js/', ROOT), { recursive: true }).map((name) => `js/${name}`),
   ...readdirSync(new URL('tools/', ROOT)).map((name) => `tools/${name}`),
   'sw.js',
 ].filter((name) => /\.c?js$/.test(name));

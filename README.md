@@ -31,7 +31,7 @@ Then open <http://localhost:8000>. Change a file, save, and reload the page.
 | `js/music.js` | Makes Note Blocks work: sound, modes, record, Guess it! |
 | `js/draw.js` | The drawing pad: brushes, colors, clear, save |
 | `js/trace.js` | Handwriting sheets: lines, print/cursive letters, fade-out rows |
-| `js/ui.js` | Two little helpers every page shares |
+| `js/ui.js` | Little helpers every page shares (buttons, grid swipes, picture names) |
 | `js/pwa.js` | Starts the offline helper |
 | `sw.js` | The offline helper ("service worker"): saves the site so it works with no internet |
 | `manifest.webmanifest` | The app's name, icons and colors, for "Add to Home Screen" |
