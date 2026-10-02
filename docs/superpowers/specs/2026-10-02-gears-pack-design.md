@@ -74,6 +74,14 @@ Speeds are **signed**: + is clockwise ↻.
 
 **Water wheel direction:** water leaving the wheel cell downward or rightward counts +; upward or leftward counts −. It's smoothed over 8 ticks, like the turbine.
 
+## Refinements made while prototyping (they override the details below)
+
+1. **`circuit.partPush` rounds a `pushNow` value toward zero** (to 0.1), not to the nearest 0.1. With nearest rounding, a motor powered only by its own generator stuck at speed 0.2 (0.2 × 0.8 = 0.16 rounds back up to 0.2). Rounding toward zero lets it wind down. A 1e-9 nudge keeps 0.3 at 0.3.
+2. **Gears are drawn 4× slower than their speed** (`DRAW_SLOWDOWN`). At 1 turn a second, an 8-tooth gear moves exactly one tooth per tick, so every frame looked the same, as if it had stopped.
+3. **The crank shows turning with its knob color** (green turning, red stopped) instead of a ↻/↺ mark.
+4. **The generator's "+" is drawn only while it turns.**
+5. **The motor reads its direction from its own electric record** (`signals.electric.cells`: `axis` + `arms`).
+
 ## Engine additions
 
 ### Block fields (new, optional)
