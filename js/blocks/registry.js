@@ -7,19 +7,20 @@
  */
 import { AIR } from '../world.js';
 import basic from './basic.js';
+import electric from './electric.js';
 
 /**
  * Every pack, in the order their systems run each tick. Order matters
- * once packs talk to each other: water must turn to steam BEFORE the
- * turbine checks for steam. The plan for later phases is:
+ * once packs talk to each other: sand must land BEFORE the electricity
+ * is worked out, and water must turn to steam BEFORE the turbine checks
+ * for steam. The plan for later phases is:
  *   basic → water → mechanical → electric
  */
-export const PACKS = [basic];
+export const PACKS = [basic, electric];
 
 /**
- * The names of the signals packs will pass to each other in later
- * phases: ⚡ power (wires, lamps) and 🔄 spin (gears, wheels).
- * Nothing uses them yet.
+ * The names of the signals packs pass to each other: ⚡ power (wires,
+ * lamps; world.signals.electric) and 🔄 spin (gears, wheels; later).
  */
 export const SIGNALS = Object.freeze({ POWER: 'power', SPIN: 'spin' });
 
@@ -62,11 +63,24 @@ export function allSystems() {
 }
 
 /**
- * The block names on one palette tab, in palette order.
+ * The block names on one palette tab, in palette order (blocks marked
+ * `hidden` are left out).
  * @param {string} id - a pack's tab id, like 'basic'
  * @returns {string[]} the block names (empty if there's no such tab)
  */
 export function blocksInPack(id) {
   const pack = PACKS.find((p) => p.tab.id === id);
-  return pack ? Object.keys(pack.blocks) : [];
+  if (!pack) return [];
+  return Object.keys(pack.blocks).filter((name) => !pack.blocks[name].hidden);
+}
+
+/**
+ * Bring every pack's signals up to date (for example, work out the
+ * electricity after a block was placed), so the picture is right even
+ * between ticks. Packs without a `refresh` are skipped.
+ * @param {object} world - the world
+ * @returns {void}
+ */
+export function refreshSignals(world) {
+  for (const pack of PACKS) pack.refresh?.(world, blockInfo);
 }

@@ -88,3 +88,13 @@ test('the basic pack has its tab, its blocks in palette order, and the falling r
   ]);
   assert.deepEqual(basic.systems, [fallingBlocks]);
 });
+
+test('note blocks are electric parts, and ✋ on one says the world did not change', () => {
+  assert.deepEqual(basic.blocks.noteC.part, { resistance: 1 });
+  const ctx = { world: createWorld(1, 1), x: 0, y: 0, playNote() {}, flash() {} };
+  assert.equal(basic.blocks.noteC.use(ctx), false);
+});
+
+test('gold conducts electricity, like real gold', () => {
+  assert.equal(basic.blocks.gold.conducts, true);
+});

@@ -7,6 +7,7 @@
  * ⚙️ gears) are new files shaped just like this one.
  */
 import { AIR, getBlock, setBlock } from '../world.js';
+import { drawDots } from './electric.js';
 
 /**
  * The singing note blocks. Same rainbow colors as the Note Blocks page:
@@ -63,17 +64,37 @@ function noteBlock({ label, midi, color }) {
     color,
     label,
     midi,
+    // A note block is also an electric part: in a circuit it plays its
+    // note when current starts flowing through it (see electric.js).
+    part: { resistance: 1 },
     use: (ctx) => {
       ctx.playNote(midi);
       ctx.flash();
+      return false; // playing a note doesn't change the world
     },
   };
+}
+
+/**
+ * Gold carries current like wire, so show the flowing dots on it too.
+ * @param {CanvasRenderingContext2D} ctx - the canvas paintbrush
+ * @param {object} info - the block's definition
+ * @param {number} left - the cell's left edge
+ * @param {number} top - the cell's top edge
+ * @param {number} size - the cell's size
+ * @param {object|undefined} cell - the cell's electric record (none in the palette)
+ * @param {number} ticks - the world's clock
+ * @returns {void}
+ */
+function drawGoldSignals(ctx, info, left, top, size, cell, ticks) {
+  if (cell) drawDots(ctx, left, top, size, cell, ticks);
 }
 
 /**
  * Every block in this pack, in the order the palette shows them.
  * `color` is the block's main color; the grass block is dirt with a green
  * `topColor`, like the real thing. `seeThrough` blocks let the sky show.
+ * Gold `conducts` electricity, like real gold: it works as wire too.
  * 🧪 Try this! Add  diamond: { title: 'Diamond', color: '#4ee6e0' },
  */
 const blocks = {
@@ -83,7 +104,7 @@ const blocks = {
   wood: { title: 'Wood', color: '#a0703c' },
   glass: { title: 'Glass', color: '#cdefff', seeThrough: true },
   obsidian: { title: 'Obsidian', color: '#2b1f3d' },
-  gold: { title: 'Gold', color: '#f2b705' },
+  gold: { title: 'Gold', color: '#f2b705', conducts: true, drawSignals: drawGoldSignals },
   sand: { title: 'Sand', color: '#e3d38f', falls: true },
 };
 for (const note of NOTE_BLOCKS) blocks[note.name] = noteBlock(note);
