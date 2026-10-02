@@ -103,8 +103,12 @@ const state = {
   scaleType: 'major',  // one of the SCALES recipes in music-theory.js
   guessKind: 'note',   // 'note' = "Which note?", 'chord' = "Major or minor?"
   mystery: null,       // the puzzle being guessed: { kind, notes, answer }, or null
-  score: 0,
+  score: 0,            // ⭐ right answers in a row (a wrong one sends it back to 0)
+  best: 0,             // 🏆 the most stars in a row ever, for this guessKind
 };
+
+/** Start of the name the 🏆 best scores are saved under, e.g. "calebhamsa.best.note". */
+const BEST_KEY = 'calebhamsa.best.';
 
 /** The 12 block buttons. Position = half steps above C. Filled by buildKeyboard(). */
 let noteBlocks = [];
@@ -555,6 +559,8 @@ function setupGuessIt() {
   for (const button of guessKindButtons) {
     button.addEventListener('click', () => setGuessKind(button.dataset.guessKind));
   }
+  state.best = loadBest(state.guessKind);
+  showScore();
   byId('new-mystery').addEventListener('click', newMystery);
   byId('hear-again').addEventListener('click', hearAgain);
   for (const button of document.querySelectorAll('[data-answer]')) {
@@ -570,6 +576,10 @@ function setupGuessIt() {
 function setGuessKind(kind) {
   state.guessKind = kind;
   state.mystery = null;
+  // Each game has its own 🏆 best, so stars from one don't count in the other.
+  state.score = 0;
+  state.best = loadBest(kind);
+  showScore();
   choose(guessKindButtons, guessKindButtons.find((button) => button.dataset.guessKind === kind));
   byId('chord-answers').hidden = kind !== 'chord'; // answer buttons only for chords
   say('Tap ▶ NEW MYSTERY!');
@@ -640,9 +650,8 @@ function handleChordAnswer(answer) {
  * @returns {void}
  */
 function celebrate(name) {
-  state.score += 1;
-  byId('score').textContent = `⭐ ${state.score}`;
-  say(`🎉 YES! It was ${name}!`);
+  const { isNewBest } = updateScore(true);
+  say(`🎉 YES! It was ${name}!${isNewBest ? ' 🏆 NEW BEST!' : ''}`);
   flash(byId('guess-message'), 'cheer', 700);
 
   // A happy major arpeggio on the mystery's root, plus the root an octave up.
@@ -656,7 +665,9 @@ function celebrate(name) {
  * @returns {void}
  */
 function tryAgain() {
-  say('Hmm, try again! 👂');
+  const hadStars = state.score > 0;
+  updateScore(false);
+  say(hadStars ? 'Oops! Stars back to 0. Try again! 👂' : 'Hmm, try again! 👂');
   const mystery = state.mystery;
   // Lots of quick wrong taps should replay the mystery once, not once per
   // tap all on top of each other. So each wrong tap cancels the replay
@@ -666,6 +677,72 @@ function tryAgain() {
     // Only replay if it's still the same puzzle (he might have started a new one).
     if (state.mystery === mystery) soundNotes(mystery.notes);
   }, REPLAY_DELAY_MS);
+}
+
+/**
+ * Count a guess: change the stars, and save the 🏆 best if it was beaten.
+ * @param {boolean} correct - was the guess right?
+ * @returns {{score: number, best: number, isNewBest: boolean}} the new score
+ */
+function updateScore(correct) {
+  const result = scoreAfter(state, correct);
+  state.score = result.score;
+  state.best = result.best;
+  if (result.isNewBest) saveBest(state.guessKind, result.best);
+  showScore();
+  return result;
+}
+
+/**
+ * Show the ⭐ stars and the 🏆 best on the screen.
+ * @returns {void}
+ */
+function showScore() {
+  byId('score').textContent = `⭐ ${state.score}`;
+  byId('best').textContent = `🏆 ${state.best}`;
+}
+
+/**
+ * Work out the score after a guess. Right adds a star; wrong goes back to 0.
+ * @param {{score: number, best: number}} current - stars now, and the best so far
+ * @param {boolean} correct - was the guess right?
+ * @returns {{score: number, best: number, isNewBest: boolean}} the new score
+ */
+export function scoreAfter({ score, best }, correct) {
+  const newScore = correct ? score + 1 : 0;
+  return { score: newScore, best: Math.max(best, newScore), isNewBest: newScore > best };
+}
+
+/**
+ * Read a game's saved 🏆 best. Gives 0 if there isn't one, or if the
+ * browser won't let us look (some private modes block saving).
+ * @param {string} kind - 'note' or 'chord'
+ * @param {Storage} [storage] - where it's saved (tests pass a pretend one)
+ * @returns {number} the best score, or 0
+ */
+export function loadBest(kind, storage) {
+  try {
+    const saved = Number((storage ?? globalThis.localStorage).getItem(BEST_KEY + kind));
+    return Number.isInteger(saved) && saved > 0 ? saved : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Save a game's 🏆 best so it's still there next time. If the browser
+ * won't let us, the game just carries on without saving.
+ * @param {string} kind - 'note' or 'chord'
+ * @param {number} best - the score to save
+ * @param {Storage} [storage] - where to save it (tests pass a pretend one)
+ * @returns {void}
+ */
+export function saveBest(kind, best, storage) {
+  try {
+    (storage ?? globalThis.localStorage).setItem(BEST_KEY + kind, String(best));
+  } catch {
+    // Saving is blocked. That's OK: the best still shows until the page closes.
+  }
 }
 
 /**
