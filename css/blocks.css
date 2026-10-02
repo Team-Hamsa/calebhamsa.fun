@@ -396,6 +396,18 @@ main {
 .block.note.dim  { opacity: 0.3; }
 .block.note.glow { outline: 4px solid var(--gold); outline-offset: -4px; }
 
+/* CHORDS mode puts a crown on the chord's root (the note it's named after).
+   position: relative lets the crown sit on top of its own block. */
+.block.note { position: relative; }
+.block.note.root::before {
+  content: '👑';
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: clamp(14px, 3vw, 24px);
+}
+
 .octave-bar {
   display: flex;
   align-items: center;

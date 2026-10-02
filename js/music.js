@@ -12,7 +12,7 @@
  * questions. music.html calls initMusic() once, when the page loads.
  */
 import {
-  buildChord, buildScale, clampOctave, isBlackKey, isSameNote,
+  buildChord, buildScale, clampOctave, fitInOctave, isBlackKey, isSameNote,
   midiToFrequency, octaveStart, pitchClass, pitchName,
 } from './music-theory.js';
 import { choose, flash } from './ui.js';
@@ -40,6 +40,12 @@ const UNLOCK_EVENTS = ['pointerup', 'touchend', 'click', 'keydown'];
 
 /** How long a block stays lit after it plays, in milliseconds. */
 const LIGHT_MS = 300;
+
+/**
+ * How long the 👑 crown stays on a chord's root block, in milliseconds.
+ * It stays longer than the light so there's time to spot it.
+ */
+const ROOT_MS = 900;
 
 /**
  * Time between notes when playing a scale, in milliseconds.
@@ -99,6 +105,7 @@ const state = {
   recordStartedAt: 0,  // the clock time when recording began (milliseconds)
   recordedEvents: [],  // [{ time: ms after the start, notes: [midi, ...] }, ...]
   chordType: 'major',  // one of the CHORDS recipes in music-theory.js
+  fitChords: true,     // squeeze chords onto the 12 blocks (true) or stack them up high (false)
   scaleRoot: 0,        // the scale's key, as half steps above C (0 = C, 7 = G)
   scaleType: 'major',  // one of the SCALES recipes in music-theory.js
   guessKind: 'note',   // 'note' = "Which note?", 'chord' = "Major or minor?"
@@ -274,12 +281,29 @@ function setMode(mode) {
 function handleBlockTap(offset) {
   const midi = octaveStart(state.octave) + offset;
   if (state.mode === 'chords') {
-    playNotes(buildChord(midi, state.chordType)); // a whole chord built on this note
+    playChord(midi, offset);
   } else if (state.mode === 'guess') {
     handleGuessTap(midi);
   } else {
     playNotes([midi]); // NOTES and SCALES: just this one note
   }
+}
+
+/**
+ * CHORDS mode: play a whole chord built on the tapped note (the "root"),
+ * and put a 👑 on the root's block so you can always find it.
+ *
+ * A chord climbs up from its root, so roots high on the blocks (like F)
+ * run past the last block. With "fit on the blocks" ON, those notes hop
+ * down an octave so every note lights up (see fitInOctave).
+ * @param {number} rootMidi - the tapped note
+ * @param {number} offset - which block it is (0–11)
+ * @returns {void}
+ */
+function playChord(rootMidi, offset) {
+  const chord = buildChord(rootMidi, state.chordType);
+  playNotes(state.fitChords ? fitInOctave(chord, octaveStart(state.octave)) : chord);
+  flash(noteBlocks[offset], 'root', ROOT_MS);
 }
 
 /**
@@ -472,6 +496,13 @@ function setupChordsAndScales() {
       choose(chordButtons, button);
     });
   }
+
+  byId('fit-toggle').addEventListener('click', (event) => {
+    state.fitChords = !state.fitChords;
+    const button = event.currentTarget;
+    button.setAttribute('aria-pressed', String(state.fitChords));
+    button.textContent = state.fitChords ? '🙌 fit on the blocks' : '⬆ stack up high';
+  });
 
   const scaleButtons = [...document.querySelectorAll('[data-scale]')];
   for (const button of scaleButtons) {

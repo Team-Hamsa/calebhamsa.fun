@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import {
   A4_HZ, MIN_OCTAVE, MAX_OCTAVE, SCALES,
   midiToFrequency, pitchClass, octaveOf, octaveStart, pitchName, noteName,
-  isBlackKey, isSameNote, clampOctave, buildChord, buildScale,
+  isBlackKey, isSameNote, clampOctave, buildChord, buildScale, fitInOctave, CHORDS,
 } from '../js/music-theory.js';
 
 /**
@@ -129,4 +129,34 @@ test('a scale can climb past the top octave: B major from octave 6', () => {
   const notes = buildScale(octaveStart(6) + 11, 'major'); // B6 = 95
   assert.equal(notes.length, 8);
   assert.equal(notes[7], 107);
+});
+
+test('fitInOctave: a chord that already fits stays the same', () => {
+  assert.deepEqual(fitInOctave(buildChord(60, 'major'), 60), [60, 64, 67]); // C E G
+});
+
+test('fitInOctave: F major flips into "second inversion" C F A', () => {
+  // F A C, but that C is past the B at the end of the blocks...
+  const fitted = fitInOctave(buildChord(65, 'major'), 60);
+  assert.deepEqual(fitted, [60, 65, 69]); // ...so it hops down: C F A
+  assert.deepEqual(fitted.map((midi) => pitchName(midi)), ['C', 'F', 'A']);
+});
+
+test('fitInOctave: B 7th folds three of its four notes down', () => {
+  // B D♯ F♯ A  →  D♯ F♯ A B
+  assert.deepEqual(fitInOctave(buildChord(71, 'dom7'), 60), [63, 66, 69, 71]);
+});
+
+test('fitInOctave: every chord on every block fits and keeps its note names', () => {
+  for (const type of Object.keys(CHORDS)) {
+    for (let offset = 0; offset < 12; offset++) {
+      const chord = buildChord(60 + offset, type);
+      const fitted = fitInOctave(chord, 60);
+      assert.ok(fitted.every((midi) => midi >= 60 && midi < 72), `${type} on ${offset}`);
+      assert.deepEqual(
+        [...fitted.map(pitchClass)].sort((a, b) => a - b),
+        [...chord.map(pitchClass)].sort((a, b) => a - b),
+      );
+    }
+  }
 });

@@ -200,6 +200,29 @@ export function buildChord(rootMidi, type) {
 }
 
 /**
+ * Squeeze a chord into one octave so every note has a block on screen.
+ *
+ * Any note at or past the top of the octave hops down 12 half steps
+ * (one octave). It's still the same note name, just lower. Same notes,
+ * new order: musicians call that an "inversion".
+ *
+ *   F major:  F A C(up high)   →   C F A   (still an F chord!)
+ *
+ * Piano players do this all the time, so a chord fits under one hand.
+ * 🧪 Try this! Play C major, then F major (C F A), then G major (D G B).
+ *    Your fingers barely move: that's why songs love these three chords.
+ *
+ * @param {number[]} midis - the chord's MIDI numbers
+ * @param {number} firstMidi - the lowest note of the octave (its C)
+ * @returns {number[]} the same note names, all inside the octave, lowest first
+ */
+export function fitInOctave(midis, firstMidi) {
+  return midis
+    .map((midi) => firstMidi + pitchClass(midi - firstMidi))
+    .sort((a, b) => a - b);
+}
+
+/**
  * Build a scale: start on the root and climb one recipe step at a time,
  * ending on the root one octave up.
  *
