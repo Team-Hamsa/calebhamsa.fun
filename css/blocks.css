@@ -301,6 +301,12 @@ main {
   list-style: none;
 }
 
+/* Favorite things that are also toys are links: same text, dotted underline. */
+.favorites a {
+  color: inherit;
+  text-decoration: underline dotted;
+}
+
 /* The sky layer sits behind everything (z-index: -1) and holds the clouds. */
 .sky {
   position: fixed;

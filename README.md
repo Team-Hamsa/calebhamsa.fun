@@ -26,10 +26,17 @@ Then open <http://localhost:8000>. Change a file, save, and reload the page.
 | `index.html` | The homepage: title, three big blocks, favorite things |
 | `music.html` | The Note Blocks page layout |
 | `draw.html` | The Draw & Trace page layout |
+| `build.html` | The Build page layout |
 | `css/blocks.css` | How everything **looks**: colors, block buttons, animations |
 | `js/music-theory.js` | The music brain: notes as numbers, chords, scales (pure math) |
 | `js/music.js` | Makes Note Blocks work: sound, modes, record, Guess it! |
 | `js/sound.js` | The shared sound machine: voices and playing notes |
+| `js/build.js` | Makes the Build page work: tools, palette, clock, saving |
+| `js/world.js` | The block world: a grid of block names (pure) |
+| `js/blocks/basic.js` | ⛏️ Basic blocks: falling sand, singing note blocks |
+| `js/blocks/registry.js` | The list of block packs (add new packs here) |
+| `js/block-art.js` | Draws blocks pixel-art style |
+| `js/saves.js` | Keeps the three Build worlds saved |
 | `js/draw.js` | The drawing pad: brushes, colors, clear, save |
 | `js/trace.js` | Handwriting sheets: lines, print/cursive letters, fade-out rows |
 | `js/ui.js` | Little helpers every page shares (buttons, grid swipes, picture names) |
@@ -60,6 +67,7 @@ Search the code for `🧪 Try this!` to find them all. Some favorites:
 9. **Four fading copies:** in `js/trace.js`, set `FADE_OPACITIES` to `[0.6, 0.4, 0.2, 0.1]`.
 10. **New favorite thing:** add an `<li>` to the list in `index.html`.
 11. **Redraw the app icon:** change letters in `img/icon-pixels.txt` (try a different letter instead of the C), then run `node tools/make-icons.js`.
+12. **Slow-motion sand:** in `js/build.js`, set `TICKS_PER_SECOND` to 2.
 
 ## Using it like an app (offline)
 

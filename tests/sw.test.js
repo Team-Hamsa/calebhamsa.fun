@@ -9,7 +9,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const SITE = 'https://calebhamsa.fun';
@@ -84,7 +84,7 @@ test('missingFiles also works for whole addresses, like the font stylesheets', (
 test('the helper saves exactly the font stylesheets the pages use', () => {
   const { FONT_STYLESHEETS } = loadServiceWorker();
   const used = new Set();
-  for (const page of ['index.html', 'music.html', 'draw.html']) {
+  for (const page of ['index.html', 'music.html', 'draw.html', 'build.html']) {
     const html = readFileSync(new URL(`../${page}`, import.meta.url), 'utf8');
     for (const match of html.matchAll(/<link rel="stylesheet" href="(https:\/\/fonts\.googleapis\.com\/[^"]+)"/g)) used.add(match[1]);
   }
@@ -100,4 +100,14 @@ test('fontFilesIn finds the font files a Google Fonts stylesheet points to', () 
     'https://fonts.gstatic.com/s/andika/v1/a.woff2',
     'https://fonts.gstatic.com/s/andika/v1/b.woff2',
   ]);
+});
+
+test('every page and every js file is saved for offline use', () => {
+  const { PRECACHE } = loadServiceWorker();
+  const scripts = readdirSync(new URL('../js/', import.meta.url), { recursive: true })
+    .filter((name) => name.endsWith('.js'))
+    .map((name) => `./js/${name}`);
+  for (const path of [...scripts, './index.html', './music.html', './draw.html', './build.html']) {
+    assert.ok(PRECACHE.includes(path), `PRECACHE is missing ${path}`);
+  }
 });

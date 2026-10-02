@@ -89,3 +89,8 @@ test('the sharing picture exists and is 1200 × 630 (the size link previews expe
   assert.equal(png.readUInt32BE(16), 1200);
   assert.equal(png.readUInt32BE(20), 630);
 });
+
+test('the homepage links to the Build page (big block and favorite thing)', () => {
+  const links = [...read('index.html').matchAll(/href="build\.html"/g)];
+  assert.equal(links.length, 2);
+});
