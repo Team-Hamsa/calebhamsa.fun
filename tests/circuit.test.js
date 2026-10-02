@@ -195,3 +195,19 @@ test('equations with no single answer give null instead of a crash', () => {
   assert.equal(solveLinear([[0, 0], [0, 0]], [1, 1]), null);
   assert.deepEqual(solveLinear([[2, 0], [0, 4]], [2, 8]), [1, 2]);
 });
+
+test('a part with pushNow pushes as hard as it says (a turbine)', () => {
+  TEST_BLOCKS.turbine = { part: { resistance: 0.05, pushNow: (world) => world.turbinePush } };
+  LETTERS.T = 'turbine';
+  const world = worldFrom(['WWW', 'T.W', 'WLW']);
+  world.turbinePush = 1;
+  assert.ok(Math.abs(solveCircuit(world, blockInfo).cells.get(2 * 3 + 1).level - 1) < 0.02);
+  world.turbinePush = 0;
+  assert.equal(solveCircuit(world, blockInfo).cells.get(2 * 3 + 1).level, 0);
+});
+
+test('a pushing turbine wired straight back to itself sparks, like a battery', () => {
+  const world = worldFrom(['WW', 'TW', 'WW']);
+  world.turbinePush = 1;
+  assert.equal(solveCircuit(world, blockInfo).cells.get(1 * 2 + 0).spark, true);
+});

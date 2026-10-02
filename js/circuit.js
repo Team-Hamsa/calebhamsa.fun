@@ -13,7 +13,9 @@
  * it goes, and so how bright each lamp is.
  *
  * This file knows nothing about which blocks exist. It only reads the
- * fields blocks have: `conducts`, `part`, `partWhen`, `electric`.
+ * fields blocks have: `conducts`, `part`, `partWhen`, `electric`. A part
+ * pushes with `part.push` volts, or, if it has `part.pushNow`, with
+ * whatever that says right now (a turbine pushes harder with more steam).
  */
 import { getBlock, inBounds } from './world.js';
 
@@ -143,15 +145,29 @@ function halfResistance(point) {
 }
 
 /**
+ * How hard a part pushes right now, in volts: `pushNow` if it has one
+ * (a turbine), otherwise its fixed `push` (a battery), otherwise 0.
+ * @param {object|null} part - the part settings
+ * @param {object} world - the world
+ * @param {number} x - the part's column
+ * @param {number} y - the part's row
+ * @returns {number} the push
+ */
+export function partPush(part, world, x, y) {
+  if (!part) return 0;
+  return part.pushNow ? part.pushNow(world, x, y) : (part.push ?? 0);
+}
+
+/**
  * How hard a battery pushes current OUT through one of its sides:
  * half its push out of the + end, half pulled in at the − end.
- * Anything that isn't a battery pushes 0.
- * @param {{part: object|null, axis: string|null}} point - a point
+ * Anything that isn't pushing pushes 0.
+ * @param {{push: number, axis: string|null}} point - a point
  * @param {string} side - which side
  * @returns {number} the push out through that side
  */
 function pushOut(point, side) {
-  const push = point.part?.push ?? 0;
+  const push = point.push;
   if (!push) return 0;
   const plus = plusSide(point.axis);
   if (side === plus) return push / 2;
@@ -285,7 +301,7 @@ function shortedByShape(battery, point, points, touching, width) {
    */
   const plain = (index) => {
     const p = points.get(index);
-    return p.info.conducts || p.part.resistance <= SHORT_PATH_RESISTANCE || (p.part.push ?? 0) > 0;
+    return p.info.conducts || p.part.resistance <= SHORT_PATH_RESISTANCE || p.push !== 0;
   };
   if (!plain(plus) || !plain(minus)) return false;
   const seen = new Set([battery, plus]);
@@ -328,7 +344,9 @@ export function solveCircuit(world, blockInfo) {
       const axis = info.conducts ? null : partAxis(world, x, y, blockInfo);
       cells.set(index, { axis, faces: [], arms: {}, level: 0, spark: false });
       const part = activePart(info, world);
-      if (info.conducts || part) points.set(index, { x, y, info, part, axis, sides: sidesFor(info, axis) });
+      if (info.conducts || part) {
+        points.set(index, { x, y, info, part, axis, sides: sidesFor(info, axis), push: partPush(part, world, x, y) });
+      }
     }
   }
 
@@ -360,7 +378,7 @@ export function solveCircuit(world, blockInfo) {
 
   // Solve each separate circuit that has a battery in it.
   for (const members of groupsOf([...points.keys()], links)) {
-    if (!members.some((index) => points.get(index).part?.push)) continue;
+    if (!members.some((index) => points.get(index).push !== 0)) continue;
     const inside = new Set(members);
     const groupLinks = links.filter((link) => inside.has(link.a));
     const voltages = solveVoltages(members, groupLinks);
@@ -382,7 +400,7 @@ export function solveCircuit(world, blockInfo) {
     const cell = cells.get(index);
     const through = Math.max(0, ...point.sides.map((side) => Math.abs(cell.arms[side] ?? 0)));
     cell.level = Math.min(MAX_LEVEL, through / REFERENCE_CURRENT);
-    if (point.part.push && through > SHORT_CURRENT) {
+    if (point.push !== 0 && through > SHORT_CURRENT) {
       cell.spark = shortedByShape(index, point, points, touching, world.width);
     }
   }

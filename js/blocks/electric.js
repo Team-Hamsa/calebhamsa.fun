@@ -48,14 +48,24 @@ export function clickerOn(world) {
 
 /**
  * A short text that changes whenever the circuit could change: the
- * blocks, plus the clicker beat (only if there's a clicker). If it's the
- * same as last time, there's no need to do the math again.
+ * blocks, the clicker beat (only if there's a clicker), and how hard any
+ * changing pushers (turbines) push, rounded so tiny wobbles don't count.
+ * If it's the same as last time, there's no need to do the math again.
  * @param {{cells: string[], ticks: number}} world - the world
+ * @param {Function} blockInfo - looks up what a block name means
  * @returns {string} the key
  */
-export function circuitKey(world) {
+export function circuitKey(world, blockInfo) {
   const beat = world.cells.includes('clicker') ? String(clickerOn(world)) : '';
-  return `${world.cells.join(',')}|${beat}`;
+  const pushes = [];
+  world.cells.forEach((name, index) => {
+    const part = blockInfo(name)?.part;
+    if (part?.pushNow) {
+      const push = part.pushNow(world, index % world.width, Math.floor(index / world.width));
+      pushes.push(Math.round(push * 10) / 10);
+    }
+  });
+  return `${world.cells.join(',')}|${beat}|${pushes.join(',')}`;
 }
 
 /**
@@ -72,7 +82,7 @@ export function circuitKey(world) {
  */
 export function refreshElectric(world, blockInfo) {
   const old = world.signals.electric;
-  const key = circuitKey(world);
+  const key = circuitKey(world, blockInfo);
   if (old && old.key === key) return false;
 
   const { cells, flowing } = solveCircuit(world, blockInfo);

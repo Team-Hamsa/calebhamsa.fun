@@ -61,13 +61,13 @@ test('the clicker is on for CLICKER_TICKS ticks, then off for CLICKER_TICKS', ()
 
 test('the circuit key only changes with the beat when there is a clicker', () => {
   const plain = worldFrom(['WLW']);
-  const before = circuitKey(plain);
+  const before = circuitKey(plain, blockInfo);
   plain.ticks = CLICKER_TICKS;
-  assert.equal(circuitKey(plain), before);
+  assert.equal(circuitKey(plain, blockInfo), before);
   const ticking = worldFrom(['WKW']);
-  const onBeat = circuitKey(ticking);
+  const onBeat = circuitKey(ticking, blockInfo);
   ticking.ticks = CLICKER_TICKS;
-  assert.notEqual(circuitKey(ticking), onBeat);
+  assert.notEqual(circuitKey(ticking, blockInfo), onBeat);
 });
 
 test('the math only runs again when the circuit changes', () => {
