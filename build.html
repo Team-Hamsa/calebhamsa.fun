@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<!--
+  build.html: the Build page. A side-view world of blocks.
+
+  The world is drawn on one <canvas> by js/build.js. Below it: the three
+  tools (BUILD, DIG, USE), the 📷 and 🗑️ buttons, the palette tabs (one per
+  block pack), and the blocks in the chosen tab. The 🌍 world buttons
+  in the top bar switch between Caleb's three saved worlds.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Build · Caleb's Blocky World</title>
+  <!-- Icons: the browser tab, the iPad home screen, and old browsers.
+       All drawn from img/icon-pixels.txt by tools/make-icons.js. -->
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="img/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <!-- The app manifest lets the site be added to the home screen and open
+       full-screen like an app (see manifest.webmanifest). -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#7ec8ff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Caleb">
+  <meta name="description" content="Caleb's blocky corner of the internet: music blocks with chords and scales, drawing, and print and cursive handwriting practice.">
+  <!-- Sharing previews: the card that shows up when the link is texted or
+       posted. These must be full https:// addresses, not "img/...". -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Caleb's Blocky World">
+  <meta property="og:title" content="Build · Caleb's Blocky World">
+  <meta property="og:description" content="Caleb's blocky corner of the internet: music blocks with chords and scales, drawing, and print and cursive handwriting practice.">
+  <meta property="og:url" content="https://calebhamsa.fun/build.html">
+  <meta property="og:image" content="https://calebhamsa.fun/img/share-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="HI, I'M CALEB! with music, draw and write blocks on grass">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- crossorigin lets the offline helper (sw.js) save this, so the font works offline too. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" crossorigin>
+  <link rel="stylesheet" href="css/blocks.css">
+</head>
+<body class="build-page">
+  <header class="top-bar">
+    <a class="block home" href="index.html" aria-label="Home">🏠</a>
+    <!-- build.js fills this with the 🌍 1 / 2 / 3 world buttons. -->
+    <div class="toolbar" id="worlds" aria-label="Worlds"></div>
+    <p class="save-problem" id="save-problem" hidden>can't save here</p>
+  </header>
+
+  <main class="build-main">
+    <div class="world-frame" id="world-frame">
+      <canvas id="world" aria-label="Block world"></canvas>
+    </div>
+
+    <div class="toolbar">
+      <button class="block grass" data-tool="build" aria-pressed="true">🧱 BUILD</button>
+      <button class="block dirt" data-tool="dig" aria-pressed="false">⛏️ DIG</button>
+      <button class="block gold" data-tool="use" aria-pressed="false">✋ USE</button>
+      <button class="block" id="photo" aria-label="Save picture">📷</button>
+      <button class="block obsidian" id="new-world" aria-label="New world">🗑️</button>
+    </div>
+
+    <!-- build.js fills these: one tab per block pack, then that pack's blocks. -->
+    <div class="toolbar" id="tabs"></div>
+    <div class="toolbar palette" id="palette"></div>
+  </main>
+
+  <script type="module">
+    import { initBuild } from './js/build.js';
+    initBuild();
+    import { registerServiceWorker } from './js/pwa.js';
+    registerServiceWorker(); // the offline helper (see js/pwa.js)
+  </script>
+</body>
+</html>

@@ -538,7 +538,68 @@ main {
 
 
 /* -----------------------------------------------------------------
-   8. Animations
+   8. Build page
+   ----------------------------------------------------------------- */
+.build-page {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.build-main {
+  max-width: none;
+  min-height: 0;
+  gap: 8px;
+  padding: 8px 16px 16px;
+}
+
+/* The box the world sits in. build.js makes the canvas as big as fits. */
+.world-frame {
+  flex: 1;
+  min-height: 160px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  /* Same as the drawing pad: no "select text" magnifier on a long press. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* touch-action: none means a finger on the world builds, it doesn't
+   scroll or zoom the page. */
+#world {
+  display: block;
+  border: 6px solid var(--dirt); /* build.js knows this is 6px (WORLD_BORDER_PX) */
+  touch-action: none;
+}
+
+/* ✋ USE on a block that doesn't do anything: a little "nope" shake. */
+.world-frame.nope { animation: shake 400ms; }
+
+/* Palette blocks: the picture is drawn by block-art.js on a tiny canvas. */
+.palette .block { padding: 4px; }
+.palette canvas { display: block; width: 40px; height: 40px; }
+
+/* World buttons show a tiny picture of each world. */
+.world-button { padding: 4px; }
+.world-button img {
+  display: block;
+  width: 72px;
+  height: 42px;
+  image-rendering: pixelated; /* keep the little picture blocky, not blurry */
+}
+
+.save-problem {
+  margin: 0;
+  padding: 6px 10px;
+  background: #9e2420;
+  color: #fff;
+  font-size: 10px;
+}
+
+
+/* -----------------------------------------------------------------
+   9. Animations
    @keyframes describes a little movie: where things are at 0%, 50%, 100%...
    ----------------------------------------------------------------- */
 @keyframes bounce {
