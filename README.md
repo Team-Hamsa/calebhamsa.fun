@@ -1,8 +1,9 @@
 # calebhamsa.fun
 
 Caleb's blocky corner of the internet: 🎵 **Note Blocks** (notes, chords,
-scales and an ear-training game), 🎨 **Draw**, and ✍️ **Write** (print and
-cursive tracing).
+scales and an ear-training game), 🎨 **Draw**, ✍️ **Write** (print and
+cursive tracing), and ⛏️ **Build** (a block world with water, steam and
+electricity: see [the Build page blocks](#-the-build-page-blocks)).
 
 It's built with plain HTML, CSS and JavaScript (no frameworks, no build
 step), so every file can be opened, read, changed and tried.
@@ -23,7 +24,7 @@ Then open <http://localhost:8000>. Change a file, save, and reload the page.
 
 | File | What it does |
 |---|---|
-| `index.html` | The homepage: title, three big blocks, favorite things |
+| `index.html` | The homepage: title, four big blocks, favorite things |
 | `music.html` | The Note Blocks page layout |
 | `draw.html` | The Draw & Trace page layout |
 | `build.html` | The Build page layout |
@@ -55,6 +56,131 @@ Then open <http://localhost:8000>. Change a file, save, and reload the page.
 
 Every file starts with a comment explaining what it does, and every
 function has a comment saying what goes in and what comes out.
+
+## 🧱 The Build page blocks
+
+The Build page has three tools at the bottom:
+
+- **🧱 BUILD**: tap (or drag) to put the chosen block down.
+- **⛏️ DIG**: tap (or drag) to take blocks away. It scoops up water too.
+- **✋ USE**: tap a block to make it do its thing: a switch flips, a valve
+  opens, a note block sings.
+
+The blocks are on three tabs. Here's what every one of them is.
+
+### ⛏️ BLOCKS
+
+| | Block | What it does |
+|---|---|---|
+| ![Grass](docs/blocks/grass.png) | **Grass** | A plain building block, dirt with grass on top. |
+| ![Dirt](docs/blocks/dirt.png) | **Dirt** | A plain building block. |
+| ![Stone](docs/blocks/stone.png) | **Stone** | A plain building block. Holds water, so it's good for tanks. |
+| ![Wood](docs/blocks/wood.png) | **Wood** | A plain building block. Electricity can't go through it. |
+| ![Glass](docs/blocks/glass.png) | **Glass** | See-through. Build a glass tank to watch the water inside. |
+| ![Obsidian](docs/blocks/obsidian.png) | **Obsidian** | A plain dark building block. |
+| ![Gold](docs/blocks/gold.png) | **Gold** | A building block that **carries electricity**, like real gold. It can be used as wire. |
+| ![Sand](docs/blocks/sand.png) | **Sand** | **Falls** until it lands on something. It sinks through water (the water floats up and swaps places). |
+
+**Note blocks:**
+![C](docs/blocks/noteC.png) ![D](docs/blocks/noteD.png) ![E](docs/blocks/noteE.png) ![F](docs/blocks/noteF.png) ![G](docs/blocks/noteG.png) ![A](docs/blocks/noteA.png) ![B](docs/blocks/noteB.png)
+
+Each one sings its note when you tap it with ✋ USE. They're the same colors as
+the Note Blocks page. Put one in an electric loop and it sings by itself when
+the electricity starts flowing.
+
+### 💧 WATER
+
+Water and steam are real **amounts**: a cell can be full, half full, or
+nearly empty, and water never appears or disappears by itself.
+
+| | Block | What it does | ✋ USE |
+|---|---|---|---|
+| ![Water](docs/blocks/water.png) | **Water** | Not really a block: BUILD **pours** a cell full of water. It falls, spreads out and levels off. Deep water gets squished, so it pushes **up** through pipes and U-tubes. | — |
+| ![Steam](docs/blocks/steam.png) | **Steam** | Pours a cell full of steam. Steam is water's opposite: it **rises** and spreads out under ceilings. | — |
+| ![Pipe](docs/blocks/pipe.png) | **Pipe** | Carries water and steam. Pipes join up with the pipes next to them. The sides are sealed, and the **end** of a pipe is open, so water pours out of it. | — |
+| ![Valve](docs/blocks/valveOpen.png) | **Valve** | A pipe with a tap in it. Green = open, red = shut. ![Shut valve](docs/blocks/valveClosed.png) | open ↔ shut |
+| ![Faucet](docs/blocks/faucet.png) | **Faucet** | Drips water out of its bottom, forever. | — |
+| ![Drain](docs/blocks/drain.png) | **Drain** | Water that flows into it disappears. | — |
+| ![Burner](docs/blocks/burnerOn.png) | **Burner** | Boils the water just above it into steam. Off, it looks like this: ![Burner off](docs/blocks/burnerOff.png) | on ↔ off |
+| ![Chiller](docs/blocks/chiller.png) | **Chiller** | Very cold: steam touching it turns back into water (it "rains"). | — |
+| ![Turbine](docs/blocks/turbine.png) | **Turbine** | A fan inside a pipe. Steam rushing through it spins it, and that makes **electricity**: wire it up like a battery. More steam = more power. | — |
+| ![Pump](docs/blocks/pumpRight.png) | **Pump** | Uses **electricity** to push water the way its arrow points, even uphill. Wire it into a loop with a battery (wires on the sides the pipe isn't on). The arrow glows when it has power. ![Pump pointing up](docs/blocks/pumpUp.png) | turns: → ↓ ← ↑ |
+
+### ⚡ POWER
+
+Electricity only flows around a complete **loop**: out of the battery's
+**+** end, along wires and through things, and back into its other end.
+While it flows, little yellow **dots** run along the wires, so you can see it go.
+
+| | Block | What it does | ✋ USE |
+|---|---|---|---|
+| ![Battery](docs/blocks/battery.png) | **Battery** | Pushes electricity out of its **+** end. The + is on top (or on the right, when wires come from the sides). Two batteries in a row push twice as hard. | — |
+| ![Wire](docs/blocks/wire.png) | **Wire** | Carries electricity. It joins every wire, gold block and part next to it. | — |
+| ![Switch](docs/blocks/switchOpen.png) | **Switch** | A gap in the loop that you can close. Open (tipped up) = no electricity. Closed (flat) = it flows. ![Closed switch](docs/blocks/switchClosed.png) | open ↔ closed |
+| ![Lamp](docs/blocks/lamp.png) | **Lamp** | Lights up when electricity flows through it: brighter with more. Lit: ![Lit lamp](docs/blocks/lamp-lit.png) | — |
+| ![Buzzer](docs/blocks/buzzer.png) | **Buzzer** | Hums while electricity flows through it: louder with more. | — |
+| ![Clicker](docs/blocks/clicker.png) | **Clicker** | A switch that flips itself: on for one second, off for one second. Put note blocks in its loop for music. | — |
+
+**Parts turn to face their wires.** A lamp, switch, buzzer or battery with
+wires on its left and right connects sideways; with wires above and below, it
+connects up and down. The little gray metal ends show which way it's facing.
+
+**Short circuit!** If a battery's + end is wired straight back to its other
+end with nothing in between, it **sparks and smokes** (![Sparking battery](docs/blocks/battery-spark.png)). Real
+batteries get dangerously hot when you do that, so never try it with a real
+one. Nothing breaks here: fix the wiring and it stops.
+
+### 🛠️ Machines to build
+
+Each picture was taken from the real game. Build it, then watch.
+
+**Light a lamp.** One battery, some wire, one lamp, all in a loop. Then take
+one wire away: the lamp goes dark, because the loop is broken.
+
+![A battery and lamp in a loop](docs/machines/lamp-loop.png)
+
+**Sharing electricity.** Two lamps in a row (left) share the push, so both are
+dimmer. Two lamps side by side (right) each get their own path, so both shine bright.
+
+![Two lamps in series and two in parallel](docs/machines/series-parallel.png)
+
+**Short circuit.** A battery with only wire around it. See the sparks?
+
+![A shorted battery sparking](docs/machines/short-circuit.png)
+
+**Music machine.** A battery, a clicker (top) and a note block (bottom) in a
+loop. Every time the clicker clicks on, the note sings. Add more note blocks
+in other loops on the same clicker for a tune.
+
+![A clicker and a note block in a loop](docs/machines/music-machine.png)
+
+**U-tube.** Build a U out of glass and pour water into one side. Squished
+water pushes up the other side until both sides are the same height.
+
+![Water level in both sides of a glass U-tube](docs/machines/u-tube.png)
+
+**Water tower.** A tall tank with a pipe from its bottom. The water climbs the
+pipe and pours out of the end, because the end is lower than the water in the
+tank. (Make the pipe go higher than the water, and nothing comes out.)
+
+![A water tower pushing water out of a low pipe](docs/machines/water-tower.png)
+
+**Steam power plant.** Water in a pot on a **burner**, a **turbine** above it,
+and wires from the turbine's sides to a lamp. The burner boils the water, the
+steam rushes up through the turbine, and the turbine makes electricity. The
+**chiller** turns the steam back into water. That's how real power plants work!
+
+![Burner, turbine, chiller and a lit lamp](docs/machines/power-plant.png)
+
+**Pump water uphill.** A pump (arrow pointing up) with water under it and a
+battery loop on its sides. The pump pushes the water up, against gravity.
+
+![A battery-powered pump lifting water](docs/machines/pump-uphill.png)
+
+**Sand sinks.** Drop sand onto water. The sand sinks and the water floats up
+in its place.
+
+![Sand sinking through water in a glass tank](docs/machines/sand-in-water.png)
 
 ## 🧪 Experiments to try
 
@@ -116,6 +242,10 @@ extra sky around it, so phones can cut it into a circle).
   npx playwright install chromium
   node tools/make-share-card.cjs
   ```
+- **Build page block and machine pictures** (`docs/blocks/`, `docs/machines/`):
+  same Playwright setup, then `node tools/make-block-pictures.cjs`. Run it
+  after changing how a block looks, or after adding a block (a test checks
+  that every palette block has a picture in this README).
 
 ## Checklist for a real tablet or phone
 

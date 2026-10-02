@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<!--
+  tools/block-pictures.html: a drawing page for tools/make-block-pictures.cjs.
+  It is NOT part of the website.
+
+  It loads the Build page's own drawing code and engine, so the pictures
+  in the README always look exactly like the game. The tool calls the
+  two functions below from a real browser and saves what they draw.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Block pictures (tool)</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
+</head>
+<body>
+  <script type="module">
+    import { createWorld, setBlock, setFluid, tick } from '../js/world.js';
+    import { AIR_INFO, allSystems, blockInfo, drawLayers, refreshSignals } from '../js/blocks/registry.js';
+    import { drawCell, drawWorld } from '../js/block-art.js';
+
+    /**
+     * Draw one block, the way the palette shows it, and hand back a PNG.
+     * @param {string} name - the block's name
+     * @param {number} size - how big, in pixels
+     * @param {object|undefined} cell - pretend signals (e.g. a lit lamp), or undefined
+     * @returns {string} a data: URL of the PNG
+     */
+    function blockPicture(name, size, cell) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = AIR_INFO.color; // sky behind see-through and bare blocks
+      ctx.fillRect(0, 0, size, size);
+      drawCell(ctx, blockInfo(name), 0, 0, size, cell, 0);
+      return canvas.toDataURL('image/png');
+    }
+
+    /**
+     * Build a little world from a picture made of letters, run it for a
+     * while (so water settles and lamps light), then draw it.
+     * @param {{rows: string[], letters: object, ticks: number}} scene - the scene
+     * @param {number} cell - how big each block is, in pixels
+     * @returns {string} a data: URL of the PNG
+     */
+    function scenePicture(scene, cell) {
+      const world = createWorld(scene.rows[0].length, scene.rows.length);
+      scene.rows.forEach((row, y) => [...row].forEach((letter, x) => {
+        const [name, fluid] = scene.letters[letter] ?? ['air'];
+        setBlock(world, x, y, name);
+        if (fluid) setFluid(world, fluid, x, y, 1);
+      }));
+      const systems = allSystems();
+      for (let i = 0; i < scene.ticks; i++) tick(world, systems, blockInfo);
+      refreshSignals(world);
+      const canvas = document.createElement('canvas');
+      canvas.width = world.width * cell;
+      canvas.height = world.height * cell;
+      const ctx = canvas.getContext('2d');
+      drawWorld(ctx, world, cell, blockInfo, AIR_INFO.color);
+      drawLayers(ctx, world, cell);
+      return canvas.toDataURL('image/png');
+    }
+
+    window.blockPicture = blockPicture;
+    window.scenePicture = scenePicture;
+    window.ready = document.fonts.ready.then(() => true);
+  </script>
+</body>
+</html>
