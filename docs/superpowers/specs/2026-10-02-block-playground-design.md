@@ -214,10 +214,10 @@ Each pack file default-exports:
 ## Roadmap (separate specs, not in this phase)
 
 1. ⛏️ **Engine + basic blocks:** this spec (#1)
-2. ⚡ **Electrical:** battery, wire, switch, lamp; wired note blocks → music machine
-3. 💧 **Fluids:** water, pipes, valve, heater/chiller, steam, turbine (makes ⚡)
-4. ⚙️ **Mechanical:** gears, axles, pulleys, water wheel (🔄 spin ↔ ⚡)
-5. 🧪 **Chemistry room:** atoms, bonds, molecules, unlockable elements
+2. ⚡ **Electrical:** battery, wire, switch, lamp; wired note blocks → music machine (#3)
+3. 💧 **Fluids:** water, pipes, valve, heater/chiller, steam, turbine (makes ⚡) (#4)
+4. ⚙️ **Mechanical:** gears, axles, pulleys, water wheel (🔄 spin ↔ ⚡) (#5)
+5. 🧪 **Chemistry room:** atoms, bonds, molecules, unlockable elements (#6)
 
 ## Out of scope for Phase 1
 
