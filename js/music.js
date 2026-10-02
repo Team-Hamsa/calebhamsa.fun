@@ -11,7 +11,10 @@
  * All the music *math* lives in music-theory.js; this file just asks it
  * questions. music.html calls initMusic() once, when the page loads.
  */
-import { clampOctave, isBlackKey, midiToFrequency, octaveStart, pitchName } from './music-theory.js';
+import {
+  buildChord, buildScale, clampOctave, isBlackKey, isSameNote,
+  midiToFrequency, octaveStart, pitchClass, pitchName,
+} from './music-theory.js';
 import { choose, flash } from './ui.js';
 
 // =============================================================
@@ -34,6 +37,18 @@ const ATTACK_SECONDS = 0.01;
 
 /** How long a block stays lit after it plays, in milliseconds. */
 const LIGHT_MS = 300;
+
+/**
+ * Time between notes when playing a scale, in milliseconds.
+ * 🧪 Try this! 150 to zoom up the stairs, 800 to climb slowly.
+ */
+const SCALE_STEP_MS = 350;
+
+/** Time between notes in the "you got it!" celebration, in milliseconds. */
+const ARPEGGIO_MS = 120;
+
+/** After a wrong guess, wait this long, then play the mystery again. */
+const REPLAY_DELAY_MS = 700;
 
 /**
  * The three voices. `wave` is the shape of the sound wave:
@@ -80,6 +95,12 @@ const state = {
   isRecording: false,
   recordStartedAt: 0,  // the clock time when recording began (milliseconds)
   recordedEvents: [],  // [{ time: ms after the start, notes: [midi, ...] }, ...]
+  chordType: 'major',  // one of the CHORDS recipes in music-theory.js
+  scaleRoot: 0,        // the scale's key, as half steps above C (0 = C, 7 = G)
+  scaleType: 'major',  // one of the SCALES recipes in music-theory.js
+  guessKind: 'note',   // 'note' = "Which note?", 'chord' = "Major or minor?"
+  mystery: null,       // the puzzle being guessed: { kind, notes, answer }, or null
+  score: 0,
 };
 
 /** The 12 block buttons. Position = half steps above C. Filled by buildKeyboard(). */
@@ -90,6 +111,12 @@ let modeButtons = [];
 
 /** Timers for notes waiting to be played back, so we can cancel them. */
 let playbackTimers = [];
+
+/** Timers for the notes of a scale being played, so we can cancel them. */
+let scaleTimers = [];
+
+/** The "which note?" / "major or minor?" buttons. Filled by setupGuessIt(). */
+let guessKindButtons = [];
 
 /** The browser's sound machine. Made on the first tap (see getAudio). */
 let audioContext = null;
@@ -138,6 +165,9 @@ export function initMusic() {
   byId('record').addEventListener('click', toggleRecording);
   byId('play-back').addEventListener('click', playBack);
 
+  setupChordsAndScales();
+  setupGuessIt();
+
   document.addEventListener('keydown', handleKeyDown);
 }
 
@@ -182,6 +212,7 @@ function updateLabels() {
     block.textContent = pitchName(offset, { useFlats: state.useFlats });
   });
   byId('flats-toggle').textContent = state.useFlats ? '♭ names' : '♯ names';
+  fillScaleRootOptions(); // the Key list uses the same names
 }
 
 /**
@@ -220,16 +251,24 @@ function setMode(mode) {
   for (const panel of document.querySelectorAll('[data-panel]')) {
     panel.hidden = panel.dataset.panel !== mode;
   }
+  updateScaleGlow(); // glow in SCALES mode, normal blocks everywhere else
 }
 
 /**
  * Someone tapped a block (or pressed its computer key).
+ * What happens depends on the mode.
  * @param {number} offset - which block: half steps above C (0–11)
  * @returns {void}
  */
 function handleBlockTap(offset) {
   const midi = octaveStart(state.octave) + offset;
-  playNotes([midi]);
+  if (state.mode === 'chords') {
+    playNotes(buildChord(midi, state.chordType)); // a whole chord built on this note
+  } else if (state.mode === 'guess') {
+    handleGuessTap(midi);
+  } else {
+    playNotes([midi]); // NOTES and SCALES: just this one note
+  }
 }
 
 /**
@@ -386,4 +425,234 @@ function playBack() {
 function cancelTimers(timers) {
   for (const timer of timers) clearTimeout(timer);
   timers.length = 0;
+}
+
+// =============================================================
+// CHORDS and SCALES modes
+// =============================================================
+
+/**
+ * Connect the chord-type buttons, scale buttons and the Key list.
+ * @returns {void}
+ */
+function setupChordsAndScales() {
+  const chordButtons = [...document.querySelectorAll('[data-chord]')];
+  for (const button of chordButtons) {
+    button.addEventListener('click', () => {
+      state.chordType = button.dataset.chord;
+      choose(chordButtons, button);
+    });
+  }
+
+  const scaleButtons = [...document.querySelectorAll('[data-scale]')];
+  for (const button of scaleButtons) {
+    button.addEventListener('click', () => {
+      state.scaleType = button.dataset.scale;
+      choose(scaleButtons, button);
+      updateScaleGlow();
+    });
+  }
+
+  fillScaleRootOptions();
+  byId('scale-root').addEventListener('change', (event) => {
+    state.scaleRoot = Number(event.target.value);
+    updateScaleGlow();
+  });
+  byId('play-scale').addEventListener('click', playScale);
+}
+
+/**
+ * Fill the Key drop-down with the 12 note names (sharps or flats).
+ * @returns {void}
+ */
+function fillScaleRootOptions() {
+  const select = byId('scale-root');
+  select.replaceChildren(); // empty it first
+  for (let pc = 0; pc < 12; pc++) {
+    const option = document.createElement('option');
+    option.value = String(pc);
+    option.textContent = pitchName(pc, { useFlats: state.useFlats });
+    select.append(option);
+  }
+  select.value = String(state.scaleRoot);
+}
+
+/**
+ * In SCALES mode, make the blocks in the scale glow and dim the rest.
+ * In any other mode, put every block back to normal.
+ *
+ * We compare pitch classes (note names), so the glow is right in every octave.
+ * @returns {void}
+ */
+function updateScaleGlow() {
+  const inScale = state.mode === 'scales'
+    ? new Set(buildScale(state.scaleRoot, state.scaleType).map(pitchClass))
+    : null;
+  noteBlocks.forEach((block, pc) => {
+    block.classList.toggle('glow', inScale !== null && inScale.has(pc));
+    block.classList.toggle('dim', inScale !== null && !inScale.has(pc));
+  });
+}
+
+/**
+ * Walk up the chosen scale one note at a time, root to root.
+ * @returns {void}
+ */
+function playScale() {
+  cancelTimers(scaleTimers); // pressing it again starts over
+  const notes = buildScale(octaveStart(state.octave) + state.scaleRoot, state.scaleType);
+  scaleTimers = notes.map((midi, step) =>
+    setTimeout(() => playNotes([midi]), step * SCALE_STEP_MS));
+}
+
+/**
+ * Play notes one after another, quickly (an "arpeggio": a chord played
+ * one note at a time).
+ * @param {number[]} midis - the notes, lowest first
+ * @returns {void}
+ */
+function arpeggio(midis) {
+  midis.forEach((midi, step) => {
+    setTimeout(() => playNotes([midi]), step * ARPEGGIO_MS);
+  });
+}
+
+// =============================================================
+// GUESS IT! mode (ear training)
+// =============================================================
+
+/**
+ * Connect the GUESS IT! buttons.
+ * @returns {void}
+ */
+function setupGuessIt() {
+  guessKindButtons = [...document.querySelectorAll('[data-guess-kind]')];
+  for (const button of guessKindButtons) {
+    button.addEventListener('click', () => setGuessKind(button.dataset.guessKind));
+  }
+  byId('new-mystery').addEventListener('click', newMystery);
+  byId('hear-again').addEventListener('click', hearAgain);
+  for (const button of document.querySelectorAll('[data-answer]')) {
+    button.addEventListener('click', () => handleChordAnswer(button.dataset.answer));
+  }
+}
+
+/**
+ * Choose which game to play: "Which note?" or "Major or minor?".
+ * @param {string} kind - 'note' or 'chord'
+ * @returns {void}
+ */
+function setGuessKind(kind) {
+  state.guessKind = kind;
+  state.mystery = null;
+  choose(guessKindButtons, guessKindButtons.find((button) => button.dataset.guessKind === kind));
+  byId('chord-answers').hidden = kind !== 'chord'; // answer buttons only for chords
+  say('Tap ▶ NEW MYSTERY!');
+}
+
+/**
+ * Pick a random mystery and play it, without lighting any blocks
+ * (that would give the answer away!).
+ * @returns {void}
+ */
+function newMystery() {
+  const root = octaveStart(state.octave) + randomInt(12);
+  if (state.guessKind === 'note') {
+    state.mystery = { kind: 'note', notes: [root], answer: root };
+    say('Which note is it? 👂');
+  } else {
+    const quality = randomInt(2) === 0 ? 'major' : 'minor';
+    state.mystery = { kind: 'chord', notes: buildChord(root, quality), answer: quality };
+    say('Major 😊 or minor 😢?');
+  }
+  soundNotes(state.mystery.notes);
+}
+
+/**
+ * Play the mystery again, or start one if there isn't one yet.
+ * @returns {void}
+ */
+function hearAgain() {
+  if (state.mystery) soundNotes(state.mystery.notes);
+  else newMystery();
+}
+
+/**
+ * A block was tapped during GUESS IT!. It always plays its note, so Caleb
+ * can explore. In a "Which note?" round, it's also his answer.
+ * @param {number} midi - the tapped note
+ * @returns {void}
+ */
+function handleGuessTap(midi) {
+  playNotes([midi]);
+  if (state.mystery?.kind !== 'note') return; // no note puzzle right now
+  // isSameNote ignores the octave, so C counts as C even after ◀ or ▶.
+  if (isSameNote(midi, state.mystery.answer)) {
+    celebrate(pitchName(state.mystery.answer, { useFlats: state.useFlats }));
+  } else {
+    tryAgain();
+  }
+}
+
+/**
+ * The 😊 major or 😢 minor button was tapped.
+ * @param {string} answer - 'major' or 'minor'
+ * @returns {void}
+ */
+function handleChordAnswer(answer) {
+  if (state.mystery?.kind !== 'chord') return;
+  if (answer === state.mystery.answer) {
+    const rootName = pitchName(state.mystery.notes[0], { useFlats: state.useFlats });
+    celebrate(`${rootName} ${answer}`);
+  } else {
+    tryAgain();
+  }
+}
+
+/**
+ * Right answer! Add a star, cheer, and play a happy run of notes.
+ * @param {string} name - what the mystery was, e.g. "F♯" or "C minor"
+ * @returns {void}
+ */
+function celebrate(name) {
+  state.score += 1;
+  byId('score').textContent = `⭐ ${state.score}`;
+  say(`🎉 YES! It was ${name}!`);
+  flash(byId('guess-message'), 'cheer', 700);
+
+  // A happy major arpeggio on the mystery's root, plus the root an octave up.
+  const root = state.mystery.notes[0];
+  arpeggio([...buildChord(root, 'major'), root + 12]);
+  state.mystery = null; // solved, so the next tap won't count again
+}
+
+/**
+ * Wrong answer: encourage, then play the mystery again so he can listen.
+ * @returns {void}
+ */
+function tryAgain() {
+  say('Hmm, try again! 👂');
+  const mystery = state.mystery;
+  setTimeout(() => {
+    // Only replay if it's still the same puzzle (he might have started a new one).
+    if (state.mystery === mystery) soundNotes(mystery.notes);
+  }, REPLAY_DELAY_MS);
+}
+
+/**
+ * Show a message under the GUESS IT! buttons.
+ * @param {string} text - what to say
+ * @returns {void}
+ */
+function say(text) {
+  byId('guess-message').textContent = text;
+}
+
+/**
+ * A random whole number from 0 up to (but not including) n.
+ * @param {number} n - how many possibilities
+ * @returns {number} 0, 1, ... n−1
+ */
+function randomInt(n) {
+  return Math.floor(Math.random() * n);
 }
