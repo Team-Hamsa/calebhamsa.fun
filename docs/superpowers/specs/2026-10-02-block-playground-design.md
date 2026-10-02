@@ -19,7 +19,7 @@ the basic ⛏️ blocks. Later phases each get their own spec.
 
 1. Caleb can build, dig, and play note blocks by himself on an iPad: big targets, no reading needed.
 2. Sand visibly falls, which proves the tick loop that later packs (water, power, gears) depend on.
-3. His builds survive closing the iPad (autosave), and he can keep 3 favorites in save slots.
+3. His builds survive closing the iPad (autosave), and he has 3 separate worlds to switch between.
 4. A later pack (e.g. electrical) can be added by writing one new pack file and registering it. No changes to `world.js`.
 5. The project conventions hold: vanilla JS, heavy comments, JSDoc on every function, pure logic covered by `npm test`, works offline.
 
@@ -30,7 +30,7 @@ the basic ⛏️ blocks. Later phases each get their own spec.
 | View | Side view with gravity (like Minecraft), not top-down |
 | Sections | One shared world, with palette tabs per section (chemistry is a separate room later) |
 | World size | One screen, 24 × 14, no scrolling |
-| Saving | Autosave + 3 save slots with thumbnails + 🗑️ new world + 📷 save picture |
+| Saving | 3 worlds, each autosaving, shown as thumbnails + 🗑️ new world + 📷 save picture (revised at planning: see Saving) |
 | Basic blocks | Plain blocks float; **sand falls**; **note blocks sing** |
 | Interaction | Three tools: 🧱 Build, ⛏️ Dig, ✋ Use |
 | Engine | Canvas rendering + block packs + whole-world systems (approach A) |
@@ -47,15 +47,15 @@ the basic ⛏️ blocks. Later phases each get their own spec.
 ### Files
 
 ```
-build.html              the page: canvas, toolbar, tabs, palette, slots
+build.html              the page: canvas, toolbar, tabs, palette, world picker
 js/world.js     (pure)  the grid: get/set, inBounds, neighbors, tick(), defaultWorld()
 js/blocks/registry.js   list of packs (in tick order) + shared signal names
 js/blocks/basic.js      ⛏️ pack: grass, dirt, stone, wood, glass, obsidian,
                         gold, sand (falls), note blocks C D E F G A B
-js/saves.js     (pure)  serialize/deserialize + autosave/slot storage
+js/saves.js     (pure)  serialize/deserialize + per-world storage
 js/sound.js             shared audio, moved out of music.js
 js/build.js             the screen: drawing, pointer, tools, tabs, tick timer,
-                        autosave timing, slots, 📷
+                        autosave timing, world picker, 📷
 ```
 
 ### world.js (pure, never changes when packs are added)
@@ -139,10 +139,11 @@ Each pack file default-exports:
   - Note blocks play their note (C4–B4) and flash.
 - **Selecting a palette block** switches to 🧱 Build automatically.
 - **One finger only:** only the first active pointer paints; extra touches are ignored (resting palms).
-- **💾 Slots:**
-  - An empty slot saves the current world into it.
-  - A filled slot shows a thumbnail. Tapping it asks "swap worlds?", autosaves the current world, then loads the slot.
-  - A small ✕ on a filled slot clears it after "are you sure?".
+- **🌍 Worlds 1–3:**
+  - The header shows three world buttons, each with a thumbnail of that world; the current one is pressed.
+  - Every change autosaves into the **current** world. Tapping another world saves the current one, then switches (an empty world starts as `defaultWorld()`).
+  - Nothing is ever overwritten by switching, so no "are you sure?" is needed. 🗑️ is the only way to lose a build.
+  - *Revised during planning:* the original "autosave + 3 slots" let loading a slot overwrite the autosave, which could lose the unsaved build.
 - **📷:** saves a `caleb-build-YYYY-MM-DD.png` of the canvas, the same way as the Draw page (`filenameForDate`-style helper).
 - **🗑️ New world:** after "are you sure?", resets to `defaultWorld()`.
 - **Homepage:**
@@ -161,7 +162,7 @@ Each pack file default-exports:
 ```
 
 - `blocks` is a per-save list of names. `cells` stores indexes into it, which keeps a world to a few KB.
-- **Storage keys:** `build-autosave`, `build-slot-1` … `build-slot-3`. Each slot also stores a thumbnail data URL (about 96×56).
+- **Storage keys:** `calebhamsa.build.world.1` … `.3` (the world), `calebhamsa.build.world.N.thumb` (thumbnail data URL, 96×56), `calebhamsa.build.current` (which world is open). The `calebhamsa.` prefix matches the existing keys.
 - **Storage access:** every storage call takes a `storage` argument, so tests pass a fake (same pattern as `loadBest`/`saveBest` in `music.js`).
 - **Autosave timing:** 🧪 1 second after the last change (debounced), and on `pagehide` / `visibilitychange` to hidden.
 
@@ -200,7 +201,7 @@ Each pack file default-exports:
   - size mismatch (bottom-left alignment)
   - future version
   - storage that throws
-  - slot save/load/clear
+  - world save/load, thumbnails, current-world choice (invalid values fall back to 1)
 - **Updated:**
   - `modules.test.js` (new modules)
   - `pages.test.js` (`build.html`, homepage link and button)
@@ -208,7 +209,7 @@ Each pack file default-exports:
   - existing music/keyboard tests stay green after the `sound.js` move
 - **Real-browser check:**
   - Headless Playwright (borrowed from `~/LFG/scripts/share_card/node_modules`).
-  - Load `build.html`, place, drag-paint, dig, drop sand and watch it land, reload, and confirm autosave restored it.
+  - Load `build.html`, place, drag-paint, dig, drop sand and watch it land, reload, and confirm autosave restored it; switch worlds and back.
   - Take a screenshot to review.
 
 ## Roadmap (separate specs, not in this phase)
