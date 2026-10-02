@@ -16,6 +16,7 @@
  * draw.html calls initDraw() once, when the page loads.
  */
 import { choose, flash } from './ui.js';
+import { createTraceSettings, drawGuides, setupTraceControls, waitForFonts } from './trace.js';
 
 // =============================================================
 // Settings to play with
@@ -85,6 +86,9 @@ let cssHeight = 0;
 let modeButtons = [];
 let brushButtons = [];
 
+/** The tracing worksheet settings, shared with trace.js. */
+let traceSettings = null;
+
 /**
  * Shortcut for finding an element by its id="...".
  * @param {string} id - the element's id
@@ -147,9 +151,9 @@ export function filenameForDate(date) {
 
 /**
  * Set up the whole page. draw.html calls this once.
- * @returns {void}
+ * @returns {Promise<void>} finishes once the handwriting fonts are ready
  */
-export function initDraw() {
+export async function initDraw() {
   guideCanvas = byId('guide');
   inkCanvas = byId('ink');
   guideCtx = guideCanvas.getContext('2d');
@@ -162,6 +166,13 @@ export function initDraw() {
   byId('save').addEventListener('click', saveDrawing);
   setupPointer();
 
+  // Any change to the worksheet gives a fresh sheet: clear the ink, redraw the guide.
+  traceSettings = createTraceSettings();
+  setupTraceControls(traceSettings, () => {
+    clearInk();
+    redrawGuides();
+  });
+
   // Keep the canvases the same size as their box, even when the window
   // changes size or a tablet turns sideways. A ResizeObserver calls
   // resizeCanvases() once right away, then after every size change.
@@ -169,6 +180,11 @@ export function initDraw() {
 
   const startMode = new URLSearchParams(window.location.search).get('mode') === 'trace' ? 'trace' : 'draw';
   setMode(startMode);
+
+  // The handwriting fonts may still be downloading. Draw the guides again
+  // once they arrive (see waitForFonts in trace.js).
+  await waitForFonts();
+  redrawGuides();
 }
 
 /**
@@ -247,7 +263,7 @@ function setupModes() {
 }
 
 /**
- * Switch between DRAW and TRACE.
+ * Switch between DRAW and TRACE. Going into TRACE starts a fresh sheet.
  * @param {string} mode - 'draw' or 'trace'
  * @returns {void}
  */
@@ -255,6 +271,8 @@ function setMode(mode) {
   state.mode = mode;
   choose(modeButtons, modeButtons.find((button) => button.dataset.mode === mode));
   byId('trace-tools').hidden = mode !== 'trace';
+  if (mode === 'trace') clearInk();
+  redrawGuides();
 }
 
 // =============================================================
@@ -296,6 +314,9 @@ function resizeCanvases() {
 
   // ...then paste it back in, the same size as before.
   if (oldWidth > 0 && oldHeight > 0) inkCtx.drawImage(copy, 0, 0, oldWidth, oldHeight);
+
+  // The guide is simply drawn again to fit the new size.
+  redrawGuides();
 }
 
 // =============================================================
@@ -422,6 +443,16 @@ function clearCanvas(context) {
  */
 function clearInk() {
   clearCanvas(inkCtx);
+}
+
+/**
+ * Draw the guide sheet again: practice letters in TRACE mode, blank in DRAW mode.
+ * @returns {void}
+ */
+function redrawGuides() {
+  clearCanvas(guideCtx);
+  if (state.mode !== 'trace' || cssWidth === 0) return; // not tracing, or not sized yet
+  drawGuides(guideCtx, cssWidth, cssHeight, traceSettings);
 }
 
 /**
