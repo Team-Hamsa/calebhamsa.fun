@@ -84,7 +84,9 @@ Every block not listed is an insulator.
 - **`use(ctx)` now returns a boolean**, "did I change the world?". `build.js` calls `worldChanged()` when it's true, so a flipped switch is saved. Note blocks return false.
 
 ### Packs
-`PACKS = [basic, electric]`: the electric system runs after falling blocks.
+`PACKS = [basic, electric]`: the electric system runs after falling blocks. The ⚡ tab is labeled **POWER**.
+
+A pack may also export `refresh(world, blockInfo)`. `registry.refreshSignals(world)` runs every pack's `refresh`, and `build.js` calls it at the start of `draw()`, so signals are never stale between ticks (for example, right after a wire is placed). The electric `refresh` re-solves only when the circuit key changed. *(Added while planning.)*
 
 ### Sound (js/sound.js)
 `setHum(level)` keeps one shared buzzer tone (🧪 square wave, about 220 Hz):
@@ -136,7 +138,11 @@ Each connection is a resistor:
   - `level`: for a part, |current through it| ÷ `REFERENCE_CURRENT`, capped at 2
   - `spark` (battery only)
 - **`REFERENCE_CURRENT`** = `1 / (1 + 0.05)`, the current of one lamp on one battery, so that lamp shows level 1.
-- **Short circuit (by shape):** a battery is shorted if its + neighbor and − neighbor are linked by a path that uses only conductors and closed switches or on-beat clickers. That marks `spark: true`. The solver still runs, so the short naturally steals current from anything in parallel.
+- **Short circuit:** a battery sparks (`spark: true`) when both of these are true:
+  - **By shape:** its + neighbor and − neighbor are linked by a path of only plain-wire points: conductors, parts with resistance ≤ 0.01 (closed switches, on-beat clickers), and other batteries.
+  - **By current:** more than 2 × `REFERENCE_CURRENT` flows through it.
+
+  So two batteries wired straight to each other spark, but two batteries pushing against each other (no current) don't. The solver still runs, so a short naturally steals current from anything in parallel. *(Refined while planning: the original shape-only rule missed shorted battery stacks.)*
 - **`hum`** = the highest `level` of any buzzer (0 if none).
 - **Note events:** a note block whose level rises above 🧪 `NOTE_ON_LEVEL = 0.25` this solve, and wasn't above it last solve (kept in `signals.electric.wasOn`), pushes a `note` event.
 
@@ -146,7 +152,7 @@ Each connection is a resistor:
 
 ## Drawing (block-art.js + pack `drawSignals`)
 
-- **`drawWorld` signature change:** `drawWorld(ctx, world, size, blockInfo, sky)` now also passes `world.signals` and `world.ticks` through. After drawing a block, it calls `info.drawSignals(...)` if the block has one, with that cell's signals (or `undefined`).
+- **`drawWorld(ctx, world, size, blockInfo, sky)` keeps its signature.** It reads `world.signals` and `world.ticks` itself. Each cell is drawn by the new `drawCell(ctx, info, left, top, size, cell, ticks)`, which draws the block and then calls `info.drawSignals(...)` if the block has one. `cell` is the first `world.signals[*].cells.get(index)`, or `undefined`. The palette uses `drawCell` with `undefined`. *(Refined while planning.)*
 - **Wire:**
   - the base is the sky, plus a copper arm from the center toward each side in `faces` (a lone wire is a dot)
   - idle `#7a4a1e`, carrying current `#e08a3c`
@@ -191,10 +197,10 @@ Each connection is a resistor:
     - battery + lamp loop → lamp level 1 (±0.02)
     - 2 lamps in series → 0.5 each
     - 2 in parallel → ≈1 each
-    - 2 batteries in series → 2
+    - 2 batteries in series → about 2 (> 1.8: the batteries' own resistance takes a little)
     - opposing batteries → ≈0
   - **Switches and clicker:** open switch → 0, closed → 1; clicker on its on and off beats.
-  - **Shorts:** a short is detected, including a 20-cell shorting wire; a lamp in parallel with a short gets ≈0; a battery in a loop with only another battery is not a "short".
+  - **Shorts:** a short is detected, including a 20-cell shorting wire; a lamp in parallel with a short gets ≈0; two batteries wired straight to each other spark; two pushing against each other do not.
   - **Direction:** current leaves the battery's + end (positive `arms` on the + side).
   - **Conductors:** wood/stone between wires blocks the loop; gold in place of wire works.
   - A failed solve returns zero currents without throwing (a forced bad matrix).
