@@ -9,13 +9,15 @@
  *
  * A clock "ticks" several times a second. Each tick, every block pack's
  * rules (like "sand falls") get a turn, and the world is redrawn if
- * anything moved. build.html calls initBuild() once.
+ * anything moved. It also keeps three worlds saved (see saves.js), and
+ * makes the 📷 picture. build.html calls initBuild() once.
  */
-import { AIR, defaultWorld, getBlock, setBlock, tick } from './world.js';
-import { AIR_INFO, PACKS, allSystems, blockInfo, blocksInPack } from './blocks/registry.js';
+import { AIR, WORLD_HEIGHT, WORLD_WIDTH, defaultWorld, getBlock, setBlock, tick } from './world.js';
+import { AIR_INFO, PACKS, allSystems, blockInfo, blocksInPack, isKnownBlock } from './blocks/registry.js';
 import { drawBlock, drawWorld } from './block-art.js';
+import { WORLD_COUNT, loadCurrent, loadThumbnail, loadWorld, saveCurrent, saveWorld } from './saves.js';
 import { listenForUnlock, playTones } from './sound.js';
-import { cellsAlongLine, choose, flash } from './ui.js';
+import { cellsAlongLine, choose, filenameForDate, flash } from './ui.js';
 
 // =============================================================
 // Settings to play with
@@ -36,6 +38,22 @@ const SWATCH_PX = 40;
 /** The world canvas's border width (blocks.css #world), in CSS pixels. */
 const WORLD_BORDER_PX = 6;
 
+/**
+ * How long to wait after the last change before saving, in milliseconds.
+ * Waiting means a long drag saves once at the end, not 50 times.
+ * 🧪 Try this! 5000 to save less often.
+ */
+const SAVE_DELAY_MS = 1000;
+
+/** Block size for the little world pictures on the 🌍 buttons (24 × 4 = 96 pixels wide). */
+const THUMB_CELL_PX = 4;
+
+/**
+ * Block size for the 📷 picture (24 × 32 = 768 pixels wide).
+ * 🧪 Try this! 64 for a giant poster-sized picture.
+ */
+const PHOTO_CELL_PX = 32;
+
 // =============================================================
 // What's happening right now ("state")
 // =============================================================
@@ -47,6 +65,7 @@ const state = {
   tab: PACKS[0].tab.id,      // which palette tab is showing
   selected: 'grass',         // the block BUILD puts down
   cell: 0,                   // how big one block is on screen, in CSS pixels
+  current: 1,                // which world (1 to WORLD_COUNT) is open
 };
 
 /** The rules that run every tick, from every pack, in order. */
@@ -66,6 +85,8 @@ let toolButtons = [];
 let tabButtons = [];
 let paletteButtons = [];
 let tickTimer = null;
+let worldButtons = [];
+let saveTimer = null;
 
 /**
  * Shortcut for finding an element by its id="...".
@@ -120,6 +141,13 @@ export function initBuild() {
   ctx = canvas.getContext('2d');
   frame = byId('world-frame');
 
+  // Open the world Caleb had last time (or a fresh one).
+  state.current = loadCurrent(storage());
+  state.world = loadWorld(state.current, storage(), loadOptions()) ?? defaultWorld();
+  buildWorldButtons();
+  byId('photo').addEventListener('click', savePhoto);
+  byId('new-world').addEventListener('click', newWorld);
+
   setupTools();
   buildTabs();
   showTab(state.tab);
@@ -140,9 +168,14 @@ export function initBuild() {
   startTicking();
   // Don't tick while the page is hidden (the iPad is asleep): saves battery.
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stopTicking();
-    else startTicking();
+    if (document.hidden) {
+      stopTicking();
+      saveNow(); // the iPad might close the page while it's hidden
+    } else {
+      startTicking();
+    }
   });
+  window.addEventListener('pagehide', saveNow);
 }
 
 // =============================================================
@@ -291,11 +324,155 @@ function flashCell(x, y) {
 }
 
 /**
- * Something changed the world: redraw it.
+ * Something changed the world: redraw it, and save it soon.
  * @returns {void}
  */
 function worldChanged() {
   draw();
+  scheduleSave();
+}
+
+// =============================================================
+// Saving: three worlds, each saving itself as Caleb builds
+// =============================================================
+
+/**
+ * The browser's storage. Even just LOOKING at localStorage can throw
+ * when saving is switched off (Safari, private browsing), so we ask
+ * carefully. saves.js copes with getting null back.
+ * @returns {Storage|null} localStorage, or null if we're not allowed
+ */
+function storage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What saves.js needs to know to load a world: the world size now,
+ * and which block names still exist.
+ * @returns {{width: number, height: number, isKnown: Function}} the options
+ */
+function loadOptions() {
+  return { width: WORLD_WIDTH, height: WORLD_HEIGHT, isKnown: isKnownBlock };
+}
+
+/**
+ * Draw a world on a new (off-screen) canvas.
+ * @param {{width: number, height: number, cells: string[]}} world - the world
+ * @param {number} cell - block size in pixels
+ * @returns {HTMLCanvasElement} the picture
+ */
+function pictureOf(world, cell) {
+  const picture = document.createElement('canvas');
+  picture.width = world.width * cell;
+  picture.height = world.height * cell;
+  drawWorld(picture.getContext('2d'), world, cell, blockInfo, AIR_INFO.color);
+  return picture;
+}
+
+/**
+ * Save the open world (and its little picture) right now.
+ * If saving fails, show the "can't save here" badge, but keep playing.
+ * @returns {void}
+ */
+function saveNow() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  const thumbnail = pictureOf(state.world, THUMB_CELL_PX).toDataURL('image/png');
+  const saved = saveWorld(state.current, state.world, thumbnail, storage())
+    && saveCurrent(state.current, storage());
+  byId('save-problem').hidden = saved;
+  updateWorldButtons();
+}
+
+/**
+ * Save soon: SAVE_DELAY_MS after the last change.
+ * @returns {void}
+ */
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveNow, SAVE_DELAY_MS);
+}
+
+/**
+ * Make the 🌍 1 / 2 / 3 buttons in the top bar.
+ * @returns {void}
+ */
+function buildWorldButtons() {
+  const holder = byId('worlds');
+  worldButtons = [];
+  for (let n = 1; n <= WORLD_COUNT; n++) {
+    const button = document.createElement('button');
+    button.className = 'block world-button';
+    button.setAttribute('aria-label', `World ${n}`);
+    button.addEventListener('click', () => switchWorld(n));
+    holder.append(button);
+    worldButtons.push(button);
+  }
+  updateWorldButtons();
+}
+
+/**
+ * Show each world's little picture (or 🌍 and its number if it's never
+ * been saved), and press in the button of the open world.
+ * @returns {void}
+ */
+function updateWorldButtons() {
+  worldButtons.forEach((button, index) => {
+    const n = index + 1;
+    const thumbnail = loadThumbnail(n, storage());
+    if (thumbnail) {
+      const image = document.createElement('img');
+      image.src = thumbnail;
+      image.alt = '';
+      button.replaceChildren(image);
+    } else {
+      button.replaceChildren(`🌍${n}`);
+    }
+  });
+  choose(worldButtons, worldButtons[state.current - 1]);
+}
+
+/**
+ * Switch to another world. The open one is saved first, so nothing is lost.
+ * A world that's never been saved starts as a fresh grassy world.
+ * @param {number} n - which world, 1 to WORLD_COUNT
+ * @returns {void}
+ */
+function switchWorld(n) {
+  if (n === state.current) return;
+  saveNow();
+  state.current = n;
+  state.world = loadWorld(n, storage(), loadOptions()) ?? defaultWorld();
+  saveCurrent(n, storage());
+  draw();
+  updateWorldButtons();
+}
+
+/**
+ * 🗑️ Start the open world again from fresh grass, after asking first.
+ * @returns {void}
+ */
+function newWorld() {
+  if (!window.confirm('🗑️ Start this world again? Everything built here will be gone.')) return;
+  state.world = defaultWorld();
+  draw();
+  saveNow();
+}
+
+/**
+ * 📷 Save a big picture of the world as a PNG file.
+ * @returns {void}
+ */
+function savePhoto() {
+  // A pretend link with a "download" name. Clicking it saves the file.
+  const link = document.createElement('a');
+  link.download = filenameForDate(new Date(), 'build');
+  link.href = pictureOf(state.world, PHOTO_CELL_PX).toDataURL('image/png');
+  link.click();
 }
 
 // =============================================================
