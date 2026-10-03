@@ -20,6 +20,9 @@ const TEST_BLOCKS = {
   crankCW: { spin: { kind: 'hub' }, spinSource: () => 1 },
   crankCCW: { spin: { kind: 'hub' }, spinSource: () => -1 },
   fastCrank: { spin: { kind: 'hub' }, spinSource: () => 3 },
+  // Like a winch lifting: turning ↻ takes effort (2 or ½ per turn per second), ↺ is free.
+  heavy: { spin: { kind: 'hub' }, spinLoad: (world, x, y, speed) => (speed > 0 ? 2 * speed : 0) },
+  light: { spin: { kind: 'hub' }, spinLoad: (world, x, y, speed) => (speed > 0 ? 0.5 * speed : 0) },
   stone: {},
 };
 
@@ -33,7 +36,7 @@ const blockInfo = (name) => TEST_BLOCKS[name];
 /** What each letter means. */
 const LETTERS = {
   '.': 'air', s: 'gearSmall', G: 'gearBig', '-': 'axle', H: 'hub', R: 'crankCW', Q: 'crankCCW',
-  F: 'fastCrank', '#': 'stone',
+  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light',
 };
 
 /**
@@ -123,4 +126,29 @@ test('no source, no turning; a source in one group does not turn another', () =>
   assert.equal(at(0, 0).speed, 1);
   assert.equal(at(3, 0).speed, 0);
   assert.equal(at(3, 0).jammed, false);
+});
+
+test('a load heavier than the drive stalls the whole group (stops dead)', () => {
+  const at = spin(['RK']);
+  assert.equal(at(0, 0).speed, 0);
+  assert.equal(at(1, 0).speed, 0);
+  assert.equal(at(1, 0).stalled, true);
+  assert.equal(at(0, 0).stalled, true);
+  assert.equal(at(1, 0).jammed, false);
+});
+
+test('a light load turns, and turning the free way needs no effort', () => {
+  const light = spin(['Rk']);
+  assert.equal(light(1, 0).speed, 1);
+  assert.equal(light(1, 0).stalled, false);
+  assert.equal(spin(['QK'])(1, 0).speed, -1);
+});
+
+test('a faster source is not a stronger one when the load turns faster too', () => {
+  assert.equal(spin(['FK'])(1, 0).stalled, true); // drive 3, needs 2 × 3 = 6
+});
+
+test('a jammed group stays jammed, not stalled', () => {
+  const at = spin(['GGK', 'G..']);
+  assert.equal(at(2, 0).jammed, true);
 });

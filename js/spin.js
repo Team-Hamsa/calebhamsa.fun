@@ -17,8 +17,10 @@
  * water wheels) decide how fast the group goes.
  *
  * Speeds are in turns per second. + is clockwise ↻, − is anticlockwise ↺.
- * This file only reads the fields blocks have: `spin` and `spinSource`
- * (which is also told the indexes of the blocks in its group).
+ * This file only reads the fields blocks have: `spin`, `spinSource`
+ * (which is also told the indexes of the blocks in its group), and
+ * `spinLoad` (how much drive a block needs to turn at a speed, like a
+ * winch lifting something heavy).
  */
 import { getBlock, inBounds } from './world.js';
 import { partAxis } from './circuit.js';
@@ -101,7 +103,8 @@ function sideRatio(a, b, side) {
  *   drive     how fast the source driving its group turns (gears can make
  *             things faster or slower, but this stays the same: it's
  *             how much "power" the group has)
- *   jammed    true if its group can't turn
+ *   jammed    true if its group can't turn (two paths disagree)
+ *   stalled   true if its group is too weak to turn its load (see spinLoad)
  *   axis      for axles: the way it faces
  *   partAxis  for blocks that are also electric parts (motors,
  *             generators): the way they face in a circuit
@@ -191,16 +194,33 @@ export function solveSpin(world, blockInfo) {
       }
     }
 
+    // Is it too heavy? A block that needs effort to turn (a winch lifting
+    // a load) says how much drive it takes at its own speed. If they all
+    // need more than the source has, the group STALLS: it stops dead.
+    // Effort grows with speed, so gearing a winch DOWN (slower) lets the
+    // same crank lift more: you trade speed for strength.
+    let stalled = false;
+    if (!jammed && speed !== 0) {
+      let needed = 0;
+      for (const [index, r] of ratio) {
+        const point = points.get(index);
+        needed += point.info.spinLoad?.(world, point.x, point.y, speed * r, blockInfo) ?? 0;
+      }
+      stalled = needed > drive + 1e-9;
+    }
+    const stopped = jammed || stalled;
+
     for (const [index, r] of ratio) {
       done.add(index);
       const point = points.get(index);
-      const turns = jammed ? 0 : speed * r;
+      const turns = stopped ? 0 : speed * r;
       const own = Math.abs(turns) < MIN_SPEED ? 0 : turns; // also turns −0 into a plain 0
       if (Math.abs(own) > MIN_SPEED) turning = true;
       cells.set(index, {
         speed: own,
-        drive: jammed ? 0 : drive,
+        drive: stopped ? 0 : drive,
         jammed,
+        stalled,
         axis: point.axis,
         partAxis: point.info.part ? partAxis(world, point.x, point.y, blockInfo) : null,
       });
