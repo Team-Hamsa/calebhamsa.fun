@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<!--
+  chem.html: the Chemistry room. Atoms hold hands to make molecules.
+
+  The board is drawn on one <canvas> by js/chem/room.js. Below it: the
+  three tools (PLACE, REMOVE, BOND), 🗑️, and the atom buttons (locked
+  ones show 🔒). The 📖 button opens the collection book, and ⚙️ is the
+  grown-up corner. The three <dialog>s are the name card, the book, and
+  the grown-up corner; room.js opens and fills them.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chemistry · Caleb's Blocky World</title>
+  <!-- Icons: the browser tab, the iPad home screen, and old browsers.
+       All drawn from img/icon-pixels.txt by tools/make-icons.js. -->
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="img/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <!-- The app manifest lets the site be added to the home screen and open
+       full-screen like an app (see manifest.webmanifest). -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#7ec8ff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Caleb">
+  <meta name="description" content="Caleb's blocky corner of the internet: music blocks with chords and scales, drawing, and print and cursive handwriting practice.">
+  <!-- Sharing previews: the card that shows up when the link is texted or
+       posted. These must be full https:// addresses, not "img/...". -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Caleb's Blocky World">
+  <meta property="og:title" content="Chemistry · Caleb's Blocky World">
+  <meta property="og:description" content="Caleb's blocky corner of the internet: music blocks with chords and scales, drawing, and print and cursive handwriting practice.">
+  <meta property="og:url" content="https://calebhamsa.fun/chem.html">
+  <meta property="og:image" content="https://calebhamsa.fun/img/share-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="HI, I'M CALEB! with music, draw and write blocks on grass">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Two fonts: the pixel font, and Andika (made for kids learning to read) for the fun facts.
+       crossorigin lets the offline helper (sw.js) save this, so the fonts work offline too. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika&family=Playwrite+US+Trad&family=Press+Start+2P&display=swap" crossorigin>
+  <link rel="stylesheet" href="css/blocks.css">
+</head>
+<body class="build-page chem-page">
+  <header class="top-bar">
+    <a class="block home" href="index.html" aria-label="Home">🏠</a>
+    <h1 class="page-title">🧪 CHEMISTRY</h1>
+    <button class="block gold" id="open-book" aria-label="Collection book">📖</button>
+    <button class="block" id="open-grownup" aria-label="Grown-up settings">⚙️</button>
+    <p class="save-problem" id="save-problem" hidden>can't save here</p>
+  </header>
+
+  <main class="build-main">
+    <div class="world-frame" id="board-frame">
+      <canvas id="board" aria-label="Chemistry board"></canvas>
+    </div>
+
+    <div class="toolbar">
+      <button class="block grass" data-tool="place" aria-pressed="true">🧱 PLACE</button>
+      <button class="block dirt" data-tool="remove" aria-pressed="false">⛏️ REMOVE</button>
+      <button class="block gold" data-tool="bond" aria-pressed="false">🔗 BOND</button>
+      <button class="block obsidian" id="clear" aria-label="Clear the board">🗑️</button>
+    </div>
+
+    <!-- room.js fills this: one button per atom. -->
+    <div class="toolbar palette" id="atoms"></div>
+  </main>
+
+  <!-- The name card: pops up when a molecule is finished (or an atom unlocks). -->
+  <dialog class="chem-dialog" id="card">
+    <form method="dialog">
+      <p class="card-badge" id="card-badge"></p>
+      <div class="card-picture" id="card-picture"></div>
+      <h2 id="card-name"></h2>
+      <p id="card-fact"></p>
+      <button class="block grass">👍 OK</button>
+    </form>
+  </dialog>
+
+  <!-- The collection book. -->
+  <dialog class="chem-dialog book" id="book">
+    <form method="dialog">
+      <div class="toolbar">
+        <button type="button" class="block" data-book-tab="found" aria-pressed="true">📖</button>
+        <button type="button" class="block" data-book-tab="rare" aria-pressed="false">🌟</button>
+        <button type="button" class="block" data-book-tab="inventions" aria-pressed="false">💡</button>
+        <button class="block obsidian" aria-label="Close">✖</button>
+      </div>
+      <div class="book-list" id="book-list"></div>
+    </form>
+  </dialog>
+
+  <!-- The grown-up corner. -->
+  <dialog class="chem-dialog" id="grownup">
+    <form method="dialog">
+      <h2>Grown-ups</h2>
+      <button type="button" class="block gold" id="unlock-all">🔓 Unlock every atom</button>
+      <button type="button" class="block" id="name-invention">💡 Name the newest invention</button>
+      <button type="button" class="block obsidian" id="reset-book">🗑️ Erase the book</button>
+      <button class="block grass">Done</button>
+    </form>
+  </dialog>
+
+  <script type="module">
+    import { initChem } from './js/chem/room.js';
+    initChem();
+    import { registerServiceWorker } from './js/pwa.js';
+    registerServiceWorker(); // the offline helper (see js/pwa.js)
+  </script>
+</body>
+</html>

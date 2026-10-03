@@ -37,6 +37,12 @@ test('our own pages and code: try the internet first, so edits show up straight 
   assert.equal(strategyFor({ method: 'GET', url: `${SITE}/draw.html?mode=trace` }), 'network-first');
 });
 
+test('big data files: use the saved copy, and refresh it in the background', () => {
+  const { strategyFor } = loadServiceWorker();
+  assert.equal(strategyFor({ method: 'GET', url: `${SITE}/data/molecules.json` }), 'stale-while-revalidate');
+  assert.equal(strategyFor({ method: 'GET', url: `${SITE}/chem.html` }), 'network-first');
+});
+
 test('Google Fonts: use the saved copy, and refresh it in the background', () => {
   const { strategyFor } = loadServiceWorker();
   assert.equal(strategyFor({ method: 'GET', url: 'https://fonts.googleapis.com/css2?family=Andika' }), 'stale-while-revalidate');
@@ -84,7 +90,7 @@ test('missingFiles also works for whole addresses, like the font stylesheets', (
 test('the helper saves exactly the font stylesheets the pages use', () => {
   const { FONT_STYLESHEETS } = loadServiceWorker();
   const used = new Set();
-  for (const page of ['index.html', 'music.html', 'draw.html', 'build.html']) {
+  for (const page of ['index.html', 'music.html', 'draw.html', 'build.html', 'chem.html']) {
     const html = readFileSync(new URL(`../${page}`, import.meta.url), 'utf8');
     for (const match of html.matchAll(/<link rel="stylesheet" href="(https:\/\/fonts\.googleapis\.com\/[^"]+)"/g)) used.add(match[1]);
   }
@@ -107,7 +113,7 @@ test('every page and every js file is saved for offline use', () => {
   const scripts = readdirSync(new URL('../js/', import.meta.url), { recursive: true })
     .filter((name) => name.endsWith('.js'))
     .map((name) => `./js/${name}`);
-  for (const path of [...scripts, './index.html', './music.html', './draw.html', './build.html']) {
+  for (const path of [...scripts, './index.html', './music.html', './draw.html', './build.html', './chem.html']) {
     assert.ok(PRECACHE.includes(path), `PRECACHE is missing ${path}`);
   }
 });

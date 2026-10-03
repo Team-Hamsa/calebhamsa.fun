@@ -58,11 +58,14 @@ const PRECACHE = [
   './js/blocks/water.js',
   './js/spin.js',
   './js/blocks/gears.js',
+  './chem.html',
   './js/chem/board.js',
   './js/chem/book.js',
   './js/chem/canon.js',
+  './js/chem/chem-art.js',
   './js/chem/kid-names.js',
   './js/chem/lookup.js',
+  './js/chem/room.js',
   './js/chem/save.js',
   './js/chem/smiles.js',
   './manifest.webmanifest',
@@ -106,6 +109,11 @@ const NETWORK_TIMEOUT_MS = 3000;
 function strategyFor(request) {
   if (request.method !== 'GET') return 'skip'; // only "fetch me a file" requests
   const url = new URL(request.url);
+  // Big data files (the chemistry room's name list: 0.8 MB to download)
+  // hardly ever change, and on slow Wi-Fi they'd never beat
+  // NETWORK_TIMEOUT_MS, so they'd never get saved. Saved copy first;
+  // refresh in the background.
+  if (url.origin === self.location.origin && url.pathname.startsWith('/data/')) return 'stale-while-revalidate';
   if (url.origin === self.location.origin) return 'network-first';
   if (FONT_HOSTS.includes(url.hostname)) return 'stale-while-revalidate';
   return 'skip';

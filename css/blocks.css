@@ -156,6 +156,7 @@ main {
 .block.dirt     { --face: var(--dirt);     --edge: var(--dirt-dark); }
 .block.gold     { --face: var(--gold);     --edge: var(--gold-dark); }
 .block.obsidian { --face: var(--obsidian); --edge: var(--obsidian-dark); }
+.block.chem     { --face: #26a69a;         --edge: #1b7a71; } /* the 🧪 CHEMISTRY block */
 
 
 /* -----------------------------------------------------------------
@@ -609,6 +610,72 @@ main {
 
 
 /* -----------------------------------------------------------------
+   8b. Chemistry room (chem.html). It borrows the Build page's layout
+   (.build-page, .build-main, .world-frame) and adds the board, the atom
+   buttons, and the pop-up cards.
+   ----------------------------------------------------------------- */
+.chem-page { --page-bg: #b8e0d2; } /* a minty lab color */
+
+/* touch-action: none means a finger on the board builds, it doesn't scroll. */
+#board {
+  display: block;
+  border: 6px solid var(--stone-dark); /* room.js knows this is 6px (BOARD_BORDER_PX) */
+  touch-action: none;
+}
+
+.atom-button { padding: 4px; min-width: 64px; font-size: 20px; }
+.atom-button canvas { display: block; }
+
+/* The pop-ups: name card, collection book, grown-up corner. */
+.chem-dialog {
+  max-width: min(92vw, 640px);
+  border: 6px solid var(--stone-dark);
+  padding: 16px;
+  background: var(--paper);
+  font-family: var(--pixel-font);
+  text-align: center;
+}
+.chem-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
+.chem-dialog form { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.chem-dialog h2 { margin: 0; font-size: clamp(14px, 3.5vw, 20px); line-height: 1.5; }
+.chem-dialog p { margin: 0; font-family: 'Andika', sans-serif; font-size: 18px; line-height: 1.4; }
+.chem-dialog .card-badge { font-family: var(--pixel-font); font-size: 14px; }
+#card[open] { animation: cheer 700ms ease-out; }
+
+.book { width: min(92vw, 640px); }
+.book-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.book-list h3 { flex-basis: 100%; margin: 8px 0 0; font-size: 18px; }
+.book-list .credit { flex-basis: 100%; font-size: 12px; }
+.book-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 96px;
+  min-height: 96px;
+  max-width: 180px;
+  padding: 6px;
+  border: 3px solid var(--stone);
+  background: #fffaf0;
+  font-family: 'Andika', sans-serif;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.book-tile.not-found { opacity: 0.6; }
+.book-tile .mystery { font-size: 32px; }
+.molecule-picture { display: block; max-width: 100%; height: auto; }
+.book-tile .molecule-picture { max-width: 168px; }
+
+/* -----------------------------------------------------------------
    9. Animations
    @keyframes describes a little movie: where things are at 0%, 50%, 100%...
    ----------------------------------------------------------------- */
@@ -649,7 +716,8 @@ main {
   .message.cheer,
   .shake,
   .canvas-stack.wiped,
-  .block.recording {
+  .block.recording,
+  #card[open] {
     animation: none;
   }
 }

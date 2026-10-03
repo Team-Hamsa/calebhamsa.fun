@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 
 const ROOT = new URL('../', import.meta.url);
-const PAGES = ['index.html', 'music.html', 'draw.html', 'build.html'];
+const PAGES = ['index.html', 'music.html', 'draw.html', 'build.html', 'chem.html'];
 const SITE = 'https://calebhamsa.fun/';
 
 /**
