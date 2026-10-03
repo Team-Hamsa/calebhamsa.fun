@@ -45,7 +45,8 @@ for (const page of PAGES) {
 
   test(`${page} has sharing previews with full https addresses`, () => {
     const html = read(page);
-    assert.equal(metaContent(html, 'property', 'og:image'), `${SITE}img/share-card.png`);
+    // "?v=2" style endings are allowed: bumping the number makes apps fetch the new picture.
+    assert.match(metaContent(html, 'property', 'og:image') ?? '', /^https:\/\/calebhamsa\.fun\/img\/share-card\.png(\?v=\d+)?$/);
     assert.ok(metaContent(html, 'property', 'og:url')?.startsWith(SITE), 'og:url');
     assert.ok(metaContent(html, 'property', 'og:title'), 'og:title');
     assert.ok(metaContent(html, 'property', 'og:description'), 'og:description');
