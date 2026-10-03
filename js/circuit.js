@@ -147,9 +147,11 @@ function halfResistance(point) {
 /**
  * How hard a part pushes right now, in volts: `pushNow` if it has one
  * (a turbine), otherwise its fixed `push` (a battery), otherwise 0.
- * A changing push is rounded to 0.1, the same as the circuit key does
- * (see circuitKey in electric.js), so the math always matches the key:
- * a turbine that has almost stopped pushes exactly 0, not a tiny bit forever.
+ * A changing push is rounded DOWN (toward zero) to 0.1, the same as the
+ * circuit key does (see circuitKey in electric.js), so the math always
+ * matches the key: a turbine that has almost stopped pushes exactly 0,
+ * not a tiny bit forever. Rounding toward zero also makes a motor that
+ * powers its own generator wind down instead of getting stuck.
  * @param {object|null} part - the part settings
  * @param {object} world - the world
  * @param {number} x - the part's column
@@ -158,7 +160,11 @@ function halfResistance(point) {
  */
 export function partPush(part, world, x, y) {
   if (!part) return 0;
-  if (part.pushNow) return Math.round(part.pushNow(world, x, y) * 10) / 10;
+  if (part.pushNow) {
+    const push = part.pushNow(world, x, y);
+    // The tiny 1e-9 stops 0.3 (which computers store as 0.29999...) rounding down to 0.2.
+    return Math.sign(push) * Math.floor(Math.abs(push) * 10 + 1e-9) / 10;
+  }
   return part.push ?? 0;
 }
 

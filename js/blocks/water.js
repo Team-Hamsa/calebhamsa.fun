@@ -105,7 +105,7 @@ export function refreshWater(world, blockInfo) {
  * @returns {boolean} always false: no blocks moved
  */
 export function waterSystem(world, blockInfo) {
-  const { moved, steamOut } = stepFluids(world, blockInfo);
+  const { moved, steamOut, waterOut } = stepFluids(world, blockInfo);
   const before = world.signals.water?.turbineFlow ?? new Map();
   const turbineFlow = new Map();
   world.cells.forEach((name, index) => {
@@ -113,7 +113,8 @@ export function waterSystem(world, blockInfo) {
     const last = before.get(index) ?? 0;
     turbineFlow.set(index, last + ((steamOut.get(index) ?? 0) - last) / TURBINE_SMOOTHING);
   });
-  world.signals.water = { cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow };
+  // waterOut is kept for the ⚙️ pack: water flowing through a water wheel turns it.
+  world.signals.water = { cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow, waterOut };
   if (moved > MOVE_EPSILON) world.fluidChanged = true;
   const spinning = [...turbineFlow.values()].some((flow) => flow > MIN_AMOUNT);
   if (moved > MOVE_EPSILON || spinning || world.cells.includes('burnerOn')) world.animating = true;

@@ -444,8 +444,10 @@ export function runSpecials(world, blockInfo, sides) {
  * steps), then the special blocks do their jobs once.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
- * @returns {{moved: number, steamOut: Map<number, number>, sides: string[][]}}
- *   how much changed in total, how much steam left each turbine, and every cell's open sides
+ * @returns {{moved: number, steamOut: Map<number, number>, waterOut: Map<number, number>, sides: string[][]}}
+ *   how much changed in total, how much steam left each turbine, how much
+ *   water left each water wheel (+ going down or right, − going up or left),
+ *   and every cell's open sides
  */
 export function stepFluids(world, blockInfo) {
   const sides = allOpenSides(world, blockInfo);
@@ -461,11 +463,25 @@ export function stepFluids(world, blockInfo) {
   const countTurbines = (from, to, amount) => {
     if (blockInfo(world.cells[from])?.turbine) steamOut.set(from, (steamOut.get(from) ?? 0) + amount);
   };
+  const waterOut = new Map();
+  /**
+   * Count water leaving a water wheel, and which way it went (that's
+   * what turns it): down or right counts +, up or left counts −.
+   * @param {number} from - the cell the water left
+   * @param {number} to - where it went
+   * @param {number} amount - how much
+   * @returns {void}
+   */
+  const countWheels = (from, to, amount) => {
+    if (!blockInfo(world.cells[from])?.wheel) return;
+    const signed = to > from ? amount : -amount; // down (+width) and right (+1) are bigger indexes
+    waterOut.set(from, (waterOut.get(from) ?? 0) + signed);
+  };
   let moved = 0;
   for (let step = 0; step < FLUID_STEPS; step++) {
-    moved += flowFluid(world, 'water', canFlow, () => {});
+    moved += flowFluid(world, 'water', canFlow, countWheels);
     moved += flowFluid(world, 'steam', canFlow, countTurbines);
   }
   moved += runSpecials(world, blockInfo, sides);
-  return { moved, steamOut, sides };
+  return { moved, steamOut, waterOut, sides };
 }

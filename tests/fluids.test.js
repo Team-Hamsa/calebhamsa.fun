@@ -262,3 +262,12 @@ test('a kettle (faucet into a pot on a burner) does not fill the world with endl
   assert.ok(after - before < 0.5, `steam kept growing: ${before.toFixed(2)} → ${after.toFixed(2)}`);
   assert.ok(Math.max(...world.fluid.steam) < 3, `steam squished to ${Math.max(...world.fluid.steam).toFixed(2)}`);
 });
+
+test('water flowing down through a water wheel is counted, going down = +', () => {
+  TEST_BLOCKS.waterWheel = { fluid: { sides: 'all' }, wheel: true };
+  LETTERS.O = 'waterWheel';
+  const world = worldFrom(['~', 'O', '.', '#']);
+  let out = 0;
+  for (let i = 0; i < 10; i++) out += stepFluids(world, blockInfo).waterOut.get(1) ?? 0;
+  assert.ok(out > 0.5, `only ${out}`);
+});

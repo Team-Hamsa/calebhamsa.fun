@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, setBlock } from '../js/world.js';
-import { partAxis, plusSide, solveCircuit, solveLinear } from '../js/circuit.js';
+import { partAxis, partPush, plusSide, solveCircuit, solveLinear } from '../js/circuit.js';
 
 /**
  * Stand-in blocks, with the same electric settings as the real ones in
@@ -220,4 +220,12 @@ test('a turbine pushing almost nothing pushes nothing, so a stopped turbine stop
   const { cells, flowing } = solveCircuit(world, blockInfo);
   assert.equal(cells.get(2 * 3 + 1).level, 0);
   assert.equal(flowing, false);
+});
+
+test('a changing push is rounded toward zero: 0.16 pushes 0.1, -0.16 pushes -0.1, 0.3 stays 0.3', () => {
+  assert.equal(partPush({ pushNow: () => 0.16 }, null, 0, 0), 0.1);
+  assert.equal(partPush({ pushNow: () => -0.16 }, null, 0, 0), -0.1);
+  assert.equal(partPush({ pushNow: () => 0.1 + 0.2 }, null, 0, 0), 0.3); // 0.30000000000000004
+  assert.equal(partPush({ pushNow: () => 0.3 }, null, 0, 0), 0.3);
+  assert.equal(partPush({ push: 1 }, null, 0, 0), 1);
 });
