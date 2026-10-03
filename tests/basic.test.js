@@ -99,14 +99,15 @@ test('gold conducts electricity, like real gold', () => {
   assert.equal(basic.blocks.gold.conducts, true);
 });
 
-test('a crate hanging on a rope doesn\'t fall, and nor does sand stuck under it', () => {
-  const world = createWorld(2, 5);
-  setBlock(world, 0, 0, 'rope');
-  setBlock(world, 0, 1, 'crate');
-  setBlock(world, 0, 2, 'sand');
-  setBlock(world, 1, 1, 'crate'); // next to the rope, not under it: it falls
+test('a crate hanging on a winch\'s rope doesn\'t fall, but sand under it and a crate beside it do', () => {
+  const world = createWorld(2, 6);
+  setBlock(world, 0, 0, 'winch');
+  setBlock(world, 0, 1, 'rope');
+  setBlock(world, 0, 2, 'crate');
+  setBlock(world, 0, 3, 'sand');
+  setBlock(world, 1, 2, 'crate'); // next to the rope, not under it
   for (let i = 0; i < 3; i++) fall(world);
-  assert.equal(getBlock(world, 0, 1), 'crate');
-  assert.equal(getBlock(world, 0, 2), 'sand');
-  assert.equal(getBlock(world, 1, 4), 'crate');
+  assert.equal(getBlock(world, 0, 2), 'crate');
+  assert.equal(getBlock(world, 0, 5), 'sand');
+  assert.equal(getBlock(world, 1, 5), 'crate');
 });

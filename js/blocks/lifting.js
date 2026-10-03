@@ -53,7 +53,7 @@ export function winchLoad(world, x, y, speed, blockInfo) {
   if (speed <= 0) return 0;
   const rope = traceRope(world, x, y, blockInfo);
   if (!canWindIn(world, rope, blockInfo)) return 0; // wound all the way in: nothing to pull
-  return (loadBelow(world, rope.end, blockInfo).weight * speed) / STRENGTH;
+  return (loadBelow(world, rope, blockInfo).weight * speed) / STRENGTH;
 }
 
 // =============================================================
@@ -102,7 +102,11 @@ export function liftSystem(world, blockInfo) {
      * How much rope moves the load one cell: 2 with a pulley hook.
      * @returns {number} cells of rope
      */
-    const step = () => (loadBelow(world, traceRope(world, x, y, blockInfo).end, blockInfo).hook ? 2 : 1);
+    const step = () => (loadBelow(world, traceRope(world, x, y, blockInfo), blockInfo).hook ? 2 : 1);
+    if (Math.abs(amount) < 1) { // not even one cell's worth yet: nothing to move
+      pull.set(index, amount);
+      continue;
+    }
     while (amount >= step()) {
       if (!windIn(world, x, y, blockInfo)) { amount = 0; break; } // all wound in
       amount -= step();
@@ -254,9 +258,8 @@ function drawWinch(ctx, info, left, top, size, cell, ticks) {
  * Every block in this pack, in the order the palette shows them.
  *   spin       the winch joins gear trains like any hub (a shared shaft)
  *   spinLoad   how much drive the winch needs to lift its load
- *   rope       rope runs through it (rope and pulleys)
- *   holds      holds up what hangs under it
- *   falls      falls like sand (unless a rope holds it up)
+ *   rope       rope runs through it (rope and pulleys; it only turns at pulleys)
+ *   falls      falls like sand (unless it hangs on a winch's rope)
  *   weight     how heavy it is to lift (1 if not given)
  *   hook       a pulley hook: the load under it counts half as heavy
  * 🧪 Try this! Make the iron weight 8, and gear the winch down three times.
@@ -267,11 +270,11 @@ const blocks = {
     spin: { kind: 'hub' }, spinLoad: winchLoad, drawSignals: drawWinch,
   },
   rope: {
-    title: 'Rope', color: ROPE, bare: true, rope: true, holds: true,
+    title: 'Rope', color: ROPE, bare: true, rope: true,
     fluid: { sides: 'all' }, // water flows through it, like a well rope
     drawSignals: drawRope,
   },
-  pulley: { title: 'Pulley', color: '#90a4ae', bare: true, rope: true, holds: true, pulley: true, drawSignals: drawPulley },
+  pulley: { title: 'Pulley', color: '#90a4ae', bare: true, rope: true, pulley: true, drawSignals: drawPulley },
   pulleyHook: { title: 'Pulley hook', color: '#90a4ae', bare: true, falls: true, weight: 0, hook: true, drawSignals: drawHook },
   crate: { title: 'Crate', color: '#b07d4f', falls: true, weight: 1, label: '1' },
   ironWeight: { title: 'Iron weight', color: '#5f6a72', falls: true, weight: 4, label: '4' },
@@ -291,10 +294,10 @@ const guide = {
   ],
   blocks: {
     winch: { does: 'A drum that winds rope. Turn it with a crank, gears or a motor touching it.' },
-    rope: { does: 'Put some next to the winch and let it hang down. The winch adds and takes away rope as it moves.' },
+    rope: { does: 'Put some next to the winch and let it hang down. Rope goes straight: it only turns a corner at a pulley.' },
     pulley: { does: 'A wheel the rope runs over, so it can change direction: up a tower and down the other side.' },
     pulleyHook: { does: 'Hang it on the rope with the load under it. The load counts half as heavy, but goes up half as fast.' },
-    crate: { does: 'Weighs 1. Falls like sand, unless a rope holds it up.' },
+    crate: { does: 'Weighs 1. Falls like sand, unless it hangs on the end of a winch\'s rope.' },
     ironWeight: { does: 'Weighs 4. Too heavy for a crank on its own: gear it down!' },
   },
 };

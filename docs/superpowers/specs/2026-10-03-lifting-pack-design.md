@@ -37,6 +37,14 @@ Teach **load and effort** with a winch, rope and pulleys:
 | Tab | Its own 🏗️ Lifting tab (⚙️ would have 13 blocks). The winch still joins gear trains |
 | Rejected | A ropeless "lift block" (hides the idea); swinging/stretchy rope physics (too much) |
 
+## Changes after the final review (2026-10-03)
+
+These override the details below:
+1. **Rope goes straight.** `traceRope` leaves the winch on any side, then only turns at a pulley. Two ropes side by side no longer get crossed.
+2. **The load is one block.** It's the block under a hanging end, or a pulley hook plus the one block under it. What it rests on isn't lifted, so a crate lowered onto sand can be lifted off again.
+3. **Only hanging loads are held.** `isHeld` = "is a hanging load of some winch's rope" (`hangingLoads`). A cut rope, rope with no winch, or a sideways rope holds nothing, and there is no `holds` field. `traceRope` returns `hanging` (the end was reached going down).
+4. **Rope is drawn along its path.** `ropeArms` joins cells along each winch's path. Loose rope only joins the rope above and below it.
+
 ## Constraints
 
 Same as phases 1–4a: vanilla JS, heavy comments, JSDoc on every function, 🧪 on tweakables, pure logic in `npm test`, new `js/` files in `sw.js` `PRECACHE` with `CACHE_NAME` bumped, and a README picture + entry for every palette block (`tests/readme.test.js`, `tools/make-block-pictures.cjs`).

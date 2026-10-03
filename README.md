@@ -185,10 +185,10 @@ Heavy things need more. Turning ↻ winds the rope in (up), ↺ lets it out (dow
 | | Block | What it does | ✋ USE |
 |---|---|---|---|
 | ![Winch](docs/blocks/winch.png) | **Winch** | A drum that winds rope. Turn it with a crank, gears or a motor touching it. If the load is too heavy it **stalls**: nothing turns and it shows a red ⬇ (![Stalled winch](docs/blocks/winch-stalled.png)). | — |
-| ![Rope](docs/blocks/rope.png) | **Rope** | Put at least one next to the winch and let it hang down. The winch adds rope and takes it away as it lets out and winds in. Water flows through it. | — |
+| ![Rope](docs/blocks/rope.png) | **Rope** | Put at least one next to the winch and let it hang down. The winch adds rope and takes it away as it lets out and winds in. Rope goes straight: it only turns a corner at a pulley. Water flows through it. | — |
 | ![Pulley](docs/blocks/pulley.png) | **Pulley** | A wheel the rope runs over, so the rope can change direction: the winch on the ground, the rope up a tower and down the other side. | — |
 | ![Pulley hook](docs/blocks/pulleyHook.png) | **Pulley hook** | Hang it on the rope's end and the load under it. Two bits of rope share the load, so it counts **half as heavy**, but it goes up half as fast. | — |
-| ![Crate](docs/blocks/crate.png) | **Crate** | Weighs **1**. Falls like sand, unless a rope holds it up. | — |
+| ![Crate](docs/blocks/crate.png) | **Crate** | Weighs **1**. Falls like sand, unless it hangs on a winch's rope. Only the one block on the rope's end is lifted (or a pulley hook and the block under it). | — |
 | ![Iron weight](docs/blocks/ironWeight.png) | **Iron weight** | Weighs **4**. Too heavy for a crank turning a winch on its own! | — |
 
 **Slower is stronger.** A crank can lift weight 1 with the winch on its own

@@ -8,13 +8,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, getBlock, getFluid, setBlock, setFluid } from '../js/world.js';
-import { canWindIn, isHeld, letOut, loadBelow, ropeArms, traceRope, windIn } from '../js/lift.js';
+import { canWindIn, hangingLoads, isHeld, letOut, loadBelow, ropeArms, traceRope, windIn } from '../js/lift.js';
 
 /** Stand-in blocks, with the same lifting settings as js/blocks/lifting.js. */
 const TEST_BLOCKS = {
   winch: { spin: { kind: 'hub' }, winch: true },
-  rope: { rope: true, holds: true, fluid: { sides: 'all' } },
-  pulley: { rope: true, holds: true, pulley: true },
+  rope: { rope: true, fluid: { sides: 'all' } },
+  pulley: { rope: true, pulley: true },
   pulleyHook: { falls: true, weight: 0, hook: true },
   crate: { falls: true, weight: 1 },
   ironWeight: { falls: true, weight: 4 },
@@ -28,6 +28,13 @@ const TEST_BLOCKS = {
  * @returns {object|undefined} its settings (undefined for air)
  */
 const blockInfo = (name) => TEST_BLOCKS[name];
+
+/**
+ * Just the column and row of a rope cell (traceRope also says which way the rope went).
+ * @param {{x: number, y: number}} cell - a cell
+ * @returns {{x: number, y: number}} its column and row
+ */
+const where = (cell) => ({ x: cell.x, y: cell.y });
 
 /** What each letter means. */
 const LETTERS = {
@@ -65,8 +72,9 @@ test('a rope is followed down from the winch to its end, and the crate under it 
   const world = make(['w', '|', '|', 'c', '#']);
   const rope = traceRope(world, 0, 0, blockInfo);
   assert.equal(rope.path.length, 2);
-  assert.deepEqual(rope.end, { x: 0, y: 2 });
-  const load = loadBelow(world, rope.end, blockInfo);
+  assert.deepEqual(where(rope.end), { x: 0, y: 2 });
+  assert.equal(rope.hanging, true);
+  const load = loadBelow(world, rope, blockInfo);
   assert.deepEqual(load.cells, [{ x: 0, y: 3 }]);
   assert.equal(load.weight, 1);
   assert.equal(load.hook, false);
@@ -75,8 +83,34 @@ test('a rope is followed down from the winch to its end, and the crate under it 
 test('a rope runs over a pulley: the end is the rope hanging down from it', () => {
   const world = make(['P|w', '|..', 'c..', '#..']);
   const rope = traceRope(world, 2, 0, blockInfo);
-  assert.deepEqual(rope.end, { x: 0, y: 1 });
-  assert.equal(loadBelow(world, rope.end, blockInfo).weight, 1);
+  assert.deepEqual(where(rope.end), { x: 0, y: 1 });
+  assert.equal(loadBelow(world, rope, blockInfo).weight, 1);
+});
+
+test('rope only turns at a pulley: it never wanders into the rope next to it', () => {
+  // The up-rope and the down-rope of a well side by side: the trace goes up,
+  // over the two pulleys, and down the other side (not across at the bottom).
+  const well = make(['.PP.', '.||.', '.||.', '.|c.', '.w..']);
+  const rope = traceRope(well, 1, 4, blockInfo);
+  assert.deepEqual(where(rope.end), { x: 2, y: 2 });
+  assert.equal(rope.hanging, true);
+  // Two cranes side by side: each winch follows its own rope.
+  const cranes = make(['w..w', '|..|', '||||', 'c..c', '####']);
+  assert.deepEqual(where(traceRope(cranes, 0, 0, blockInfo).end), { x: 0, y: 2 });
+  assert.deepEqual(where(traceRope(cranes, 3, 0, blockInfo).end), { x: 3, y: 2 });
+});
+
+test('a pulley beside the rope doesn\'t stop it lifting', () => {
+  const world = make(['w.', '|.', '|P', 'c.', '#.']);
+  assert.equal(windIn(world, 0, 0, blockInfo), true);
+});
+
+test('rope going sideways out of a winch doesn\'t hang, so it holds and lifts nothing', () => {
+  const world = make(['w||', '..c', '...']);
+  const rope = traceRope(world, 0, 0, blockInfo);
+  assert.equal(rope.hanging, false);
+  assert.equal(loadBelow(world, rope, blockInfo).cells.length, 0);
+  assert.equal(isHeld(world, 2, 1, blockInfo), false);
 });
 
 test('a winch with no rope next to it has no rope end', () => {
@@ -86,10 +120,13 @@ test('a winch with no rope next to it has no rope end', () => {
 test('loads weigh what their blocks weigh, and a pulley hook halves it', () => {
   const weigh = (rows) => {
     const world = make(rows);
-    return loadBelow(world, traceRope(world, 0, 0, blockInfo).end, blockInfo);
+    return loadBelow(world, traceRope(world, 0, 0, blockInfo), blockInfo);
   };
   assert.equal(weigh(['w', '|', 'I', '#']).weight, 4);
-  assert.equal(weigh(['w', '|', 'c', 's', '#']).weight, 2); // sand counts 1
+  assert.equal(weigh(['w', '|', 's', '#']).weight, 1); // sand counts 1
+  // Only the block on the hook hangs: what it's resting on isn't lifted too.
+  assert.equal(weigh(['w', '|', 'c', 's', '#']).weight, 1);
+  assert.equal(weigh(['w', '|', 'h', 'I', 'c', '#']).cells.length, 2);
   const hooked = weigh(['w', '|', 'h', 'I', '#']);
   assert.equal(hooked.weight, 2);
   assert.equal(hooked.hook, true);
@@ -105,10 +142,10 @@ test('the last bit of rope under the winch or a pulley can\'t be wound in', () =
   assert.equal(canWindIn(overPulley, traceRope(overPulley, 2, 0, blockInfo), blockInfo), false);
 });
 
-test('winding in lifts the whole load one cell and takes away the end of the rope', () => {
-  const world = make(['w', '|', '|', 'c', 's', '#']);
+test('winding in lifts the load one cell and takes away the end of the rope', () => {
+  const world = make(['w', '|', '|', 'h', 'I', 'c', '#']);
   assert.equal(windIn(world, 0, 0, blockInfo), true);
-  assert.deepEqual(picture(world), ['w', '|', 'c', 's', '.', '#']);
+  assert.deepEqual(picture(world), ['w', '|', 'h', 'I', '.', 'c', '#']); // the crate it sat on stays
 });
 
 test('winding in never loses water (a well rope hanging in water)', () => {
@@ -141,18 +178,28 @@ test('a load wound all the way up can be let down again', () => {
   assert.equal(letOut(world, 0, 0, blockInfo), true);
 });
 
-test('a rope holds up what hangs on it, but not what sits beside it', () => {
+test('a rope holds up what hangs on it, but not what sits beside or under it', () => {
   const world = make(['w.', '|.', 'cc', 's.', '..']);
   assert.equal(isHeld(world, 0, 2, blockInfo), true);
-  assert.equal(isHeld(world, 0, 3, blockInfo), true); // sand stuck under the crate
+  assert.equal(isHeld(world, 0, 3, blockInfo), false); // sand under the crate isn't tied on
   assert.equal(isHeld(world, 1, 2, blockInfo), false);
   assert.equal(isHeld(make(['#', 'c', '.']), 0, 1, blockInfo), false);
+  assert.deepEqual([...hangingLoads(world, blockInfo)], [2 * 2 + 0]);
 });
 
-test('rope arms point at the winch above and the load below', () => {
+test('a rope cut in the middle, or with no winch, holds nothing', () => {
+  assert.equal(isHeld(make(['w', '|', '.', '|', 'c', '.']), 0, 4, blockInfo), false);
+  assert.equal(isHeld(make(['.', '|', '|', 'c', '.']), 0, 3, blockInfo), false);
+  assert.equal(isHeld(make(['P', '|', 'c', '.']), 0, 2, blockInfo), false); // over a pulley, but nobody holds the other end
+});
+
+test('rope arms follow the rope: to the winch above and the load below, round pulleys', () => {
   const world = make(['w', '|', 'c']);
   const arms = ropeArms(world, blockInfo);
   assert.deepEqual(arms.get(1), { up: true, right: false, down: true, left: false });
   const turn = make(['P|w', '|..']);
   assert.deepEqual(ropeArms(turn, blockInfo).get(0), { up: false, right: true, down: true, left: false });
+  // Two cranes' ropes side by side aren't drawn joined.
+  const cranes = make(['w..w', '|..|', '||||']);
+  assert.deepEqual(ropeArms(cranes, blockInfo).get(2 * 4 + 0), { up: true, right: false, down: false, left: false });
 });

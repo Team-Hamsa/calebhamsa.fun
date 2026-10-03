@@ -4,19 +4,25 @@
  *        [winch]          the winch winds the rope in or lets it out
  *          |              rope, hanging down (maybe over a pulley first)
  *          |  ← the END   the rope's last bit
- *        [crate]          the LOAD: everything that would fall, hanging
- *        [sand ]          under the end, in one column
+ *        [crate]          the LOAD: the block hanging on the end
  *
  * Winding in takes away the end of the rope and moves the load up into
  * its place. Letting out moves the load down and adds a bit of rope.
  *
- * How heavy the load is matters (see spinLoad in js/blocks/lifting.js):
- * a crate weighs 1, an iron weight 4, and a pulley hook on top makes the
- * load count half as heavy (two bits of rope share it).
+ * Rope goes straight. It only turns a corner at a PULLEY (or as it
+ * leaves the winch), just like real rope: so two ropes side by side
+ * never get muddled up.
  *
- * This file only reads the fields blocks have: `rope` (rope and
- * pulleys: the rope runs through them), `pulley`, `holds` (blocks that
- * hold up what hangs under them), `falls`, `weight` and `hook`.
+ * Only ONE block hangs on the end (or a pulley hook with one block under
+ * it). Anything under that is just resting, so it isn't lifted, and it
+ * falls if there's nothing under it.
+ *
+ * How heavy the load is matters (see winchLoad in js/blocks/lifting.js):
+ * a crate weighs 1, an iron weight 4, and a pulley hook makes the load
+ * count half as heavy (two bits of rope share it).
+ *
+ * This file only reads the fields blocks have: `winch`, `rope` (rope and
+ * pulleys: the rope runs through them), `pulley`, `falls`, `weight` and `hook`.
  */
 import { AIR, getBlock, inBounds, moveBlock, swapBlock } from './world.js';
 
@@ -25,6 +31,9 @@ import { AIR, getBlock, inBounds, moveBlock, swapBlock } from './world.js';
  * hang down), then right, left and up. y counts DOWN, so up is -1.
  */
 const SIDES = [['down', 0, 1], ['right', 1, 0], ['left', -1, 0], ['up', 0, -1]];
+
+/** The side you get to by going the other way. */
+const OPPOSITE = { up: 'down', down: 'up', left: 'right', right: 'left' };
 
 /**
  * What block is at x, y, and what it means.
@@ -39,27 +48,31 @@ function infoAt(world, x, y, blockInfo) {
 }
 
 /**
- * Follow the rope from a winch: find a bit of rope touching it, then keep
- * going from rope to rope (and through pulleys) until it runs out.
+ * Follow the rope from a winch. It leaves the winch on any side (down
+ * first), then goes STRAIGHT on, turning only at pulleys.
  * @param {object} world - the world
  * @param {number} x - the winch's column
  * @param {number} y - the winch's row
  * @param {Function} blockInfo - looks up what a block name means
- * @returns {{path: Array<{x: number, y: number}>, end: {x: number, y: number}|null}}
- *   every cell the rope runs through, and its last bit of rope (null if
- *   the winch has no rope)
+ * @returns {{path: Array<{x: number, y: number, side: string}>, end: object|null, hanging: boolean}}
+ *   every cell the rope runs through (and the side it went out of the
+ *   cell before), its last bit of rope (null if the winch has none), and
+ *   whether that end hangs straight down (only then can it hold a load)
  */
 export function traceRope(world, x, y, blockInfo) {
   const path = [];
   const seen = new Set([`${x},${y}`]);
   let at = { x, y };
+  let turns = true; // the rope can leave the winch any way
+  let going = null;
   for (;;) {
     let next = null;
-    for (const [, dx, dy] of SIDES) {
-      const spot = { x: at.x + dx, y: at.y + dy };
-      if (seen.has(`${spot.x},${spot.y}`) || !infoAt(world, spot.x, spot.y, blockInfo)?.rope) continue;
-      // The first step from the winch must be a real rope, not a pulley.
-      if (path.length === 0 && infoAt(world, spot.x, spot.y, blockInfo).pulley) continue;
+    for (const [side, dx, dy] of SIDES) {
+      if (!turns && side !== going) continue; // plain rope only goes straight on
+      const spot = { x: at.x + dx, y: at.y + dy, side };
+      const info = infoAt(world, spot.x, spot.y, blockInfo);
+      if (seen.has(`${spot.x},${spot.y}`) || !info?.rope) continue;
+      if (path.length === 0 && info.pulley) continue; // the first step must be real rope
       next = spot;
       break;
     }
@@ -67,32 +80,42 @@ export function traceRope(world, x, y, blockInfo) {
     seen.add(`${next.x},${next.y}`);
     path.push(next);
     at = next;
+    going = next.side;
+    turns = Boolean(infoAt(world, next.x, next.y, blockInfo).pulley); // pulleys turn the rope
   }
-  // The end is the last bit of real rope (a pulley isn't an end).
-  const ropes = path.filter((spot) => !infoAt(world, spot.x, spot.y, blockInfo).pulley);
-  return { path, end: ropes.length > 0 ? ropes[ropes.length - 1] : null };
+  const last = path[path.length - 1];
+  const end = last && !infoAt(world, last.x, last.y, blockInfo).pulley ? last : null;
+  return { path, end, hanging: Boolean(end) && end.side === 'down' };
 }
 
 /**
- * What hangs on the end of the rope: the column of falling blocks right
- * under it, and how heavy it is.
+ * What hangs on the end of the rope: the block right under it, or a
+ * pulley hook and the block under the hook.
  * @param {object} world - the world
- * @param {{x: number, y: number}|null} end - the rope's end
+ * @param {{end: object|null, hanging: boolean}} rope - from traceRope
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {{cells: Array<{x: number, y: number}>, weight: number, hook: boolean}}
- *   the load's cells (top first), its weight (halved by a pulley hook on
- *   top), and whether it hangs on a pulley hook
+ *   the load's cells (top first), its weight (halved by a pulley hook),
+ *   and whether it hangs on a pulley hook
  */
-export function loadBelow(world, end, blockInfo) {
+export function loadBelow(world, rope, blockInfo) {
   const cells = [];
   let weight = 0;
-  if (end) {
-    for (let y = end.y + 1; infoAt(world, end.x, y, blockInfo)?.falls; y++) {
-      cells.push({ x: end.x, y });
-      weight += infoAt(world, end.x, y, blockInfo).weight ?? 1;
+  let hook = false;
+  if (rope.hanging) {
+    const { x } = rope.end;
+    const first = infoAt(world, x, rope.end.y + 1, blockInfo);
+    if (first?.falls) {
+      cells.push({ x, y: rope.end.y + 1 });
+      weight += first.weight ?? 1;
+      hook = Boolean(first.hook);
+      const second = infoAt(world, x, rope.end.y + 2, blockInfo);
+      if (hook && second?.falls && !second.hook) {
+        cells.push({ x, y: rope.end.y + 2 });
+        weight += second.weight ?? 1;
+      }
     }
   }
-  const hook = cells.length > 0 && Boolean(infoAt(world, cells[0].x, cells[0].y, blockInfo).hook);
   return { cells, weight: hook ? weight / 2 : weight, hook };
 }
 
@@ -101,17 +124,14 @@ export function loadBelow(world, end, blockInfo) {
  * down from another bit of rope. So the last bit of rope under the winch
  * (or a pulley) always stays, and the rope can always be let out again.
  * @param {object} world - the world
- * @param {{path: Array<{x: number, y: number}>, end: object|null}} rope - from traceRope
+ * @param {{path: Array<object>, hanging: boolean}} rope - from traceRope
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {boolean} true if it can
  */
 export function canWindIn(world, rope, blockInfo) {
-  const { path, end } = rope;
-  if (!end || path.length < 2) return false;
-  const before = path[path.length - 2];
-  if (path[path.length - 1] !== end) return false; // the rope ends in a pulley
-  const info = infoAt(world, before.x, before.y, blockInfo);
-  return before.x === end.x && before.y === end.y - 1 && info.rope && !info.pulley;
+  if (!rope.hanging || rope.path.length < 2) return false;
+  const before = rope.path[rope.path.length - 2];
+  return !infoAt(world, before.x, before.y, blockInfo).pulley;
 }
 
 /**
@@ -126,7 +146,7 @@ export function canWindIn(world, rope, blockInfo) {
 export function windIn(world, x, y, blockInfo) {
   const rope = traceRope(world, x, y, blockInfo);
   if (!canWindIn(world, rope, blockInfo)) return false;
-  const load = loadBelow(world, rope.end, blockInfo);
+  const load = loadBelow(world, rope, blockInfo);
   swapBlock(world, rope.end.x, rope.end.y, AIR); // swap, not set: any water there stays
   for (const cell of load.cells) moveBlock(world, cell.x, cell.y, cell.x, cell.y - 1);
   return true;
@@ -143,11 +163,11 @@ export function windIn(world, x, y, blockInfo) {
  * @returns {boolean} true if it moved
  */
 export function letOut(world, x, y, blockInfo) {
-  const { end } = traceRope(world, x, y, blockInfo);
-  if (!end) return false;
-  const load = loadBelow(world, end, blockInfo);
-  const top = load.cells[0] ?? { x: end.x, y: end.y + 1 };
-  const bottom = load.cells[load.cells.length - 1] ?? end;
+  const rope = traceRope(world, x, y, blockInfo);
+  if (!rope.hanging) return false;
+  const load = loadBelow(world, rope, blockInfo);
+  const top = load.cells[0] ?? { x: rope.end.x, y: rope.end.y + 1 };
+  const bottom = load.cells[load.cells.length - 1] ?? rope.end;
   if (!inBounds(world, bottom.x, bottom.y + 1) || getBlock(world, bottom.x, bottom.y + 1) !== AIR) return false;
   for (const cell of [...load.cells].reverse()) moveBlock(world, cell.x, cell.y, cell.x, cell.y + 1);
   swapBlock(world, top.x, top.y, 'rope');
@@ -155,9 +175,24 @@ export function letOut(world, x, y, blockInfo) {
 }
 
 /**
- * Is this block held up by a rope? Look straight up past any other
- * falling blocks: if we get to a rope (or pulley), it's hanging, so it
- * doesn't fall.
+ * Every block hanging on a winch's rope right now.
+ * @param {object} world - the world
+ * @param {Function} blockInfo - looks up what a block name means
+ * @returns {Set<number>} their cell indexes (y * width + x)
+ */
+export function hangingLoads(world, blockInfo) {
+  const held = new Set();
+  world.cells.forEach((name, index) => {
+    if (!blockInfo(name)?.winch) return;
+    const rope = traceRope(world, index % world.width, Math.floor(index / world.width), blockInfo);
+    for (const cell of loadBelow(world, rope, blockInfo).cells) held.add(cell.y * world.width + cell.x);
+  });
+  return held;
+}
+
+/**
+ * Is this block held up by a rope? Only if it hangs on the end of a
+ * winch's rope. A cut rope, or one with no winch, holds nothing.
  * @param {object} world - the world
  * @param {number} x - column
  * @param {number} y - row
@@ -165,18 +200,14 @@ export function letOut(world, x, y, blockInfo) {
  * @returns {boolean} true if it's held up
  */
 export function isHeld(world, x, y, blockInfo) {
-  for (let above = y - 1; above >= 0; above--) {
-    const info = infoAt(world, x, above, blockInfo);
-    if (info?.holds) return true;
-    if (!info?.falls) return false;
-  }
-  return false;
+  return hangingLoads(world, blockInfo).has(y * world.width + x);
 }
 
 /**
  * Which way each bit of rope (and each pulley and hook) has rope going
- * out of it, so it can be drawn joined up: toward rope, pulleys, winches
- * and hooks next to it, and down to anything hanging under it.
+ * out of it, so it can be drawn joined up. Rope on a winch's path joins
+ * along the path (and down to its load); loose rope just joins the rope
+ * above and below it; a hook hangs from the rope above.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {Map<number, {up: boolean, right: boolean, down: boolean, left: boolean}>}
@@ -184,21 +215,41 @@ export function isHeld(world, x, y, blockInfo) {
  */
 export function ropeArms(world, blockInfo) {
   const arms = new Map();
+  /**
+   * The arms record for a cell, made empty the first time.
+   * @param {number} x - column
+   * @param {number} y - row
+   * @returns {object} its arms
+   */
+  const armsAt = (x, y) => {
+    const index = y * world.width + x;
+    if (!arms.has(index)) arms.set(index, { up: false, right: false, down: false, left: false });
+    return arms.get(index);
+  };
+  // Loose rope and hooks first: up and down only.
   for (let y = 0; y < world.height; y++) {
     for (let x = 0; x < world.width; x++) {
       const info = infoAt(world, x, y, blockInfo);
-      if (!info?.rope && !info?.hook) continue;
-      const out = { up: false, right: false, down: false, left: false };
-      for (const [side, dx, dy] of SIDES) {
-        const next = infoAt(world, x + dx, y + dy, blockInfo);
-        if (info.hook) {
-          out[side] = side === 'up' && Boolean(next?.rope); // a hook hangs from the rope above
-        } else {
-          out[side] = Boolean(next?.rope || next?.winch || next?.hook || (side === 'down' && next?.falls));
-        }
-      }
-      arms.set(y * world.width + x, out);
+      if (info?.hook) armsAt(x, y).up = Boolean(infoAt(world, x, y - 1, blockInfo)?.rope);
+      if (!info?.rope || info.pulley) continue;
+      armsAt(x, y).up = Boolean(infoAt(world, x, y - 1, blockInfo)?.rope);
+      armsAt(x, y).down = Boolean(infoAt(world, x, y + 1, blockInfo)?.rope);
     }
   }
+  // Then every winch's rope, joined along its path.
+  world.cells.forEach((name, index) => {
+    if (!blockInfo(name)?.winch) return;
+    const rope = traceRope(world, index % world.width, Math.floor(index / world.width), blockInfo);
+    for (const cell of rope.path) {
+      const mine = armsAt(cell.x, cell.y);
+      if (!blockInfo(getBlock(world, cell.x, cell.y)).pulley) Object.assign(mine, { up: false, right: false, down: false, left: false });
+    }
+    for (const cell of rope.path) armsAt(cell.x, cell.y)[OPPOSITE[cell.side]] = true; // back toward where it came from
+    rope.path.forEach((cell, k) => {
+      const next = rope.path[k + 1];
+      if (next) armsAt(cell.x, cell.y)[next.side] = true;
+    });
+    if (loadBelow(world, rope, blockInfo).cells.length > 0) armsAt(rope.end.x, rope.end.y).down = true;
+  });
   return arms;
 }

@@ -15,7 +15,7 @@ import { spinAt } from '../js/blocks/gears.js';
 /** What each letter in a test picture means. */
 const LETTERS = {
   '.': 'air', '#': 'stone', s: 'gearSmall', G: 'gearBig', '-': 'axle', R: 'crankCW', Q: 'crankCCW',
-  w: 'winch', '|': 'rope', P: 'pulley', h: 'pulleyHook', c: 'crate', I: 'ironWeight',
+  w: 'winch', '|': 'rope', P: 'pulley', h: 'pulleyHook', c: 'crate', I: 'ironWeight', S: 'sand',
 };
 
 /**
@@ -116,6 +116,22 @@ test('a crate hanging on a rope stays up, and falls when the rope is dug away', 
   setBlock(world, 1, 1, 'air');
   run(world, 2);
   assert.equal(rowOf(world, 1, 'crate'), 3);
+});
+
+test('a crate lowered onto sand can be lifted off it again (the sand isn\'t lifted too)', () => {
+  const world = run(make(['Qw', '.|', '.c', '..', '.S', '##']), 12);
+  assert.equal(rowOf(world, 1, 'crate'), 3);
+  setBlock(world, 0, 0, 'crankCW');
+  run(world, 12);
+  assert.equal(rowOf(world, 1, 'crate'), 2);
+  assert.equal(rowOf(world, 1, 'sand'), 4);
+});
+
+test('cutting the rope in the middle drops the crate', () => {
+  const world = run(make(['.w.', '.|.', '.|.', '.|.', '.c.', '...', '...', '###']), 2);
+  setBlock(world, 1, 2, 'air');
+  run(world, 6);
+  assert.equal(rowOf(world, 1, 'crate'), 6);
 });
 
 test('every lifting block can be drawn, in the world and in the palette', () => {
