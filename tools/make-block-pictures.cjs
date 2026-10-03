@@ -38,6 +38,8 @@ const EXTRA_PICTURES = [
   ['valveClosed', 'valveClosed', undefined],
   ['burnerOff', 'burnerOff', undefined],
   ['pumpUp', 'pumpUp', undefined],
+  ['crankCW', 'crankCW', undefined],
+  ['gearBig-jammed', 'gearBig', { speed: 0, jammed: true }],
 ];
 
 /**
@@ -62,6 +64,14 @@ const LETTERS = {
   C: ['chiller'],
   '^': ['pumpUp'],
   '~': ['air', 'water'],
+  D: ['drain'],
+  f: ['faucet'],
+  i: ['gearSmall'],
+  G: ['gearBig'],
+  '-': ['axle'],
+  R: ['crankCW'],
+  O: ['waterWheel'],
+  E: ['generator'],
 };
 
 /**
@@ -125,6 +135,20 @@ const SCENES = {
     'WW^WW',
     '##~##',
     '#####',
+  ] },
+  'gear-train': { ticks: 3, rows: [
+    'RiGi--i',
+  ] },
+  'jam-triangle': { ticks: 3, rows: [
+    'GG',
+    'GR',
+  ] },
+  'hydro-dam': { ticks: 40, rows: [
+    '.f.....',
+    '....WWW',
+    '.OiiE.L',
+    '.D..WWW',
+    '#######',
   ] },
   'sand-in-water': { ticks: 4, rows: [
     'gsssg',

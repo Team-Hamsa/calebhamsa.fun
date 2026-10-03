@@ -9,6 +9,7 @@ import { AIR } from '../world.js';
 import basic from './basic.js';
 import electric from './electric.js';
 import water from './water.js';
+import gears from './gears.js';
 
 /**
  * Every pack, in the order their systems run each tick. Order matters
@@ -17,7 +18,7 @@ import water from './water.js';
  * for steam. The plan for later phases is:
  *   basic → water → mechanical → electric
  */
-export const PACKS = [basic, water, electric];
+export const PACKS = [basic, water, gears, electric];
 
 /**
  * The names of the signals packs pass to each other: ⚡ power (wires,

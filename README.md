@@ -2,8 +2,8 @@
 
 Caleb's blocky corner of the internet: 🎵 **Note Blocks** (notes, chords,
 scales and an ear-training game), 🎨 **Draw**, ✍️ **Write** (print and
-cursive tracing), and ⛏️ **Build** (a block world with water, steam and
-electricity: see [the Build page blocks](#-the-build-page-blocks)).
+cursive tracing), and ⛏️ **Build** (a block world with water, steam,
+electricity and gears: see [the Build page blocks](#-the-build-page-blocks)).
 
 It's built with plain HTML, CSS and JavaScript (no frameworks, no build
 step), so every file can be opened, read, changed and tried.
@@ -39,6 +39,8 @@ Then open <http://localhost:8000>. Change a file, save, and reload the page.
 | `js/circuit.js` | The electricity math: loops, brightness, short circuits (pure) |
 | `js/blocks/water.js` | 💧 Water blocks: pipes, valves, faucets, drains, burners, chillers, turbines, pumps |
 | `js/fluids.js` | How water and steam move: falling, spreading, squishing (pure) |
+| `js/blocks/gears.js` | ⚙️ Gear blocks: gears, axle, crank, water wheel, motor, generator |
+| `js/spin.js` | How turning passes from gear to gear, and when gears jam (pure) |
 | `js/blocks/registry.js` | The list of block packs (add new packs here) |
 | `js/block-art.js` | Draws blocks pixel-art style |
 | `js/saves.js` | Keeps the three Build worlds saved |
@@ -66,7 +68,7 @@ The Build page has three tools at the bottom:
 - **✋ USE**: tap a block to make it do its thing: a switch flips, a valve
   opens, a note block sings.
 
-The blocks are on three tabs. Here's what every one of them is.
+The blocks are on four tabs. Here's what every one of them is.
 
 ### ⛏️ BLOCKS
 
@@ -130,6 +132,31 @@ end with nothing in between, it **sparks and smokes** (![Sparking battery](docs/
 batteries get dangerously hot when you do that, so never try it with a real
 one. Nothing breaks here: fix the wiring and it stops.
 
+### ⚙️ GEARS
+
+Spinning things pass their turning on to whatever they touch. **Gears**
+that touch turn **opposite** ways. Things on the same **shaft** (an axle,
+or a crank, wheel, motor or generator touching a gear) turn the **same** way.
+
+| | Block | What it does | ✋ USE |
+|---|---|---|---|
+| ![Small gear](docs/blocks/gearSmall.png) | **Small gear** | 8 teeth. Turns the gears next to it the other way. | — |
+| ![Big gear](docs/blocks/gearBig.png) | **Big gear** | 16 teeth, so it turns **half as fast** as a small gear it's touching (and a small gear driven by it turns **twice as fast**). Big gears also touch corner to corner. | — |
+| ![Axle](docs/blocks/axle.png) | **Axle** | A rod: carries turning in a straight line, the same way round. | — |
+| ![Crank](docs/blocks/crankStop.png) | **Crank** | Hand power! Red knob = stopped, green knob = turning. ![Turning crank](docs/blocks/crankCW.png) | stop → ↻ → ↺ → stop |
+| ![Water wheel](docs/blocks/waterWheel.png) | **Water wheel** | Turns when 💧 water flows through it. More water = faster. | — |
+| ![Motor](docs/blocks/motor.png) | **Motor** | Turns ⚡ electricity into turning. Put it in a loop with a battery (wires on its sides). Swap the battery round and it turns the other way. | — |
+| ![Generator](docs/blocks/generator.png) | **Generator** | Turns turning into ⚡ electricity: wire it up like a battery. Its **+** end swaps when it turns the other way. | — |
+
+**Jammed!** Three big gears all touching each other (in an L) can't turn: each
+one would have to turn both ways at once. The whole group stops and shows a
+red ❌ (![Jammed gear](docs/blocks/gearBig-jammed.png)). Two cranks turning
+opposite ways on the same gears jam too.
+
+**Nothing runs forever.** A generator gives back a little less electricity
+than a motor uses, so a motor powered only by its own generator slows down
+and stops, just like real machines.
+
 ### 🛠️ Machines to build
 
 Each picture was taken from the real game. Build it, then watch.
@@ -177,6 +204,24 @@ battery loop on its sides. The pump pushes the water up, against gravity.
 
 ![A battery-powered pump lifting water](docs/machines/pump-uphill.png)
 
+**Gear train.** A crank, then small, big and small gears, an axle, and one more
+gear. Each gear turns the other way from the one it touches; the big gear turns
+slowly and the small gear after it turns twice as fast. The axle carries the
+turning along without flipping it.
+
+![A crank turning a row of gears and an axle](docs/machines/gear-train.png)
+
+**Jam!** Three big gears touching in an L, turned by a crank. They can't turn,
+so they all show a red ❌. Take one away and they spin again.
+
+![Three big gears jammed](docs/machines/jam-triangle.png)
+
+**Hydro dam.** A faucet pours water through a water wheel (and away down a
+drain). The wheel turns two gears, the gears turn a generator, and the
+generator lights a lamp: water power!
+
+![Water turning a wheel, gears and a generator that lights a lamp](docs/machines/hydro-dam.png)
+
 **Sand sinks.** Drop sand onto water. The sand sinks and the water floats up
 in its place.
 
@@ -200,6 +245,7 @@ Search the code for `🧪 Try this!` to find them all. Some favorites:
 12. **Slow-motion sand:** in `js/build.js`, set `TICKS_PER_SECOND` to 2.
 13. **Dimmer lamps:** in `js/blocks/electric.js`, change the lamp's `resistance` to 2.
 14. **Slow-motion water:** in `js/fluids.js`, set `FLUID_STEPS` to 1.
+15. **Super gears:** in `js/blocks/gears.js`, give the big gear 24 teeth: small gears it drives spin 3 times as fast.
 
 ## Using it like an app (offline)
 
