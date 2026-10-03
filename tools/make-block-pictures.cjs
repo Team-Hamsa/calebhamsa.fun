@@ -40,6 +40,7 @@ const EXTRA_PICTURES = [
   ['pumpUp', 'pumpUp', undefined],
   ['crankCW', 'crankCW', undefined],
   ['gearBig-jammed', 'gearBig', { speed: 0, jammed: true }],
+  ['winch-stalled', 'winch', { speed: 0, stalled: true }],
 ];
 
 /**
@@ -72,6 +73,13 @@ const LETTERS = {
   R: ['crankCW'],
   O: ['waterWheel'],
   E: ['generator'],
+  Q: ['crankCCW'],
+  w: ['winch'],
+  '|': ['rope'],
+  U: ['pulley'],
+  h: ['pulleyHook'],
+  c: ['crate'],
+  I: ['ironWeight'],
 };
 
 /**
@@ -149,6 +157,46 @@ const SCENES = {
     '.OiiE.L',
     '.D..WWW',
     '#######',
+  ] },
+  'crane': { ticks: 6, rows: [
+    'Rw',
+    '.|',
+    '.|',
+    '.|',
+    '.c',
+    '##',
+  ] },
+  'too-heavy': { ticks: 4, rows: [
+    'Rw',
+    '.|',
+    '.|',
+    '.I',
+    '.#',
+  ] },
+  'iron-geared': { ticks: 24, rows: [
+    'RiG-iGw',
+    '......|',
+    '......|',
+    '......|',
+    '......I',
+    '......#',
+  ] },
+  'pulley-hook': { ticks: 24, rows: [
+    'QiGw',
+    '...|',
+    '...|',
+    '...|',
+    '...h',
+    '...I',
+    '...#',
+  ] },
+  'well': { ticks: 8, rows: [
+    'U||w',
+    '|..R',
+    '|...',
+    '|...',
+    'c...',
+    '####',
   ] },
   'sand-in-water': { ticks: 4, rows: [
     'gsssg',

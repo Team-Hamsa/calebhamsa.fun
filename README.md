@@ -174,6 +174,28 @@ push back, so machines that try to power themselves slow down and stop, just
 like real ones. (The same goes for a pump pushing water through a water wheel
 that turns the pump's own generator.)
 
+### 🏗️ LIFTING
+
+A **winch** winds rope in to lift things, and turning it takes **effort**.
+Heavy things need more. Turning ↻ winds the rope in (up), ↺ lets it out (down).
+
+| | Block | What it does | ✋ USE |
+|---|---|---|---|
+| ![Winch](docs/blocks/winch.png) | **Winch** | A drum that winds rope. Turn it with a crank, gears or a motor touching it. If the load is too heavy it **stalls**: nothing turns and it shows a red ⬇ (![Stalled winch](docs/blocks/winch-stalled.png)). | — |
+| ![Rope](docs/blocks/rope.png) | **Rope** | Put at least one next to the winch and let it hang down. The winch adds rope and takes it away as it lets out and winds in. Water flows through it. | — |
+| ![Pulley](docs/blocks/pulley.png) | **Pulley** | A wheel the rope runs over, so the rope can change direction: the winch on the ground, the rope up a tower and down the other side. | — |
+| ![Pulley hook](docs/blocks/pulleyHook.png) | **Pulley hook** | Hang it on the rope's end and the load under it. Two bits of rope share the load, so it counts **half as heavy**, but it goes up half as fast. | — |
+| ![Crate](docs/blocks/crate.png) | **Crate** | Weighs **1**. Falls like sand, unless a rope holds it up. | — |
+| ![Iron weight](docs/blocks/ironWeight.png) | **Iron weight** | Weighs **4**. Too heavy for a crank turning a winch on its own! | — |
+
+**Slower is stronger.** A crank can lift weight 1 with the winch on its own
+shaft. Put a small gear driving a big gear in between and the winch turns half
+as fast, so it can lift 2. Do it twice (a quarter as fast) and it lifts the
+iron weight. Gear it UP (big gear driving a small one) and it can't even lift a
+crate. Real cranes, bike gears and car gears all trade speed for strength.
+
+**Cut the rope** (⛏️ dig it) and whatever hangs on it falls.
+
 ### 🛠️ Machines to build
 
 Each picture was taken from the real game. Build it, then watch.
@@ -238,6 +260,32 @@ drain). The wheel turns two gears, the gears turn a generator, and the
 generator lights a lamp: water power!
 
 ![Water turning a wheel, gears and a generator that lights a lamp](docs/machines/hydro-dam.png)
+
+**Crane.** A crank turning a winch, with rope down to a crate. Turn the crank
+↻ and the crate goes up; ↺ and it goes down.
+
+![A crank and winch lifting a crate](docs/machines/crane.png)
+
+**Too heavy!** Swap the crate for an iron weight. The crank can't turn it: the
+winch shows a red ⬇ and nothing moves.
+
+![A winch stalled under an iron weight](docs/machines/too-heavy.png)
+
+**Gear it down.** Crank, small gear, big gear, axle, small gear, big gear,
+winch. The winch turns a quarter as fast, so it's four times as strong, and it
+lifts the iron weight (slowly!).
+
+![Two gear steps letting a crank lift the iron weight](docs/machines/iron-geared.png)
+
+**Pulley hook.** Only one gear step this time, but the iron weight hangs on a
+pulley hook, which halves its weight. Up it goes, half as fast.
+
+![A pulley hook helping lift the iron weight](docs/machines/pulley-hook.png)
+
+**Well.** The winch and crank sit on the right; the rope runs up and over a
+pulley and hangs down the left side. The pulley changes which way the rope pulls.
+
+![A rope over a pulley lifting a crate](docs/machines/well.png)
 
 **Sand sinks.** Drop sand onto water. The sand sinks and the water floats up
 in its place.

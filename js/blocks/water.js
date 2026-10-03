@@ -72,8 +72,9 @@ function fluidCells(world, blockInfo, turbineFlow) {
   world.cells.forEach((name, index) => {
     const info = blockInfo(name);
     // Spinning blocks (the water wheel) are drawn by the ⚙️ pack with
-    // their spin record, so they mustn't get a water record too.
-    if (!info?.fluid || info.spin) return;
+    // their spin record, and rope by the 🏗️ pack with its rope record,
+    // so they mustn't get a water record too.
+    if (!info?.fluid || info.spin || info.rope) return;
     const x = index % world.width;
     const y = Math.floor(index / world.width);
     cells.set(index, {
@@ -345,7 +346,9 @@ export function drawWaterLayer(ctx, world, size) {
       ctx.globalAlpha = 1;
       continue;
     }
-    if (world.cells[index] !== 'air') continue; // solid blocks never show fluid
+    // Solid blocks never show fluid. Rope is thin, so water around it
+    // shows just like in an empty cell.
+    if (world.cells[index] !== 'air' && world.cells[index] !== 'rope') continue;
     if (wet) {
       const above = index - world.width;
       const full = above >= 0 && water[above] >= MIN_AMOUNT;

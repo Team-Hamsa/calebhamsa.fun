@@ -198,9 +198,11 @@ function drawPulley(ctx, info, left, top, size, cell) {
 function drawHook(ctx, info, left, top, size, cell) {
   const p = size / 8;
   if (cell?.up ?? true) {
-    ctx.fillStyle = ROPE; // two strands share the load
-    ctx.fillRect(left + 2 * p, top, p, 3 * p);
-    ctx.fillRect(left + 5 * p, top, p, 3 * p);
+    ctx.fillStyle = ROPE; // the rope comes down, then two strands share the load
+    ctx.fillRect(left + 3.5 * p, top, p, p);
+    ctx.fillRect(left + 2 * p, top + p, 4 * p, p);
+    ctx.fillRect(left + 2 * p, top + p, p, 2 * p);
+    ctx.fillRect(left + 5 * p, top + p, p, 2 * p);
   }
   ctx.fillStyle = '#90a4ae';
   ctx.fillRect(left + 2 * p, top + 2 * p, 4 * p, 3 * p); // the wheel
