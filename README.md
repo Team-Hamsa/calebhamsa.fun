@@ -79,7 +79,10 @@ The Build page has three tools at the bottom:
 - **✋ USE**: tap a block to make it do its thing: a switch flips, a valve
   opens, a note block sings.
 
-The blocks are on four tabs. Here's what every one of them is.
+The blocks are on five tabs. Here's what every one of them is. The same
+explanations are in the game too: tap **❓** for the guide, or press and hold
+a block in the palette to read about just that block. (The guide's words live
+with the blocks, in each pack's `guide` in `js/blocks/*.js`.)
 
 ### ⛏️ BLOCKS
 

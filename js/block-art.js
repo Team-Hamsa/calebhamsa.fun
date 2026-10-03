@@ -170,6 +170,30 @@ export function drawCell(ctx, info, left, top, size, cell, ticks) {
 }
 
 /**
+ * Make a little canvas with one block drawn on it, sharp on Retina
+ * screens: for the palette buttons and the ❓ guide. (Only call this in
+ * a web page: it makes a <canvas>.)
+ * @param {object} info - the block's definition
+ * @param {number} px - how wide and tall, in CSS pixels
+ * @param {string} sky - the color behind see-through blocks
+ * @returns {HTMLCanvasElement} the canvas
+ */
+export function blockCanvas(info, px, sky) {
+  const canvas = document.createElement('canvas');
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = px * ratio;
+  canvas.height = px * ratio;
+  canvas.style.width = `${px}px`;
+  canvas.style.height = `${px}px`;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(ratio, ratio);
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, px, px);
+  drawCell(ctx, info, 0, 0, px, undefined, 0); // parts face sideways, nothing flowing
+  return canvas;
+}
+
+/**
  * Find what the packs worked out about one cell (world.signals holds one
  * record per pack, each with a `cells` Map from cell index to details).
  * @param {object} world - the world

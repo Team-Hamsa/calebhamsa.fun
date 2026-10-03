@@ -469,9 +469,33 @@ const blocks = {
   crankCCW: crank(-CRANK_SPEED, 'crankCCW'),
 };
 
+/**
+ * What the ❓ guide on the Build page says about this tab: its rules,
+ * and what each block in the palette does (and what ✋ USE does to it).
+ * tests/guide.test.js checks every palette block is here.
+ */
+const guide = {
+  rules: [
+    'Gears that touch turn OPPOSITE ways. Things on the same shaft (an axle, or a crank, wheel, motor or generator touching a gear) turn the SAME way.',
+    'Jammed! Three big gears touching in an L can\'t turn: each would have to turn both ways at once. They show a red ❌.',
+    'Gears change speed, not power: they can make things faster or stronger, never both.',
+    'Nothing runs forever. A motor powered by its own generator slows down and stops, like a real one.',
+  ],
+  blocks: {
+    gearSmall: { does: '8 teeth. Turns the gears next to it the other way.' },
+    gearBig: { does: '16 teeth: half as fast as a small gear it touches. Big gears also touch corner to corner.' },
+    axle: { does: 'A rod. Carries turning in a straight line, the same way round.' },
+    crankStop: { does: 'Hand power! Red knob = stopped, green knob = turning.', use: 'stop → ↻ → ↺ → stop' },
+    waterWheel: { does: 'Turns when water flows through it. More water = faster.' },
+    motor: { does: 'Turns electricity into turning. Put it in a loop with a battery. Flip the battery round and it turns the other way.' },
+    generator: { does: 'Turns turning into electricity: wire it up like a battery. Its + end swaps when it turns the other way.' },
+  },
+};
+
 export default {
   tab: { id: 'gears', icon: '⚙️', label: 'Gears' },
   blocks,
+  guide,
   systems: [gearsSystem],
   refresh: refreshSpin,
 };

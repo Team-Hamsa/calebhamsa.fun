@@ -17,7 +17,8 @@ import {
   AIR_INFO, PACKS, allSystems, blockInfo, blocksInPack, drawLayers, isKnownBlock, refreshSignals,
 } from './blocks/registry.js';
 import { pour } from './fluids.js';
-import { drawCell, drawWorld } from './block-art.js';
+import { blockCanvas, drawWorld } from './block-art.js';
+import { initGuide } from './guide.js';
 import { WORLD_COUNT, loadCurrent, loadThumbnail, loadWorld, saveCurrent, saveWorld, worldKey } from './saves.js';
 import { audioRunning, listenForUnlock, playTones, setHum } from './sound.js';
 import { cellsAlongLine, choose, filenameForDate, flash } from './ui.js';
@@ -37,6 +38,13 @@ const LIGHT_MS = 300;
 
 /** How big the blocks in the palette are, in CSS pixels. */
 const SWATCH_PX = 40;
+
+/**
+ * How long to press and hold a palette block to open the ❓ guide on it,
+ * in milliseconds.
+ * 🧪 Try this! 1500 for a long, slow press.
+ */
+const LONG_PRESS_MS = 500;
 
 /** The world canvas's border width (blocks.css #world), in CSS pixels. */
 const WORLD_BORDER_PX = 6;
@@ -95,6 +103,10 @@ let frame;        // the box around the canvas
 let toolButtons = [];
 let tabButtons = [];
 let paletteButtons = [];
+
+/** The ❓ guide pop-up (see guide.js): guide.open(tabId, blockName?). */
+let guide = null;
+
 let tickTimer = null;
 let worldButtons = [];
 let saveTimer = null;
@@ -187,6 +199,8 @@ export function initBuild() {
   buildWorldButtons();
   byId('photo').addEventListener('click', savePhoto);
   byId('new-world').addEventListener('click', newWorld);
+  guide = initGuide();
+  byId('help').addEventListener('click', () => guide.open(state.tab));
 
   setupTools();
   buildTabs();
@@ -291,18 +305,31 @@ function makeSwatch(name) {
   button.setAttribute('aria-label', info.title);
   button.setAttribute('aria-pressed', 'false');
 
-  const swatch = document.createElement('canvas');
-  const ratio = window.devicePixelRatio || 1;
-  swatch.width = SWATCH_PX * ratio;
-  swatch.height = SWATCH_PX * ratio;
-  const swatchCtx = swatch.getContext('2d');
-  swatchCtx.scale(ratio, ratio);
-  swatchCtx.fillStyle = AIR_INFO.color; // sky behind see-through blocks
-  swatchCtx.fillRect(0, 0, SWATCH_PX, SWATCH_PX);
-  drawCell(swatchCtx, info, 0, 0, SWATCH_PX, undefined, 0); // parts face sideways, nothing flowing
+  button.append(blockCanvas(info, SWATCH_PX, AIR_INFO.color)); // sky behind see-through blocks
 
-  button.append(swatch);
-  button.addEventListener('click', () => selectBlock(name));
+  // A tap chooses the block. Pressing and holding opens the ❓ guide on it
+  // instead (and then the tap at the end doesn't choose it).
+  let holdTimer = null;
+  let held = false;
+  button.addEventListener('pointerdown', () => {
+    held = false;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => {
+      held = true;
+      guide.open(state.tab, name);
+    }, LONG_PRESS_MS);
+  });
+  for (const type of ['pointerup', 'pointerleave', 'pointercancel']) {
+    button.addEventListener(type, () => clearTimeout(holdTimer));
+  }
+  button.addEventListener('contextmenu', (event) => event.preventDefault()); // no "copy / save image" menu
+  button.addEventListener('click', () => {
+    if (held) {
+      held = false;
+      return;
+    }
+    selectBlock(name);
+  });
   byId('palette').append(button);
   return button;
 }

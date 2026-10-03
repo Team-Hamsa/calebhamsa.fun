@@ -5,7 +5,8 @@
   The world is drawn on one <canvas> by js/build.js. Below it: the three
   tools (BUILD, DIG, USE), the 📷 and 🗑️ buttons, the palette tabs (one per
   block pack), and the blocks in the chosen tab. The 🌍 world buttons
-  in the top bar switch between Caleb's three saved worlds.
+  in the top bar switch between Caleb's three saved worlds, and ❓ opens
+  the guide pop-up that explains every block.
 -->
 <html lang="en">
 <head>
@@ -40,7 +41,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- crossorigin lets the offline helper (sw.js) save this, so the font works offline too. -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika&family=Playwrite+US+Trad&family=Press+Start+2P&display=swap" crossorigin>
   <link rel="stylesheet" href="css/blocks.css">
 </head>
 <body class="build-page">
@@ -62,12 +63,23 @@
       <button class="block gold" data-tool="use" aria-pressed="false">✋ USE</button>
       <button class="block" id="photo" aria-label="Save picture">📷</button>
       <button class="block obsidian" id="new-world" aria-label="New world">🗑️</button>
+      <button class="block" id="help" aria-label="Guide">❓</button>
     </div>
 
     <!-- build.js fills these: one tab per block pack, then that pack's blocks. -->
     <div class="toolbar" id="tabs"></div>
     <div class="toolbar palette" id="palette"></div>
   </main>
+
+  <!-- The ❓ guide: guide.js fills in its tabs and pages. -->
+  <dialog class="chem-dialog guide" id="guide">
+    <form method="dialog">
+      <div class="toolbar" id="guide-tabs">
+        <button class="block obsidian" aria-label="Close">✖</button>
+      </div>
+      <div class="guide-list" id="guide-list"></div>
+    </form>
+  </dialog>
 
   <script type="module">
     import { initBuild } from './js/build.js';

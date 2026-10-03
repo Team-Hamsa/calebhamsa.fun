@@ -380,9 +380,32 @@ const blocks = {
   },
 };
 
+/**
+ * What the ❓ guide on the Build page says about this tab: its rules,
+ * and what each block in the palette does (and what ✋ USE does to it).
+ * tests/guide.test.js checks every palette block is here.
+ */
+const guide = {
+  rules: [
+    'Electricity only flows around a complete LOOP: out of the battery\'s + end, through wires and parts, and back into its other end.',
+    'Little yellow dots run along the wires while it flows.',
+    'Parts turn to face their wires: wires on the left and right, or above and below. The gray metal ends show which way.',
+    'Short circuit! A battery wired straight back to itself sparks and smokes. Never try that with a real battery.',
+  ],
+  blocks: {
+    battery: { does: 'Pushes electricity out of its + end. Two batteries in a row push twice as hard.' },
+    wire: { does: 'Carries electricity. It joins every wire, gold block and part next to it.' },
+    switchOpen: { does: 'A gap in the loop you can close. Tipped up = off, flat = on.', use: 'open ↔ closed' },
+    lamp: { does: 'Lights up when electricity flows through it. More electricity = brighter.' },
+    buzzer: { does: 'Hums while electricity flows through it. More = louder.' },
+    clicker: { does: 'A switch that flips itself: on for a second, off for a second. Put note blocks in its loop for music.' },
+  },
+};
+
 export default {
   tab: { id: 'electric', icon: '⚡', label: 'Power' },
   blocks,
+  guide,
   systems: [electricSystem],
   refresh: refreshElectric,
 };

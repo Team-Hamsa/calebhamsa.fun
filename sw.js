@@ -26,7 +26,7 @@
  * 🧪 Change the number (v1 → v2) after adding or renaming files in PRECACHE
  *    below, so every device fetches a fresh set.
  */
-const CACHE_NAME = 'caleb-v7';
+const CACHE_NAME = 'caleb-v8';
 
 /**
  * Files to save straight away, the first time the site is opened, so
@@ -60,6 +60,7 @@ const PRECACHE = [
   './js/lift.js',
   './js/blocks/gears.js',
   './js/blocks/lifting.js',
+  './js/guide.js',
   './chem.html',
   './js/chem/board.js',
   './js/chem/book.js',

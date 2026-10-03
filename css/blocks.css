@@ -590,6 +590,35 @@ main {
 /* Palette blocks: the picture is drawn by block-art.js on a tiny canvas. */
 .palette .block { padding: 4px; }
 .palette canvas { display: block; width: 40px; height: 40px; }
+/* No iPad "copy / save image" pop-up when a finger holds a block (that opens the guide). */
+.palette .block { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+/* The ❓ guide pop-up. It borrows the Chemistry room's pop-up look. The
+   padding is on the form, not the dialog, so a tap on the dialog itself
+   means a tap outside the guide (guide.js closes it). */
+.guide { width: min(92vw, 720px); padding: 0; }
+.guide form { padding: 16px; }
+.guide-list {
+  width: 100%;
+  max-height: 65vh;
+  overflow-y: auto;
+  text-align: left;
+}
+.guide-list h2 { text-align: center; margin-bottom: 8px; }
+.guide-rules { font-family: 'Andika', sans-serif; font-size: 18px; line-height: 1.4; padding-left: 24px; }
+.guide-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px;
+  border-top: 3px solid var(--stone);
+}
+.guide-entry canvas { flex: none; image-rendering: pixelated; }
+.guide-entry h3 { margin: 0 0 4px; font-size: 14px; line-height: 1.5; }
+.guide-entry p { text-align: left; }
+.guide-entry .guide-use { font-weight: bold; margin-top: 4px; }
+.guide-icon { flex: none; width: 48px; font-size: 36px; text-align: center; }
+.guide-entry.found { animation: pulse 500ms 3; background: #fff3c4; }
 
 /* World buttons show a tiny picture of each world. */
 .world-button { padding: 4px; }

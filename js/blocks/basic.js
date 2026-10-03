@@ -111,8 +111,37 @@ const blocks = {
 };
 for (const note of NOTE_BLOCKS) blocks[note.name] = noteBlock(note);
 
+/**
+ * What the ❓ guide on the Build page says about this tab: its rules,
+ * and what each block in the palette does (and what ✋ USE does to it).
+ * tests/guide.test.js checks every palette block is here.
+ */
+const guide = {
+  rules: [
+    'Most blocks float in the air where you put them, like in the game.',
+    'Sand falls down until it lands on something.',
+  ],
+  blocks: {
+    grass: { does: 'A plain building block: dirt with grass on top.' },
+    dirt: { does: 'A plain building block.' },
+    stone: { does: 'A plain building block. It holds water, so it\'s good for tanks.' },
+    wood: { does: 'A plain building block. Electricity can\'t go through it.' },
+    glass: { does: 'See-through! Build a glass tank to watch the water inside.' },
+    obsidian: { does: 'A plain dark building block.' },
+    gold: { does: 'A building block that carries electricity, like real gold. Use it as wire.' },
+    sand: { does: 'Falls until it lands on something. It sinks through water.' },
+  },
+};
+for (const note of NOTE_BLOCKS) {
+  guide.blocks[note.name] = {
+    does: `Sings ${note.label}. Put it in an electric loop and it sings by itself when the electricity starts.`,
+    use: `plays ${note.label}`,
+  };
+}
+
 export default {
   tab: { id: 'basic', icon: '⛏️', label: 'Blocks' },
   blocks,
+  guide,
   systems: [fallingBlocks],
 };

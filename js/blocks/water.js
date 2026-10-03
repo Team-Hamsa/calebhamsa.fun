@@ -437,9 +437,38 @@ const blocks = {
   pumpUp: pump('up', true),
 };
 
+/**
+ * What the ❓ guide on the Build page says about this tab: its rules,
+ * and what each block in the palette does (and what ✋ USE does to it).
+ * tests/guide.test.js checks every palette block is here.
+ */
+const guide = {
+  rules: [
+    'Water and steam are real amounts: a cell can be full, half full or nearly empty. Water never appears or disappears by itself.',
+    'Water falls and spreads out. Deep water gets squished, so it pushes UP through pipes and U-tubes.',
+    'Steam is the opposite: it rises and spreads out under ceilings.',
+  ],
+  blocks: {
+    water: { does: 'BUILD pours a cell full of water. It falls, spreads out and levels off.' },
+    steam: { does: 'BUILD pours a cell full of steam. It rises.' },
+    pipe: { does: 'Carries water and steam. Pipes join the pipes next to them. The end of a pipe is open, so water pours out.' },
+    valveOpen: { does: 'A pipe with a tap in it. Green = open, red = shut.', use: 'open ↔ shut' },
+    faucet: { does: 'Drips water out of its bottom, forever.' },
+    drain: { does: 'Water that flows into it disappears.' },
+    burnerOn: { does: 'Boils the water just above it into steam.', use: 'on ↔ off' },
+    chiller: { does: 'Very cold: steam touching it turns back into water. It rains!' },
+    turbine: { does: 'A fan in a pipe. Steam rushing through spins it and makes electricity: wire it up like a battery.' },
+    pumpRight: {
+      does: 'Uses electricity to push water the way its arrow points, even uphill. Wire it into a loop with a battery.',
+      use: 'turns it: → ↓ ← ↑',
+    },
+  },
+};
+
 export default {
   tab: { id: 'water', icon: '💧', label: 'Water' },
   blocks,
+  guide,
   systems: [waterSystem],
   refresh: refreshWater,
   drawLayer: drawWaterLayer,

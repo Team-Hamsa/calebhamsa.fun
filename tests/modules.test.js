@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 /** Every file in js/. Add new ones here! */
-const MODULES = ['ui.js', 'music-theory.js', 'music.js', 'draw.js', 'trace.js', 'pwa.js', 'sound.js', 'world.js', 'blocks/basic.js', 'blocks/registry.js', 'saves.js', 'block-art.js', 'build.js', 'circuit.js', 'blocks/electric.js', 'fluids.js', 'blocks/water.js', 'spin.js', 'blocks/gears.js', 'chem/smiles.js', 'chem/canon.js', 'chem/board.js', 'chem/book.js', 'chem/kid-names.js', 'chem/lookup.js', 'chem/save.js', 'chem/chem-art.js', 'chem/room.js'];
+const MODULES = ['ui.js', 'music-theory.js', 'music.js', 'draw.js', 'trace.js', 'pwa.js', 'sound.js', 'world.js', 'blocks/basic.js', 'blocks/registry.js', 'saves.js', 'block-art.js', 'build.js', 'circuit.js', 'blocks/electric.js', 'fluids.js', 'blocks/water.js', 'spin.js', 'blocks/gears.js', 'lift.js', 'blocks/lifting.js', 'guide.js', 'chem/smiles.js', 'chem/canon.js', 'chem/board.js', 'chem/book.js', 'chem/kid-names.js', 'chem/lookup.js', 'chem/save.js', 'chem/chem-art.js', 'chem/room.js'];
 
 for (const name of MODULES) {
   test(`js/${name} loads`, async () => {

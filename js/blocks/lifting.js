@@ -277,9 +277,32 @@ const blocks = {
   ironWeight: { title: 'Iron weight', color: '#5f6a72', falls: true, weight: 4, label: '4' },
 };
 
+/**
+ * What the ❓ guide on the Build page says about this tab: its rules,
+ * and what each block in the palette does (and what ✋ USE does to it).
+ * tests/guide.test.js checks every palette block is here.
+ */
+const guide = {
+  rules: [
+    'A winch turning ↻ winds the rope in (up). Turning ↺ lets it out (down).',
+    'Heavy things need more effort. Too heavy, and everything STALLS: nothing turns and the winch shows a red ⬇.',
+    'Slower is stronger! A small gear driving a big gear makes the winch slower, so it can lift more. Gearing UP makes it weaker.',
+    'Dig the rope and whatever hangs on it falls.',
+  ],
+  blocks: {
+    winch: { does: 'A drum that winds rope. Turn it with a crank, gears or a motor touching it.' },
+    rope: { does: 'Put some next to the winch and let it hang down. The winch adds and takes away rope as it moves.' },
+    pulley: { does: 'A wheel the rope runs over, so it can change direction: up a tower and down the other side.' },
+    pulleyHook: { does: 'Hang it on the rope with the load under it. The load counts half as heavy, but goes up half as fast.' },
+    crate: { does: 'Weighs 1. Falls like sand, unless a rope holds it up.' },
+    ironWeight: { does: 'Weighs 4. Too heavy for a crank on its own: gear it down!' },
+  },
+};
+
 export default {
   tab: { id: 'lift', icon: '🏗️', label: 'Lifting' },
   blocks,
+  guide,
   systems: [liftSystem],
   refresh: refreshLift,
 };
