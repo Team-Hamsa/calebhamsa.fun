@@ -10,15 +10,17 @@ import basic from './basic.js';
 import electric from './electric.js';
 import water from './water.js';
 import gears from './gears.js';
+import lifting from './lifting.js';
 
 /**
  * Every pack, in the order their systems run each tick. Order matters
  * once packs talk to each other: sand must land BEFORE the electricity
  * is worked out, and water must turn to steam BEFORE the turbine checks
- * for steam. The plan for later phases is:
- *   basic → water → mechanical → electric
+ * for steam, and the winches must know how fast the gears turn BEFORE
+ * they lift anything:
+ *   basic → water → gears → lifting → electric
  */
-export const PACKS = [basic, water, gears, electric];
+export const PACKS = [basic, water, gears, lifting, electric];
 
 /**
  * The names of the signals packs pass to each other: ⚡ power (wires,

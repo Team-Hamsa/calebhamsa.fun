@@ -59,6 +59,7 @@ const PRECACHE = [
   './js/spin.js',
   './js/lift.js',
   './js/blocks/gears.js',
+  './js/blocks/lifting.js',
   './chem.html',
   './js/chem/board.js',
   './js/chem/book.js',

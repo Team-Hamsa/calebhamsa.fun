@@ -98,3 +98,15 @@ test('note blocks are electric parts, and ✋ on one says the world did not chan
 test('gold conducts electricity, like real gold', () => {
   assert.equal(basic.blocks.gold.conducts, true);
 });
+
+test('a crate hanging on a rope doesn\'t fall, and nor does sand stuck under it', () => {
+  const world = createWorld(2, 5);
+  setBlock(world, 0, 0, 'rope');
+  setBlock(world, 0, 1, 'crate');
+  setBlock(world, 0, 2, 'sand');
+  setBlock(world, 1, 1, 'crate'); // next to the rope, not under it: it falls
+  for (let i = 0; i < 3; i++) fall(world);
+  assert.equal(getBlock(world, 0, 1), 'crate');
+  assert.equal(getBlock(world, 0, 2), 'sand');
+  assert.equal(getBlock(world, 1, 4), 'crate');
+});

@@ -50,7 +50,7 @@ const WHEEL_SMOOTHING = 8;
  * The clock's ticks per second (the same as TICKS_PER_SECOND in build.js),
  * used to turn "turns per second" into how far to draw a gear round.
  */
-const TICKS_PER_SECOND = 8;
+export const TICKS_PER_SECOND = 8;
 
 /**
  * Gears are DRAWN turning this many times slower than they really turn.
@@ -192,7 +192,7 @@ export function gearsSystem(world, blockInfo) {
  * @param {number} ticks - the world's clock
  * @returns {number} 0 = not turned, 0.5 = half a turn, ...
  */
-function turned(cell, ticks) {
+export function turned(cell, ticks) {
   if (!cell || Math.abs(cell.speed) < MIN_SPEED) return 0;
   const turns = (ticks * cell.speed) / (TICKS_PER_SECOND * DRAW_SLOWDOWN);
   return turns - Math.floor(turns);
