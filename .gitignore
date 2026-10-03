@@ -1,1 +1,5 @@
 .remember/
+# tools/chem-db downloads and in-between files (see tools/chem-db/README.md)
+tools/chem-db/*.gz
+tools/chem-db/molecules.tsv
+tools/chem-db/venv/
