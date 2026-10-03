@@ -63,6 +63,7 @@ const PRECACHE = [
   './js/chem/canon.js',
   './js/chem/kid-names.js',
   './js/chem/lookup.js',
+  './js/chem/save.js',
   './js/chem/smiles.js',
   './manifest.webmanifest',
   './favicon.ico',
