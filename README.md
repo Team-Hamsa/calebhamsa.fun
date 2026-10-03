@@ -24,10 +24,11 @@ Then open <http://localhost:8000>. Change a file, save, and reload the page.
 
 | File | What it does |
 |---|---|
-| `index.html` | The homepage: title, four big blocks, favorite things |
+| `index.html` | The homepage: title, five big blocks, favorite things |
 | `music.html` | The Note Blocks page layout |
 | `draw.html` | The Draw & Trace page layout |
 | `build.html` | The Build page layout |
+| `chem.html` | The Chemistry room layout |
 | `css/blocks.css` | How everything **looks**: colors, block buttons, animations |
 | `js/music-theory.js` | The music brain: notes as numbers, chords, scales (pure math) |
 | `js/music.js` | Makes Note Blocks work: sound, modes, record, Guess it! |
@@ -44,6 +45,16 @@ Then open <http://localhost:8000>. Change a file, save, and reload the page.
 | `js/blocks/registry.js` | The list of block packs (add new packs here) |
 | `js/block-art.js` | Draws blocks pixel-art style |
 | `js/saves.js` | Keeps the three Build worlds saved |
+| `js/chem/room.js` | Makes the Chemistry room work: tools, atoms, name cards, the book |
+| `js/chem/board.js` | The chemistry board: atoms holding hands, finished and stuck molecules (pure) |
+| `js/chem/smiles.js` | Reads molecules written as SMILES text, like `CCO` (pure) |
+| `js/chem/canon.js` | Gives each molecule one label, however it was built (pure) |
+| `js/chem/book.js` | The collection book and the unlock ladder (pure) |
+| `js/chem/lookup.js` | "What did I make?": hand-written list, then the big list |
+| `js/chem/kid-names.js` | The hand-written molecules: kid names and fun facts |
+| `js/chem/chem-art.js` | Draws atoms, sticks and hands |
+| `js/chem/save.js` | Keeps the chemistry board and book saved |
+| `data/molecules.json` | 69,000 real molecule names from PubChem (made by `tools/chem-db/`) |
 | `js/draw.js` | The drawing pad: brushes, colors, clear, save |
 | `js/trace.js` | Handwriting sheets: lines, print/cursive letters, fade-out rows |
 | `js/ui.js` | Little helpers every page shares (buttons, grid swipes, picture names) |
@@ -233,6 +244,35 @@ in its place.
 
 ![Sand sinking through water in a glass tank](docs/machines/sand-in-water.png)
 
+## 🧪 The Chemistry room
+
+Atoms are balls with **hands**: ⚪ H has 1, 🔴 O has 2, 🔵 N has 3, ⚫ C has 4,
+🟢 Cl has 1, 🟡 S has 2. Put atoms side by side and they hold hands by
+themselves. When **every** hand in a molecule is holding another one, it's
+finished: it glows, the room says its name, and it goes in the 📖 book.
+
+| Tool | What it does |
+|---|---|
+| 🧱 PLACE | Tap or drag to put the chosen atom down |
+| ⛏️ REMOVE | Tap or drag to take atoms away |
+| 🔗 BOND | Tap between two atoms: one more stick (double, triple bonds). When they can't take more sticks, the tap pulls them apart, and the next tap joins them again |
+
+- **Name cards:** 📖 a molecule from the book (with a fun fact), 🌟 a real
+  molecule with its real chemistry name ("super rare!"), 💡 a molecule nobody
+  has named: your invention. ⏳ means "no internet yet, I'll look it up later".
+- **Unlocking:** start with H and O. 💧 Water unlocks ⚫ C. Three carbon
+  molecules unlock 🔵 N. Two nitrogen molecules unlock 🟢 Cl and 🟡 S.
+- **Crowding:** H atoms take up a cell, so some shapes don't fit. A hand with
+  no room left turns red and squished, with a 💥. Move something!
+- **Rings:** a ring of 6 carbons (benzene) is a 2×3 rectangle. The two middle
+  carbons grab hands across the ring, so pull them apart with 🔗.
+- **Grown-ups (⚙️):** unlock every atom, name the newest invention, or erase the book.
+
+The big name list comes from [PubChem](https://pubchem.ncbi.nlm.nih.gov)
+(public domain, from the US National Library of Medicine): every molecule
+with up to 8 non-H atoms that fits on the board. See `tools/chem-db/README.md`
+to remake it.
+
 ## 🧪 Experiments to try
 
 Search the code for `🧪 Try this!` to find them all. Some favorites:
@@ -252,6 +292,8 @@ Search the code for `🧪 Try this!` to find them all. Some favorites:
 13. **Dimmer lamps:** in `js/blocks/electric.js`, change the lamp's `resistance` to 2.
 14. **Slow-motion water:** in `js/fluids.js`, set `FLUID_STEPS` to 1.
 15. **Super gears:** in `js/blocks/gears.js`, give the big gear 24 teeth: small gears it drives spin 3 times as fast.
+16. **Easy carbon:** in `js/chem/book.js`, change the N step's goal from 3 carbon molecules to 1.
+17. **Your own molecule:** add one to `js/chem/kid-names.js` with its SMILES, a name and a fact, then run `npm test`.
 
 ## Using it like an app (offline)
 
@@ -315,6 +357,9 @@ Run through this after big changes (Caleb is the best tester):
 - [ ] Rotating the tablet keeps the drawing and redraws the guides.
 - [ ] Nothing scrolls sideways on a phone.
 - [ ] Add to Home Screen shows the grass-block icon and opens full-screen.
+- [ ] Chemistry: H–O–H says "Water!" and unlocks C; the book shows the water picture.
+- [ ] Chemistry: 🔗 on O–O makes O=O (Oxygen); 🔗 on a full pair pulls it apart.
+- [ ] Chemistry: a molecule with a long chemistry name gets 🌟 (needs the internet once).
 - [ ] Turn on Airplane Mode and open the home-screen app: every page still works.
 
 ## Publishing
