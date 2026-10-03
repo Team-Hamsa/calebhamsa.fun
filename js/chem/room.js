@@ -17,7 +17,7 @@ import { ALL_ATOMS, LADDER, createBook, nameNewestInvention, record, resolvePend
 import { canonLabel } from './canon.js';
 import { ATOM_INFO, drawAtom, drawBoard } from './chem-art.js';
 import { KID_MOLECULES } from './kid-names.js';
-import { kidIndex, loadDatabase, lookUp } from './lookup.js';
+import { kidIndex, labelsOf, loadDatabase, lookUp } from './lookup.js';
 import { loadState, saveState } from './save.js';
 import { HANDS, parseSmiles } from './smiles.js';
 import { cellsAlongLine, choose, flash } from '../ui.js';
@@ -120,6 +120,35 @@ export function cardWords(result, recorded) {
   return { name: 'Finished!', badge: '⏳', fact: "I'll look up its name when we have internet." };
 }
 
+/** Taps that count as "the person did something" for speech (same as sound.js). */
+const SPEECH_UNLOCK_EVENTS = ['pointerup', 'touchend', 'click', 'keydown'];
+
+/**
+ * iPads only let a page talk after a real tap, and a finger touching
+ * down (pointerdown, which builds) isn't one. So on the first real tap,
+ * say one silent word: after that, the page may talk any time.
+ * @param {EventTarget} target - where to listen (the document)
+ * @param {SpeechSynthesis|undefined} synth - the browser's speech machine
+ * @param {Function|undefined} Utterance - SpeechSynthesisUtterance
+ * @returns {void}
+ */
+export function primeSpeech(target, synth, Utterance) {
+  if (!synth || !Utterance) return; // no speech here: the cards still show the words
+  /**
+   * Say the silent word once, then stop listening.
+   * @returns {void}
+   */
+  const prime = () => {
+    for (const type of SPEECH_UNLOCK_EVENTS) target.removeEventListener(type, prime);
+    try {
+      synth.speak(new Utterance(''));
+    } catch {
+      // Speech not allowed: the cards still show the words.
+    }
+  };
+  for (const type of SPEECH_UNLOCK_EVENTS) target.addEventListener(type, prime);
+}
+
 // =============================================================
 // The page
 // =============================================================
@@ -168,6 +197,7 @@ export function initChem() {
   setupPointer();
   setupDialogs();
   listenForUnlock();
+  primeSpeech(document, window.speechSynthesis, window.SpeechSynthesisUtterance);
   new ResizeObserver(resizeCanvas).observe(frame);
   resizeCanvas();
   fetchDatabase();
@@ -607,8 +637,8 @@ function showBookTab(tab) {
  * @returns {HTMLElement} the tile
  */
 function foundTile(entry) {
-  const label = canonLabel(parseSmiles(entry.smiles));
-  if (!state.book.found.includes(label)) {
+  const label = labelsOf(entry).find((l) => state.book.found.includes(l));
+  if (!label) {
     const hint = tile(null, atomHint(entry.smiles), null);
     hint.classList.add('not-found');
     return hint;

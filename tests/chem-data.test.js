@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { canonLabel } from '../js/chem/canon.js';
 import { KID_MOLECULES } from '../js/chem/kid-names.js';
+import { kidIndex } from '../js/chem/lookup.js';
 import { parseSmiles } from '../js/chem/smiles.js';
 
 const database = JSON.parse(readFileSync(new URL('../data/molecules.json', import.meta.url), 'utf8'));
@@ -57,4 +58,20 @@ test('both ways of drawing o-xylene double bonds find the same name', () => {
 test('molecules too crowded for the grid are not in the list', () => {
   assert.equal(database[label('CC(C)C')], undefined); // isobutane
   assert.equal(database[label('CC(C)(C)C')], undefined); // neopentane
+});
+
+test('every way of building a hand-written molecule finds its 📖 entry (all Kekulé forms)', () => {
+  // The big list has every Kekulé form under the same name, so any label
+  // sharing a hand-written molecule's big-list name is that molecule too.
+  const kids = kidIndex();
+  const kidNames = new Set([...kids.keys()].map((l) => database[l]));
+  const missed = Object.entries(database)
+    .filter(([l, name]) => kidNames.has(name) && !kids.has(l))
+    .map(([, name]) => name);
+  assert.deepEqual(missed, []);
+});
+
+test('no name in the big list is just a PubChem number', () => {
+  const numbers = Object.values(database).filter((name) => /^CID \d+$/.test(name));
+  assert.deepEqual(numbers.slice(0, 3), []);
 });

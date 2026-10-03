@@ -35,3 +35,9 @@ test('SMILES the room cannot read are skipped, not fatal', () => {
   assert.deepEqual(skipped, ['c1ccccc1']);
   assert.equal(names[label('O')], 'Water');
 });
+
+test('PubChem compounds with no real name ("CID 123") are left out', () => {
+  const { names } = buildDatabase('CID 53627737\tCCCC=O\nWater\tO\n');
+  assert.equal(names[label('CCCC=O')], undefined);
+  assert.equal(names[label('O')], 'Water');
+});

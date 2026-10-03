@@ -16,12 +16,21 @@ import { parseSmiles } from './smiles.js';
 export const DATABASE_URL = 'data/molecules.json';
 
 /**
- * Work out the label of every hand-written molecule.
- * @param {{smiles: string}[]} [list] - the hand-written molecules
+ * Every label one hand-written molecule can have (one per way to build it).
+ * @param {{smiles: string, forms?: string[]}} entry - a hand-written molecule
+ * @returns {string[]} its labels
+ */
+export function labelsOf(entry) {
+  return [entry.smiles, ...(entry.forms ?? [])].map((smiles) => canonLabel(parseSmiles(smiles)));
+}
+
+/**
+ * Work out the labels of every hand-written molecule.
+ * @param {{smiles: string, forms?: string[]}[]} [list] - the hand-written molecules
  * @returns {Map<string, object>} label → its entry from the list
  */
 export function kidIndex(list = KID_MOLECULES) {
-  return new Map(list.map((entry) => [canonLabel(parseSmiles(entry.smiles)), entry]));
+  return new Map(list.flatMap((entry) => labelsOf(entry).map((label) => [label, entry])));
 }
 
 /**

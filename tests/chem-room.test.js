@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { createBoard, placeAtom } from '../js/chem/board.js';
 import { ATOM_INFO, drawBoard } from '../js/chem/chem-art.js';
 import { HANDS } from '../js/chem/smiles.js';
-import { atomHint, bondTarget, cardWords, fitCellSize } from '../js/chem/room.js';
+import { atomHint, bondTarget, cardWords, fitCellSize, primeSpeech } from '../js/chem/room.js';
 
 /**
  * A pretend canvas "context" that counts drawing calls.
@@ -72,4 +72,26 @@ test('drawBoard draws a ball for each atom and a stick for each bond', () => {
   const free = fakeContext();
   drawBoard(free, createBoard(1, 1), 40); // empty board: no balls
   assert.equal(free.count.arc, undefined);
+});
+
+test('primeSpeech says one silent word on the first real tap, then stops listening', () => {
+  const listeners = new Map();
+  const target = {
+    addEventListener: (type, fn) => listeners.set(type, fn),
+    removeEventListener: (type) => listeners.delete(type),
+  };
+  const spoken = [];
+  const synth = { speak: (words) => spoken.push(words.text) };
+  /** A pretend SpeechSynthesisUtterance. @param {string} text - the words */
+  function Words(text) { this.text = text; }
+  primeSpeech(target, synth, Words);
+  assert.deepEqual([...listeners.keys()].sort(), ['click', 'keydown', 'pointerup', 'touchend']);
+  listeners.get('pointerup')();
+  assert.deepEqual(spoken, ['']);
+  assert.equal(listeners.size, 0); // only once
+});
+
+test('primeSpeech does nothing in a browser with no speech', () => {
+  const target = { addEventListener: () => assert.fail('should not listen'), removeEventListener() {} };
+  primeSpeech(target, undefined, undefined);
 });

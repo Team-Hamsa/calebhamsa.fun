@@ -18,8 +18,19 @@
  *      comes first alphabetically. Every way of building the molecule
  *      ends up at that same "first" list.
  *
- * Molecules here are small (8 non-H atoms at most), so step 3 is quick.
+ * Step 3 gets slow fast: a ring of 12 identical atoms has 479 million
+ * orders. Molecules in the name lists have 8 non-H atoms at most, so only
+ * those get step 3. Bigger ones (Caleb can draw a big ring on the board!)
+ * get a quicker label made from their teams alone. It's still the same
+ * however the molecule is built; two different big inventions might
+ * share one, which is harmless (they're inventions either way).
  */
+
+/**
+ * The most non-H atoms that get the full every-order search (step 3).
+ * Must be at least the biggest molecule in data/molecules.json (8).
+ */
+export const FULL_SEARCH_MAX = 8;
 
 /**
  * The label for a molecule.
@@ -62,6 +73,14 @@ export function canonLabel(graph) {
     }));
     if (new Set(next).size === new Set(color).size) break;
     color = next;
+  }
+
+  if (heavy.length > FULL_SEARCH_MAX) {
+    // Too big to try every order: describe each atom by its team and its
+    // neighbors' teams, and sort those descriptions.
+    const kinds = heavy.map((index, h) => `${atoms[index].el}${hCount[h]}`);
+    const described = heavy.map((_, h) => `${color[h]}<${links[h].map(({ to, order }) => `${color[to]}:${order}`).sort().join(',')}>`);
+    return `${kinds.sort().join(',')}|~${described.sort().join(';')}`;
   }
 
   // Step 3: teams in order; try every order inside each team.

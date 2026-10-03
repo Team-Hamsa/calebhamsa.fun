@@ -42,5 +42,6 @@ room's own `canon.js`, and writes `data/molecules.json`. It prints how many
 labels it made, and how many **clashes** it found (two names for one label).
 Clashes should be 0. If they're not, `canon.js` or `export.py` has a bug.
 
-Built 2026-10-03: 69,700 labels (69,153 molecules, some with two Kekulé
-forms), 0 clashes, 6.7 MB on disk, 0.84 MB gzipped.
+Built 2026-10-03: 69,460 labels (68,913 named molecules, some with two
+Kekulé forms), 0 clashes, 6.7 MB on disk, 0.84 MB gzipped. Compounds
+PubChem never named (titled just "CID 123…") are left out.

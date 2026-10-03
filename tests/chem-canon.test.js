@@ -80,3 +80,18 @@ test('a ring of 8 identical atoms is still quick', () => {
   label('C1=CC=CC=CC=C1');
   assert.ok(Date.now() - started < 2000);
 });
+
+test('a big ring drawn on the board (more than 8 atoms) is labelled quickly', () => {
+  // A 4×4 hollow square of 12 O atoms is one ring of identical atoms:
+  // trying every order would be 12! ≈ 479 million tries.
+  const ring = { atoms: [], bonds: [] };
+  for (let k = 0; k < 12; k += 1) {
+    ring.atoms.push({ el: 'O' });
+    ring.bonds.push({ a: k, b: (k + 1) % 12, order: 1 });
+  }
+  const started = Date.now();
+  const first = canonLabel(ring);
+  assert.ok(Date.now() - started < 200, `took ${Date.now() - started} ms`);
+  assert.equal(canonLabel(shuffle(ring, 7)), first); // still the same however it's numbered
+  assert.notEqual(canonLabel(parseSmiles('OOOOOOOOOOO')), first); // a chain is not a ring
+});

@@ -6,6 +6,11 @@
  * out its label and spot it when Caleb builds it. `step` says which page
  * of the book it's on: the unlock step whose atoms it needs.
  *
+ * A ring with double bonds can often be built two ways (the double
+ * bonds sit in different places: "Kekulé forms"). When those are
+ * different on the board, `forms` lists the other ways, so either one
+ * finds the entry.
+ *
  * Every molecule here must fit on the board and be in data/molecules.json
  * (tests/chem-data.test.js checks), so Caleb can really build them all.
  *
@@ -13,7 +18,7 @@
  *    (pubchem.ncbi.nlm.nih.gov), and run `npm test` to check it fits.
  */
 
-/** @type {{smiles: string, name: string, fact: string, step: number}[]} */
+/** @type {{smiles: string, forms?: string[], name: string, fact: string, step: number}[]} */
 export const KID_MOLECULES = [
   // ---- Step 1: ⚪ H and 🔴 O ----
   { step: 1, smiles: '[H][H]', name: 'Hydrogen', fact: 'The lightest stuff there is. The Sun is mostly hydrogen!' },
@@ -62,9 +67,9 @@ export const KID_MOLECULES = [
   { step: 2, smiles: 'C1CCC1', name: 'Cyclobutane', fact: 'Four carbons holding hands in a square ring.' },
   { step: 2, smiles: 'C1=CC=CC=C1', name: 'Benzene', fact: 'A ring of six carbons. Its smell is sweet, but it is poisonous.' },
   { step: 2, smiles: 'CC1=CC=CC=C1', name: 'Toluene', fact: 'In paint thinner. Smells like markers.' },
-  { step: 2, smiles: 'CC1=CC=CC=C1C', name: 'Xylene', fact: 'Used to clean paint brushes.' },
+  { step: 2, smiles: 'CC1=CC=CC=C1C', forms: ['CC1=C(C)C=CC=C1'], name: 'Xylene', fact: 'Used to clean paint brushes.' },
   { step: 2, smiles: 'OC1=CC=CC=C1', name: 'Phenol', fact: 'One of the first germ killers ever used in hospitals.' },
-  { step: 2, smiles: 'OC1=CC=CC=C1O', name: 'Catechol', fact: 'Helps turn a cut apple brown.' },
+  { step: 2, smiles: 'OC1=CC=CC=C1O', forms: ['OC1=C(O)C=CC=C1'], name: 'Catechol', fact: 'Helps turn a cut apple brown.' },
   { step: 2, smiles: 'OC1=CC=C(O)C=C1', name: 'Hydroquinone', fact: 'Bombardier beetles mix it to spray a hot, stinky blast at enemies!' },
   { step: 2, smiles: 'O=CC1=CC=CC=C1', name: 'Benzaldehyde', fact: 'Smells like almonds and cherries.' },
   { step: 2, smiles: 'C=CC1=CC=CC=C1', name: 'Styrene', fact: 'Becomes Styrofoam, the white foam in cups and packing.' },

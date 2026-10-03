@@ -15,6 +15,13 @@ import { canonLabel } from '../../js/chem/canon.js';
 import { parseSmiles } from '../../js/chem/smiles.js';
 
 /**
+ * PubChem's "title" for a compound nobody has named is just its number,
+ * like "CID 53627737". That's no name for a 5-year-old, so those are left
+ * out (the room calls them 💡 inventions instead).
+ */
+const NO_NAME = /^CID \d+$/;
+
+/**
  * Build the label → name list from export.py's lines.
  * @param {string} text - the whole .tsv file
  * @returns {{names: Record<string, string>, clashes: number, skipped: string[]}}
@@ -28,6 +35,7 @@ export function buildDatabase(text) {
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     const [name, forms] = line.split('\t');
+    if (NO_NAME.test(name)) continue;
     for (const smiles of forms.split('|')) {
       let label;
       try {
