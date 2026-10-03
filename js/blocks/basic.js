@@ -8,6 +8,7 @@
  */
 import { AIR, getBlock, moveBlock } from '../world.js';
 import { drawDots } from './electric.js';
+import { isHeld } from '../lift.js';
 
 /**
  * The singing note blocks. Same rainbow colors as the Note Blocks page:
@@ -43,7 +44,8 @@ export function fallingBlocks(world, blockInfo) {
   for (let y = world.height - 2; y >= 0; y--) {
     for (let x = 0; x < world.width; x++) {
       const name = getBlock(world, x, y);
-      if (blockInfo(name)?.falls && getBlock(world, x, y + 1) === AIR) {
+      // (A crate hanging on a rope is held up: see isHeld in lift.js.)
+      if (blockInfo(name)?.falls && getBlock(world, x, y + 1) === AIR && !isHeld(world, x, y, blockInfo)) {
         // moveBlock also lifts any water below up into the gap, so sand
         // sinks through water instead of deleting it.
         changed = moveBlock(world, x, y, x, y + 1) || changed;
