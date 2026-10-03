@@ -70,7 +70,10 @@ export function turbinePush(world, x, y) {
 function fluidCells(world, blockInfo, turbineFlow) {
   const cells = new Map();
   world.cells.forEach((name, index) => {
-    if (!blockInfo(name)?.fluid) return;
+    const info = blockInfo(name);
+    // Spinning blocks (the water wheel) are drawn by the ⚙️ pack with
+    // their spin record, so they mustn't get a water record too.
+    if (!info?.fluid || info.spin) return;
     const x = index % world.width;
     const y = Math.floor(index / world.width);
     cells.set(index, {

@@ -81,29 +81,43 @@ export function spinAt(world, x, y) {
 }
 
 /**
- * A generator's push: how fast it turns × GENERATOR_GAIN. Turning the
- * other way pushes the other way (its + end swaps).
+ * A generator's push: how fast the SOURCE driving its gears turns ×
+ * GENERATOR_GAIN, in the direction the generator turns (turning the
+ * other way swaps its + end). Gears can make a generator spin faster,
+ * but not stronger: speeding it up with gears doesn't make extra power,
+ * just like in real life. That's why a geared-up motor and generator
+ * still wind down.
  * @param {object} world - the world
  * @param {number} x - the generator's column
  * @param {number} y - the generator's row
  * @returns {number} the push, in volts
  */
 export function generatorPush(world, x, y) {
-  return spinAt(world, x, y) * GENERATOR_GAIN;
+  const cell = world.signals.spin?.cells?.get(y * world.width + x);
+  if (!cell || Math.abs(cell.speed) < MIN_SPEED) return 0;
+  return Math.sign(cell.speed) * cell.drive * GENERATOR_GAIN;
 }
 
 /**
  * How fast a motor wants to turn: as hard as the current through it,
  * and which way depends on which way the current goes. Current coming
  * out of its right end (or top end, facing up-down) turns it ↻.
+ *
+ * A motor powered by a generator turned by the motor's OWN gears isn't
+ * driving anything: it's only getting back (some of) its own push, so it
+ * can't keep itself going or fight the crank that's really doing the work.
  * @param {object} world - the world
  * @param {number} x - the motor's column
  * @param {number} y - the motor's row
+ * @param {number[]} [group] - the indexes of the spinning blocks in its group
  * @returns {number|null} turns per second, or null if it has no power
  */
-export function motorSource(world, x, y) {
-  const cell = world.signals.electric?.cells?.get(y * world.width + x);
+export function motorSource(world, x, y, group = []) {
+  const electric = world.signals.electric?.cells;
+  const cell = electric?.get(y * world.width + x);
   if (!cell || cell.level < MIN_SOURCE) return null;
+  const ownGenerator = group.some((index) => world.cells[index] === 'generator' && electric.get(index)?.group === cell.group);
+  if (ownGenerator) return null;
   const out = cell.arms[cell.axis === 'v' ? 'up' : 'right'] ?? 0;
   if (out === 0) return null;
   return Math.sign(out) * cell.level * MOTOR_SPEED;
@@ -128,15 +142,19 @@ export function wheelSource(world, x, y) {
 // =============================================================
 
 /**
- * Work out the turning again (for example, right after a gear was
- * placed), keeping the water wheels' flow. See refreshSignals in registry.js.
+ * Work out the turning again, but only if a block changed (for example,
+ * right after a gear was placed), keeping the water wheels' flow. See
+ * refreshSignals in registry.js. Redrawing the screen must never move
+ * the gears on by itself: only ticks do that.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {void}
  */
 export function refreshSpin(world, blockInfo) {
+  const blocks = world.cells.join(',');
+  if (world.signals.spin?.blocks === blocks) return;
   const wheelFlow = world.signals.spin?.wheelFlow ?? new Map();
-  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow };
+  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, blocks };
 }
 
 /**
@@ -156,7 +174,7 @@ export function gearsSystem(world, blockInfo) {
     const last = before.get(index) ?? 0;
     wheelFlow.set(index, last + ((waterOut.get(index) ?? 0) - last) / WHEEL_SMOOTHING);
   });
-  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow };
+  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, blocks: world.cells.join(',') };
   if (world.signals.spin.turning) world.animating = true;
   return false;
 }

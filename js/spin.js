@@ -17,7 +17,8 @@
  * water wheels) decide how fast the group goes.
  *
  * Speeds are in turns per second. + is clockwise ↻, − is anticlockwise ↺.
- * This file only reads the fields blocks have: `spin` and `spinSource`.
+ * This file only reads the fields blocks have: `spin` and `spinSource`
+ * (which is also told the indexes of the blocks in its group).
  */
 import { getBlock, inBounds } from './world.js';
 import { partAxis } from './circuit.js';
@@ -97,6 +98,9 @@ function sideRatio(a, b, side) {
  *
  * Returns a record for every spinning block:
  *   speed     turns per second (+ = ↻ clockwise, − = ↺ anticlockwise)
+ *   drive     how fast the source driving its group turns (gears can make
+ *             things faster or slower, but this stays the same: it's
+ *             how much "power" the group has)
  *   jammed    true if its group can't turn
  *   axis      for axles: the way it faces
  *   partAxis  for blocks that are also electric parts (motors,
@@ -173,22 +177,29 @@ export function solveSpin(world, blockInfo) {
     // The sources say how fast the first block must turn. They must all
     // agree on the direction (or it's jammed); the fastest one wins.
     let speed = 0;
-    for (const index of ratio.keys()) {
+    let drive = 0; // how fast the winning source itself turns: the group's "power"
+    const members = [...ratio.keys()];
+    for (const index of members) {
       const point = points.get(index);
-      const wants = point.info.spinSource?.(world, point.x, point.y) ?? null;
+      const wants = point.info.spinSource?.(world, point.x, point.y, members) ?? null;
       if (!wants) continue; // null or 0: not driving right now
       const first = wants / ratio.get(index);
       if (speed !== 0 && Math.sign(first) !== Math.sign(speed)) jammed = true;
-      if (Math.abs(first) > Math.abs(speed)) speed = first;
+      if (Math.abs(first) > Math.abs(speed)) {
+        speed = first;
+        drive = Math.abs(wants);
+      }
     }
 
     for (const [index, r] of ratio) {
       done.add(index);
       const point = points.get(index);
-      const own = jammed ? 0 : speed * r;
+      const turns = jammed ? 0 : speed * r;
+      const own = Math.abs(turns) < MIN_SPEED ? 0 : turns; // also turns −0 into a plain 0
       if (Math.abs(own) > MIN_SPEED) turning = true;
       cells.set(index, {
         speed: own,
+        drive: jammed ? 0 : drive,
         jammed,
         axis: point.axis,
         partAxis: point.info.part ? partAxis(world, point.x, point.y, blockInfo) : null,

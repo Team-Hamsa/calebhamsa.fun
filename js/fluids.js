@@ -348,10 +348,13 @@ export const BOIL_RATE = 0.05;
 export const CONDENSE_RATE = 0.05;
 
 /**
- * How much water a fully powered pump moves each tick.
- * 🧪 Try this! 0.5 for a super pump.
+ * How much water a fully powered pump moves each tick. Kept small enough
+ * that a pump pushing water through a water wheel that turns the
+ * generator powering the pump loses energy each time round (see
+ * gears.js): no water machine can run forever on its own.
+ * 🧪 Try this! 0.5 for a super pump (and a water perpetual-motion machine!).
  */
-export const PUMP_RATE = 0.1;
+export const PUMP_RATE = 0.05;
 
 /** A pump needs at least this much circuit level to work. */
 export const PUMP_ON_LEVEL = 0.25;

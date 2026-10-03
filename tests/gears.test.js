@@ -6,8 +6,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, getBlock, setBlock, setFluid, tick } from '../js/world.js';
-import { allSystems, blockInfo, blocksInPack, isKnownBlock } from '../js/blocks/registry.js';
-import gears, { spinAt } from '../js/blocks/gears.js';
+import { allSystems, blockInfo, blocksInPack, isKnownBlock, refreshSignals } from '../js/blocks/registry.js';
+import { drawWorld } from '../js/block-art.js';
+import { PUMP_RATE } from '../js/fluids.js';
+import gears, { GENERATOR_GAIN, WHEEL_GAIN, spinAt } from '../js/blocks/gears.js';
 
 /** What each letter in a test picture means. */
 const LETTERS = {
@@ -108,4 +110,66 @@ test('water falling through a water wheel turns it', () => {
     fastest = Math.max(fastest, spinAt(world, 1, 2));
   }
   assert.ok(fastest > 0.1, `the wheel only reached ${fastest}`);
+});
+
+test('the water wheel is drawn with its spinning record (so it can be seen turning)', () => {
+  const world = createWorld(3, 5);
+  ['.F.', '...', '.O.', '...', '###'].forEach((row, y) => [...row].forEach((letter, x) => setBlock(world, x, y, LETTERS[letter])));
+  const systems = allSystems();
+  for (let i = 0; i < 30; i++) tick(world, systems, blockInfo);
+  refreshSignals(world);
+  let handed;
+  const spy = (name) => (name === 'waterWheel' ? { ...blockInfo(name), drawSignals: (...args) => { handed = args[5]; } } : blockInfo(name));
+  const ctx = { fillRect() {}, strokeRect() {}, fillText() {}, fillStyle: '', globalAlpha: 1 };
+  drawWorld(ctx, world, 10, spy, '#7ec8ff');
+  assert.ok(handed && typeof handed.speed === 'number' && handed.speed > 0, `wheel got ${JSON.stringify(handed)}`);
+});
+
+test('gears change speed, not power: a generator geared up twice as fast pushes the same', () => {
+  const direct = run(['.R.', 'WEW', 'W.W', 'WLW'], 3);
+  const gearedUp = run(['RGs.', '.WEW', '.W.W', '.WLW'], 3); // crank → big gear → small gear (2× faster) → generator
+  assert.equal(spinAt(gearedUp, 2, 1), -2); // twice as fast (the other way round: it meshes with the small gear)
+  assert.ok(Math.abs(lampLevel(gearedUp, 2, 3) - lampLevel(direct, 1, 3)) < 0.06,
+    `direct ${lampLevel(direct, 1, 3)} vs geared ${lampLevel(gearedUp, 2, 3)}`);
+});
+
+test('a geared-up motor and generator wind down when the crank stops (no perpetual motion)', () => {
+  const world = createWorld(5, 3);
+  ['.WWWW', 'RMGsE', '.WWWW'].forEach((row, y) => [...row].forEach((letter, x) => setBlock(world, x, y, LETTERS[letter])));
+  const systems = allSystems();
+  for (let i = 0; i < 20; i++) tick(world, systems, blockInfo);
+  setBlock(world, 0, 1, 'crankStop');
+  for (let i = 0; i < 60; i++) tick(world, systems, blockInfo);
+  for (let x = 1; x <= 4; x++) assert.equal(spinAt(world, x, 1), 0, `x=${x} still turning`);
+});
+
+test('water power cannot loop forever either: pump → wheel → generator loses energy', () => {
+  // A pump moving PUMP_RATE water per tick through a wheel makes it turn PUMP_RATE × WHEEL_GAIN;
+  // a generator turning that fast pushes less than the 1 volt that powered the pump.
+  assert.ok(PUMP_RATE * WHEEL_GAIN * GENERATOR_GAIN < 1);
+});
+
+test('a crank turning a generator that powers a motor pushing back does not flicker', () => {
+  const world = createWorld(3, 3);
+  ['.R.', 'WEW', 'WMW'].forEach((row, y) => [...row].forEach((letter, x) => setBlock(world, x, y, LETTERS[letter])));
+  const systems = allSystems();
+  const seen = [];
+  for (let i = 0; i < 30; i++) {
+    tick(world, systems, blockInfo);
+    if (i >= 20) seen.push(`${spinAt(world, 1, 1)}/${world.signals.spin.cells.get(4).jammed}`);
+  }
+  assert.equal(new Set(seen).size, 1, `it flickers: ${seen.join(' ')}`);
+});
+
+test('redrawing does not move the gears on: refreshing twice changes nothing', () => {
+  const world = createWorld(3, 3);
+  ['.R.', 'WEW', 'WMW'].forEach((row, y) => [...row].forEach((letter, x) => setBlock(world, x, y, LETTERS[letter])));
+  const systems = allSystems();
+  for (let i = 0; i < 5; i++) tick(world, systems, blockInfo);
+  const before = JSON.stringify([...world.signals.spin.cells]);
+  const solves = world.signals.electric.solves;
+  refreshSignals(world);
+  refreshSignals(world);
+  assert.equal(JSON.stringify([...world.signals.spin.cells]), before);
+  assert.equal(world.signals.electric.solves, solves);
 });

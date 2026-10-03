@@ -338,6 +338,7 @@ function shortedByShape(battery, point, points, touching, width) {
  *   arms   current out through each connected side (negative = flowing in)
  *   level  for parts: current through it ÷ REFERENCE_CURRENT (0 to MAX_LEVEL)
  *   spark  true for a short-circuited battery
+ *   group  which separate circuit it's in (a number), or null if it's a gap
  *
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
@@ -352,7 +353,7 @@ export function solveCircuit(world, blockInfo) {
       if (!isElectric(info)) continue;
       const index = y * world.width + x;
       const axis = info.conducts ? null : partAxis(world, x, y, blockInfo);
-      cells.set(index, { axis, faces: [], arms: {}, level: 0, spark: false });
+      cells.set(index, { axis, faces: [], arms: {}, level: 0, spark: false, group: null });
       const part = activePart(info, world);
       if (info.conducts || part) {
         points.set(index, { x, y, info, part, axis, sides: sidesFor(info, axis), push: partPush(part, world, x, y) });
@@ -387,7 +388,10 @@ export function solveCircuit(world, blockInfo) {
   }
 
   // Solve each separate circuit that has a battery in it.
+  let groupNumber = 0;
   for (const members of groupsOf([...points.keys()], links)) {
+    groupNumber += 1;
+    for (const index of members) cells.get(index).group = groupNumber; // which separate circuit it's in
     if (!members.some((index) => points.get(index).push !== 0)) continue;
     const inside = new Set(members);
     const groupLinks = links.filter((link) => inside.has(link.a));

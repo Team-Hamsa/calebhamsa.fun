@@ -145,7 +145,7 @@ or a crank, wheel, motor or generator touching a gear) turn the **same** way.
 | ![Axle](docs/blocks/axle.png) | **Axle** | A rod: carries turning in a straight line, the same way round. | — |
 | ![Crank](docs/blocks/crankStop.png) | **Crank** | Hand power! Red knob = stopped, green knob = turning. ![Turning crank](docs/blocks/crankCW.png) | stop → ↻ → ↺ → stop |
 | ![Water wheel](docs/blocks/waterWheel.png) | **Water wheel** | Turns when 💧 water flows through it. More water = faster. | — |
-| ![Motor](docs/blocks/motor.png) | **Motor** | Turns ⚡ electricity into turning. Put it in a loop with a battery (wires on its sides). Swap the battery round and it turns the other way. | — |
+| ![Motor](docs/blocks/motor.png) | **Motor** | Turns ⚡ electricity into turning. Put it in a loop with a battery (wires on its sides). Move the battery to the other side of the loop and it turns the other way. | — |
 | ![Generator](docs/blocks/generator.png) | **Generator** | Turns turning into ⚡ electricity: wire it up like a battery. Its **+** end swaps when it turns the other way. | — |
 
 **Jammed!** Three big gears all touching each other (in an L) can't turn: each
@@ -153,9 +153,15 @@ one would have to turn both ways at once. The whole group stops and shows a
 red ❌ (![Jammed gear](docs/blocks/gearBig-jammed.png)). Two cranks turning
 opposite ways on the same gears jam too.
 
+**Gears change speed, not power.** A small gear driven by a big one spins
+faster, but a generator on it doesn't make any more electricity: gears can
+make things faster or stronger, never more powerful.
+
 **Nothing runs forever.** A generator gives back a little less electricity
-than a motor uses, so a motor powered only by its own generator slows down
-and stops, just like real machines.
+than a motor uses, and a motor powered by a generator on its own gears can't
+push back, so machines that try to power themselves slow down and stop, just
+like real ones. (The same goes for a pump pushing water through a water wheel
+that turns the pump's own generator.)
 
 ### 🛠️ Machines to build
 
