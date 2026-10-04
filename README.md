@@ -248,6 +248,9 @@ car gears all trade speed for strength.
 
 **Heavier = slower.** The closer the load is to the machine's strength, the
 slower it goes up. Letting it down, the load helps: heavy things come down fast.
+But only while it's really going down. A weight lying on the ground pulls on
+nothing (its rope is slack), so it can't turn a winch, it's no free power for a
+generator, and it's no use as a counterweight. A counterweight has to **hang**.
 
 **Cut the rope** (⛏️ dig it) and whatever hangs on it falls.
 

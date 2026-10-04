@@ -18,7 +18,7 @@
  * tick, and draws everything.
  */
 import { MIN_SPEED } from '../spin.js';
-import { letOut, loadBelow, ropeArms, traceRope, windIn } from '../lift.js';
+import { canLower, letOut, loadBelow, ropeArms, traceRope, windIn } from '../lift.js';
 import { TICKS_PER_SECOND, turned } from './gears.js';
 
 /**
@@ -37,14 +37,22 @@ export const ROPE_PER_TURN = 2;
  * the gears: if the cranks, motors and water wheels can't push harder
  * than this, it stalls. The closer the load is to their strength, the
  * slower it goes up.
+ *
+ * A load that's RESTING on the ground is different. The ground holds it
+ * up, so the rope is slack: it can't pull the winch round, and it's no
+ * use as a counterweight. But it still has to be lifted, so it pulls
+ * back as soon as the winch tries to wind it in.
  * @param {object} world - the world
  * @param {number} x - the winch's column
  * @param {number} y - the winch's row
  * @param {Function} blockInfo - looks up what a block name means
- * @returns {number} the pull (0 if nothing hangs on it)
+ * @returns {{pull: number, resting: boolean}} the pull (0 if nothing
+ *   hangs on it), and whether the load is resting on something
  */
 export function winchLoad(world, x, y, blockInfo) {
-  return -loadBelow(world, traceRope(world, x, y, blockInfo), blockInfo).weight;
+  const rope = traceRope(world, x, y, blockInfo);
+  const load = loadBelow(world, rope, blockInfo);
+  return { pull: -load.weight, resting: !canLower(world, rope, load) };
 }
 
 // =============================================================
@@ -282,6 +290,7 @@ const guide = {
     'Heavy things go up slower. Too heavy for the crank, motor or water wheel, and everything STALLS: nothing turns and the winch shows a red ⬇.',
     'Slower is stronger! A small gear driving a big gear makes the winch slower, so it can lift more. Gearing UP makes it weaker.',
     'Or add strength: two cranks, more batteries for a motor, or a longer fall of water onto a water wheel.',
+    'Going down, a hanging load helps turn the winch. A load lying on the ground helps nothing: its rope is slack. It only pulls when you lift it.',
     'Dig the rope and whatever hangs on it falls.',
   ],
   blocks: {

@@ -24,6 +24,9 @@ const TEST_BLOCKS = {
   // Like a winch with a weight on its rope: it's pulled the ↺ way, always.
   heavy: { spin: { kind: 'hub' }, spinLoad: () => -3 },
   light: { spin: { kind: 'hub' }, spinLoad: () => -1 },
+  // Like a winch whose weight is lying on the ground: the rope is slack,
+  // so it only pulls back when you try to wind it in (lift it).
+  grounded: { spin: { kind: 'hub' }, spinLoad: () => ({ pull: -3, resting: true }) },
   // Like a generator: pushes back 2 for every turn per second.
   dynamo: { spin: { kind: 'hub' }, spinDrag: () => 2 },
   stone: {},
@@ -39,7 +42,7 @@ const blockInfo = (name) => TEST_BLOCKS[name];
 /** What each letter means. */
 const LETTERS = {
   '.': 'air', s: 'gearSmall', G: 'gearBig', '-': 'axle', H: 'hub', R: 'crankCW', Q: 'crankCCW',
-  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light', Y: 'strongCCW', D: 'dynamo',
+  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light', g: 'grounded', Y: 'strongCCW', D: 'dynamo',
 };
 
 /**
@@ -186,4 +189,29 @@ test('a generator pushes back, harder the faster it\'s geared to turn', () => {
 test('a jammed group stays jammed, not stalled', () => {
   const at = spin(['GGK', 'G..']);
   assert.equal(at(2, 0).jammed, true);
+});
+
+test('a load lying on the ground gives no push: letting out, the crank just turns at its own speed', () => {
+  assert.equal(spin(['Qg'])(1, 0).speed, -1); // not −2.5: a weight on the floor can't help
+  assert.equal(spin(['Qg'])(1, 0).stalled, false);
+});
+
+test('a load lying on the ground still has to be lifted: too heavy, and it stalls', () => {
+  const at = spin(['Rg']);
+  assert.equal(at(1, 0).speed, 0);
+  assert.equal(at(1, 0).stalled, true);
+  assert.equal(spin(['RgR'])(1, 0).speed, 0.25); // two cranks: 4 > 3, up it goes
+});
+
+test('a counterweight lying on the ground is no help at all', () => {
+  // The crank lifts K (3). Through the two big gears, g would help if it could go down. It can't.
+  const at = spin(['RKGGg']);
+  assert.equal(at(1, 0).speed, 0);
+  assert.equal(at(1, 0).stalled, true);
+});
+
+test('with no crank at all, a load on the ground just sits there (not stalled)', () => {
+  const at = spin(['sg']);
+  assert.equal(at(1, 0).speed, 0);
+  assert.equal(at(1, 0).stalled, false);
 });

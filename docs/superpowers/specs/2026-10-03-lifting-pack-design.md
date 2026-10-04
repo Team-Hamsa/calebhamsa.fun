@@ -172,3 +172,13 @@ The "Realistic strength" section says the generator's drag uses a current per vo
 ## Addendum 2026-10-04: water wheel strength (issue #17)
 
 "Water wheel: flow × 20 turns/s, |flow| × 40 (`WHEEL_STRENGTH`)" is replaced: a wheel's strength is now `WHEEL_STRENGTH` (2) for each cell the water **falls** at the wheel, whatever the flow. One faucet falling one cell through a wheel is still a crank. To lift heavier loads with water, use a longer fall (stacked wheels on one shaft), not more water. See the gears spec addendum of the same date.
+
+## Addendum 2026-10-04: a load on the ground pulls on nothing (issue #24)
+
+"Loads: `spinLoad → torque` (the winch returns −weight)" pulled whether or not the load could move, so a weight lying on the ground drove a ↺ crank at 3× its top speed forever (free power for a generator) and worked as a counterweight without ever going down.
+
+- `spinLoad` may now return a number (always pulls, as before) or `{ pull, resting }`. The winch returns `resting: true` when its load can't go down (`canLower` in `lift.js`, the same test `letOut` uses).
+- A resting load is **one-sided**: it pulls back with its full weight while the group turns the wind-in way for that winch (it still has to be lifted), and not at all the let-out way. If lifting it is too much, the group settles at exactly Ω = 0 and is **stalled** (when a source is pushing).
+- `solveSpin` finds Ω with `balance()`: the pushes are still straight lines, but each one-sided load switches off at a speed "edge" (0 for a resting load), so it tries each stretch between edges in turn. The pull only ever drops as Ω rises, so there is exactly one answer.
+- Edge-case table, "Load on the ground, letting out": stops; gears keep turning **at the sources' own speed** (crank ↺ over a grounded iron weight: −1, was −3).
+

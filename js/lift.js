@@ -153,6 +153,21 @@ export function windIn(world, x, y, blockInfo) {
 }
 
 /**
+ * Is there room under the load (or under the bare end of the rope) for
+ * it to go down one cell? If not, it's RESTING on something: the ground
+ * holds it up, the rope is slack, and it doesn't pull on the winch.
+ * @param {object} world - the world
+ * @param {{end: object|null, hanging: boolean}} rope - from traceRope
+ * @param {{cells: Array<{x: number, y: number}>}} load - from loadBelow
+ * @returns {boolean} true if the cell under it is empty air
+ */
+export function canLower(world, rope, load) {
+  if (!rope.hanging) return false;
+  const bottom = load.cells[load.cells.length - 1] ?? rope.end;
+  return inBounds(world, bottom.x, bottom.y + 1) && getBlock(world, bottom.x, bottom.y + 1) === AIR;
+}
+
+/**
  * Let the rope out one cell: the load moves down (bottom block first)
  * and a bit of rope fills the gap. With nothing hanging, the rope itself
  * gets longer. Stops when the load (or the rope) rests on something.
@@ -167,8 +182,7 @@ export function letOut(world, x, y, blockInfo) {
   if (!rope.hanging) return false;
   const load = loadBelow(world, rope, blockInfo);
   const top = load.cells[0] ?? { x: rope.end.x, y: rope.end.y + 1 };
-  const bottom = load.cells[load.cells.length - 1] ?? rope.end;
-  if (!inBounds(world, bottom.x, bottom.y + 1) || getBlock(world, bottom.x, bottom.y + 1) !== AIR) return false;
+  if (!canLower(world, rope, load)) return false;
   for (const cell of [...load.cells].reverse()) moveBlock(world, cell.x, cell.y, cell.x, cell.y + 1);
   swapBlock(world, top.x, top.y, 'rope');
   return true;

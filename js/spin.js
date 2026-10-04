@@ -27,7 +27,10 @@
  * for the other: a gear turning half as fast pushes twice as hard.
  *
  * Things that push back:
- *   spinLoad   a steady pull, like a weight hanging on a winch's rope
+ *   spinLoad   a steady pull, like a weight hanging on a winch's rope.
+ *              A weight lying on the ground is different: its rope is
+ *              slack, so it can't pull the winch round. It only pulls
+ *              back when the winch tries to lift it (see `balance`).
  *   spinDrag   a push back that grows with speed, like a generator
  *              making electricity (more lamps = harder to turn)
  *
@@ -109,6 +112,66 @@ function sideRatio(a, b, side) {
   if (!reaches(a, side) || !reaches(b, opposite)) return null;
   if (a.spin.kind === 'gear' && b.spin.kind === 'gear') return -a.spin.teeth / b.spin.teeth; // teeth mesh
   return 1; // a shared shaft
+}
+
+/**
+ * Tidy up what a block's `spinLoad` gave us. It can be just a number (a
+ * pull that's always there), or a record:
+ *   pull      how hard it pulls (+ is the ↻ way)
+ *   resting   true if the load is lying on the ground: its rope is slack,
+ *             so it only pulls back while it's being lifted
+ * @param {number|{pull: number, resting?: boolean}|undefined} load - from spinLoad
+ * @returns {{pull: number, limit: number}} the pull, and the speed (the
+ *   way it pulls) at which it stops pulling: 0 for a load on the ground,
+ *   Infinity for one that always pulls
+ */
+function loadOf(load) {
+  if (typeof load === 'number') return { pull: load, limit: Infinity };
+  if (!load) return { pull: 0, limit: Infinity };
+  return { pull: load.pull, limit: load.resting ? 0 : Infinity };
+}
+
+/**
+ * Find the speed where all the pushing and pulling on a group balance:
+ *
+ *   ahead − slowing × speed + (every load that's pulling right now) = 0
+ *
+ * A plain load always pulls. A load with a `limit` only pulls while the
+ * group turns slower than that limit the way the load pulls. A weight
+ * on the ground has limit 0: it pulls back when it's being lifted, and
+ * not at all when rope is let out. If lifting it is too much, the group
+ * settles at exactly 0: the ground holds the weight and nothing moves.
+ *
+ * Each load switches off as the speed goes up past its limit, so we try
+ * the stretches between the limits one at a time, slowest first.
+ * @param {number} ahead - the sources' strengths added up (+ or −)
+ * @param {number} slowing - how fast the push fades as the group speeds up (more than 0)
+ * @param {Array<{pull: number, limit: number}>} loads - the loads, at the first block
+ * @returns {number} the group's speed, at the first block
+ */
+function balance(ahead, slowing, loads) {
+  /**
+   * The speed (with + or −) where a load stops pulling.
+   * @param {{pull: number, limit: number}} load - a load
+   * @returns {number} that speed
+   */
+  const edge = (load) => Math.sign(load.pull) * load.limit;
+  const edges = [...new Set(loads.map(edge).filter(Number.isFinite))].sort((a, b) => a - b);
+  for (let k = 0; k <= edges.length; k++) {
+    const low = k === 0 ? -Infinity : edges[k - 1];
+    const high = k === edges.length ? Infinity : edges[k];
+    // Any speed inside this stretch tells us which loads are pulling in it.
+    const inside = k === 0 ? (edges.length > 0 ? high - 1 : 0) : (k === edges.length ? low + 1 : (low + high) / 2);
+    let pull = 0;
+    for (const load of loads) {
+      if (inside * Math.sign(load.pull) < load.limit) pull += load.pull;
+    }
+    const speed = (ahead + pull) / slowing;
+    if (speed > high) continue;     // faster than this stretch: try the next one
+    if (speed < low) return low;    // a load switched on right at this edge and holds it there
+    return speed;
+  }
+  return 0; // (never reached: the last stretch has no top)
 }
 
 /**
@@ -199,7 +262,7 @@ export function solveSpin(world, blockInfo) {
     // `slowing` says how fast their push fades as the group speeds up.
     let ahead = 0;
     let slowing = 0;
-    let pull = 0; // loads (a hanging weight), at the first block
+    const loads = []; // loads (a hanging weight), at the first block
     let drag = 0; // push-back that grows with speed (generators)
     const members = [...ratio.keys()];
     for (const [index, r] of ratio) {
@@ -211,21 +274,22 @@ export function solveSpin(world, blockInfo) {
         ahead += Math.sign(top) * strength;
         slowing += strength / Math.abs(top);
       }
-      pull += (point.info.spinLoad?.(world, point.x, point.y, blockInfo) ?? 0) * r;
+      const load = loadOf(point.info.spinLoad?.(world, point.x, point.y, blockInfo));
+      if (load.pull !== 0) loads.push({ pull: load.pull * r, limit: load.limit / Math.abs(r) });
       drag += (point.info.spinDrag?.(world, point.x, point.y) ?? 0) * r * r;
     }
 
     // The speed where the pushing and the pushing back balance:
     //   ahead − slowing × speed + pull − drag × speed = 0
-    let speed = slowing > 0 ? (ahead + pull) / (slowing + drag) : 0;
+    let speed = slowing > 0 ? balance(ahead, slowing + drag, loads) : 0;
     // A winch has a ratchet (a little catch), so a load too heavy for the
-    // sources can't pull them backwards: everything just STALLS.
+    // sources can't pull them backwards: everything just STALLS. (A load
+    // on the ground that's too heavy to lift lands here too, at speed 0.)
     let stalled = false;
     if (ahead !== 0 && Math.sign(speed) !== Math.sign(ahead)) {
       speed = 0;
       stalled = true;
     }
-    if (slowing === 0) speed = 0; // nothing driving it: the ratchet holds any load
     const stopped = jammed || stalled;
 
     for (const [index, r] of ratio) {

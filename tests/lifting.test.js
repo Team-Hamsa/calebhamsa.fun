@@ -16,7 +16,7 @@ import { spinAt } from '../js/blocks/gears.js';
 const LETTERS = {
   '.': 'air', '#': 'stone', s: 'gearSmall', G: 'gearBig', '-': 'axle', R: 'crankCW', Q: 'crankCCW',
   w: 'winch', '|': 'rope', P: 'pulley', h: 'pulleyHook', c: 'crate', I: 'ironWeight', S: 'sand',
-  f: 'faucet', O: 'waterWheel', D: 'drain', W: 'wire', B: 'battery', M: 'motor',
+  f: 'faucet', O: 'waterWheel', D: 'drain', W: 'wire', B: 'battery', M: 'motor', E: 'generator', L: 'lamp', X: 'crankStop',
 };
 
 /**
@@ -180,4 +180,42 @@ test('every lifting block can be drawn, in the world and in the palette', () => 
     const info = blockInfo(name);
     info.drawSignals?.(ctx, info, 0, 0, 16, undefined, 0);
   }
+});
+
+test('a weight resting on the ground is no counterweight: it can\'t help a crank lift the iron weight', () => {
+  // The right-hand iron weight already sits on stone, so its rope is slack.
+  const world = run(make(['RwGGw.', '.|..|.', '.|..|.', '.|..I.', '.I..#.', '.#....']), 40);
+  assert.equal(rowOf(world, 1, 'ironWeight'), 4); // still too heavy for a crank
+  assert.equal(rowOf(world, 4, 'ironWeight'), 3);
+  assert.equal(world.signals.spin.cells.get(1).stalled, true);
+  assert.equal(spinAt(world, 0, 0), 0);
+});
+
+test('a counterweight that really hangs does help: it goes down as the iron weight goes up', () => {
+  const world = run(make(['RwGGw.', '.|..|.', '.|..I.', '.|....', '.I....', '.#..#.']), 40);
+  assert.ok(rowOf(world, 1, 'ironWeight') < 4, 'the iron weight did not go up');
+  assert.ok(rowOf(world, 4, 'ironWeight') > 2, 'the counterweight did not go down');
+});
+
+test('letting out rope with the load already on the ground: the crank turns at its own speed, no faster', () => {
+  for (const load of ['I', 'c', '.']) {
+    const world = run(make(['Qw', '.|', `.${load}`, '.#']), 20);
+    assert.equal(spinAt(world, 1, 0), -1, `with "${load}" under the rope`);
+  }
+});
+
+test('a weight lying on the ground is not free power for a generator', () => {
+  /**
+   * How fast the crank ends up turning, with something under the rope.
+   * @param {string} load - the letter under the rope ('.' for nothing)
+   * @returns {number} turns per second
+   */
+  const crankSpeed = (load) => {
+    const world = run(make(['..WLW.', '..WLW.', '..WLW.', '..WEW.', '...Qw.', '....|.', `....${load}.`, '######']), 200);
+    return spinAt(world, 3, 4);
+  };
+  const alone = crankSpeed('.');
+  assert.ok(alone < 0);
+  assert.equal(crankSpeed('c'), alone);
+  assert.equal(crankSpeed('I'), alone);
 });

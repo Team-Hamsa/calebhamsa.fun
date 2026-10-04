@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, getBlock, getFluid, setBlock, setFluid } from '../js/world.js';
-import { canWindIn, hangingLoads, isHeld, letOut, loadBelow, ropeArms, traceRope, windIn } from '../js/lift.js';
+import { canLower, canWindIn, hangingLoads, isHeld, letOut, loadBelow, ropeArms, traceRope, windIn } from '../js/lift.js';
 
 /** Stand-in blocks, with the same lifting settings as js/blocks/lifting.js. */
 const TEST_BLOCKS = {
@@ -202,4 +202,21 @@ test('rope arms follow the rope: to the winch above and the load below, round pu
   // Two cranes' ropes side by side aren't drawn joined.
   const cranes = make(['w..w', '|..|', '||||']);
   assert.deepEqual(ropeArms(cranes, blockInfo).get(2 * 4 + 0), { up: true, right: false, down: false, left: false });
+});
+
+test('a load with air under it can go down; one sitting on something (or on the floor of the world) is resting', () => {
+  /**
+   * Can the load on this picture's rope go down?
+   * @param {string[]} rows - the picture
+   * @returns {boolean} true if it can
+   */
+  const lowers = (rows) => {
+    const world = make(rows);
+    const rope = traceRope(world, 0, 0, blockInfo);
+    return canLower(world, rope, loadBelow(world, rope, blockInfo));
+  };
+  assert.equal(lowers(['w', '|', 'c', '.', '#']), true);
+  assert.equal(lowers(['w', '|', 'c', '#']), false);
+  assert.equal(lowers(['w', '|', 'c']), false); // the bottom of the world
+  assert.equal(lowers(['w', '|', 'h', 'c', '#']), false); // a hook and its crate, on the ground
 });
