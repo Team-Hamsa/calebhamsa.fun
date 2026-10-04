@@ -191,3 +191,12 @@ The "Realistic strength" section says the generator's drag uses a current per vo
 - `liftSystem` moves a loaded rope down at most one cell per tick and throws away the extra rope (it is slack; it does not bank up).
 - Unchanged: crank ↺ + iron weight with no gears is still −3 (below the limit). Geared up ×2: winch −4, crank 2 (was −10 and 5). The worst a crank can now be whirled is 4 turns/s (no gears, a load of 6 or more).
 
+## Addendum 2026-10-04: the ratchet, told and made consistent (issue #23)
+
+The ratchet ("With no source, Ω = 0" and "sources push one way but Ω comes out … the other way: stalled") was only in this spec and a code comment, and it had a hole: with sources that cancel exactly (a ↻ and a ↺ crank on one winch: `ahead` = 0, `slowing` > 0) neither rule fired and a crate back-drove both cranks at −0.25 (iron: −1).
+
+- Rule now: a hanging load never turns the group against, or without, the sources' net push. `|ahead|` below 1e-9 counts as no net push: Ω = 0, and **stalled** (red ⬇) if sources are present and a hanging load is pulling; not stalled with no sources, or with no load (two cranks fighting over bare gears, as `tests/spin.test.js` pins).
+- Told to the player: a rule in the 🏗️ guide, the winch's guide text, the README (winch row and a "catch (ratchet)" paragraph, which also says a falling weight can't run a generator here and that a real winch with the catch lifted would).
+- Drawn: a pale two-pixel catch at the top right of the winch's drum.
+- Not done: a tappable catch (✋ on/off, so a falling weight could drive a generator or haul a lighter one). That is a feature, and contradicts "With no source, Ω = 0" above; left for a later design.
+

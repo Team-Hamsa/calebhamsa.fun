@@ -146,6 +146,9 @@ export function liftSystem(world, blockInfo) {
 /** The rope's color. */
 const ROPE = '#c8a165';
 
+/** The color of the winch's little metal catch. */
+const CATCH = '#eceff1';
+
 /**
  * Draw rope from the middle of a cell out through some of its sides.
  * @param {CanvasRenderingContext2D} ctx - the canvas paintbrush
@@ -234,9 +237,10 @@ function drawHook(ctx, info, left, top, size, cell) {
 }
 
 /**
- * Draw a winch: a drum with rope wrapped round it. The rope's stripes
- * roll as it turns. If its gears are too weak to lift the load, it shows
- * a red ⬇ (too heavy!).
+ * Draw a winch: a drum with rope wrapped round it, and its catch (the
+ * ratchet that stops the load pulling it round) at the top. The rope's
+ * stripes roll as it turns. If its gears are too weak to lift the load,
+ * it shows a red ⬇ (too heavy!).
  * @param {CanvasRenderingContext2D} ctx - the canvas paintbrush
  * @param {object} info - the block's definition
  * @param {number} left - the cell's left edge
@@ -256,6 +260,9 @@ function drawWinch(ctx, info, left, top, size, cell, ticks) {
   ctx.fillStyle = ROPE; // rope wound round it, rolling as it turns
   const roll = Math.floor(turned(cell, ticks) * 4); // 0..3
   for (let row = 0; row < 4; row += 2) ctx.fillRect(left + 2 * p, top + (2 + ((row + roll) % 4)) * p, 4 * p, p);
+  ctx.fillStyle = CATCH; // the catch (ratchet): a little metal finger leaning on the drum
+  ctx.fillRect(left + 5 * p, top + p, p, p);
+  ctx.fillRect(left + 4.5 * p, top + 1.5 * p, p, p);
   if (cell?.stalled) {
     ctx.fillStyle = '#e53935'; // a red ⬇: too heavy!
     ctx.fillRect(left + 3.5 * p, top, p, 6 * p);
@@ -303,6 +310,7 @@ const blocks = {
 const guide = {
   rules: [
     'A winch turning ↻ winds the rope in (up). Turning ↺ lets it out (down).',
+    'A winch has a little catch (a ratchet): let go and the load stays up. The load can\'t pull the winch round by itself. It only comes down when you turn the winch ↺.',
     'Heavy things go up slower. Too heavy for the crank, motor or water wheel, and everything STALLS: nothing turns and the winch shows a red ⬇.',
     'Slower is stronger! A small gear driving a big gear makes the winch slower, so it can lift more. Gearing UP makes it weaker.',
     'Or add strength: two cranks, more batteries for a motor, or a longer fall of water onto a water wheel.',
@@ -310,7 +318,7 @@ const guide = {
     'Dig the rope and whatever hangs on it falls.',
   ],
   blocks: {
-    winch: { does: 'A drum that winds rope. Turn it with a crank, gears or a motor touching it.' },
+    winch: { does: 'A drum that winds rope. Turn it with a crank, gears or a motor touching it. Its little catch holds the load up when nothing turns it.' },
     rope: { does: 'Put some next to the winch and let it hang down. Rope goes straight: it only turns a corner at a pulley.' },
     pulley: { does: 'A wheel the rope runs over, so it can change direction: up a tower and down the other side.' },
     pulleyHook: { does: 'Hang it on the rope with the load under it. The load counts half as heavy, but goes up half as fast.' },

@@ -233,3 +233,22 @@ test('gearing up doesn\'t let a falling load whirl the crank: the winch still st
 test('a source faster than falling keeps its own speed: the load just can\'t keep up, so it doesn\'t push', () => {
   assert.equal(spin(['Zf'])(1, 0).speed, -6);
 });
+
+test('the winch\'s catch holds a hanging load when two cranks cancel each other out', () => {
+  // ↻ and ↺ cranks push the same: no push is left over. The load must not run them backwards.
+  const light = spin(['RkQ']);
+  assert.equal(light(1, 0).speed, 0); // was −0.25: the load sank
+  assert.equal(light(0, 0).speed, 0);
+  assert.equal(light(1, 0).stalled, true); // they're trying, and can't lift it
+  assert.equal(spin(['RKQ'])(1, 0).speed, 0);
+  // A lighter load must never win where a heavier one is held.
+  assert.equal(spin(['RK'])(1, 0).speed, 0);
+});
+
+test('with nothing turning it at all, the catch holds any load (and nothing is "too heavy")', () => {
+  const at = spin(['sK']);
+  assert.equal(at(1, 0).speed, 0);
+  assert.equal(at(1, 0).stalled, false);
+  const withDynamo = spin(['KD']); // a hanging weight can't run a generator by itself
+  assert.equal(withDynamo(1, 0).speed, 0);
+});

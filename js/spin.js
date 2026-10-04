@@ -34,6 +34,11 @@
  *   spinDrag   a push back that grows with speed, like a generator
  *              making electricity (more lamps = harder to turn)
  *
+ * A winch has a RATCHET (a little catch), like a real one: a load
+ * hanging on its rope can never pull the gears round by itself. With
+ * nothing driving, or with sources that cancel out, the load just hangs
+ * there. It comes down only when a source turns the winch the let-out way.
+ *
  * The group settles at the speed where the pushing and the pushing back
  * balance. Speeds are in turns per second. + is clockwise ↻, − is
  * anticlockwise ↺. Strengths are in "crank-pushes" (see CRANK_STRENGTH).
@@ -49,6 +54,9 @@ const STEP = { up: [0, -1], right: [1, 0], down: [0, 1], left: [-1, 0] };
 
 /** Slower than this counts as standing still. */
 export const MIN_SPEED = 0.001;
+
+/** Sources whose pushes add up to less than this cancel each other out. */
+const BALANCED = 1e-9;
 
 /**
  * Is this block part of the spinning world?
@@ -292,14 +300,21 @@ export function solveSpin(world, blockInfo) {
     // The speed where the pushing and the pushing back balance:
     //   ahead − slowing × speed + pull − drag × speed = 0
     let speed = slowing > 0 ? balance(ahead, slowing + drag, loads) : 0;
-    // A winch has a ratchet (a little catch), so a load too heavy for the
-    // sources can't pull them backwards: everything just STALLS. (A load
-    // on the ground that's too heavy to lift lands here too, at speed 0.)
+    // A winch has a ratchet (a little catch): a hanging load can never
+    // pull the winch round by itself. It only comes down when the
+    // sources really turn the winch the let-out way. So:
+    //   • the sources push one way but the load would win: everything
+    //     STALLS. (A load on the ground that's too heavy to lift lands
+    //     here too, at speed 0.)
+    //   • the sources push the same both ways (two cranks that cancel
+    //     out): no push is left to lift with, so it stalls just the same.
+    //   • no sources at all: the catch holds. Nothing is even trying, so
+    //     that isn't called stalled.
+    const driven = Math.abs(ahead) > BALANCED;
+    const hanging = loads.reduce((sum, load) => sum + (load.limit > 0 ? load.pull : 0), 0);
     let stalled = false;
-    if (ahead !== 0 && Math.sign(speed) !== Math.sign(ahead)) {
-      speed = 0;
-      stalled = true;
-    }
+    if (driven ? Math.sign(speed) !== Math.sign(ahead) : slowing > 0 && hanging !== 0) stalled = true;
+    if (stalled || !driven) speed = 0;
     const stopped = jammed || stalled;
 
     for (const [index, r] of ratio) {

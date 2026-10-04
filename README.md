@@ -229,7 +229,7 @@ Heavy things need more. Turning ↻ winds the rope in (up), ↺ lets it out (dow
 
 | | Block | What it does | ✋ USE |
 |---|---|---|---|
-| ![Winch](docs/blocks/winch.png) | **Winch** | A drum that winds rope. Turn it with a crank, gears or a motor touching it. If the load is too heavy it **stalls**: nothing turns and it shows a red ⬇ (![Stalled winch](docs/blocks/winch-stalled.png)). | — |
+| ![Winch](docs/blocks/winch.png) | **Winch** | A drum that winds rope. Turn it with a crank, gears or a motor touching it. It has a little **catch** (a ratchet, the pale bit on top): let go and the load stays up. If the load is too heavy it **stalls**: nothing turns and it shows a red ⬇ (![Stalled winch](docs/blocks/winch-stalled.png)). | — |
 | ![Rope](docs/blocks/rope.png) | **Rope** | Put at least one next to the winch and let it hang down. The winch adds rope and takes it away as it lets out and winds in. Rope goes straight: it only turns a corner at a pulley. Water flows through it. | — |
 | ![Pulley](docs/blocks/pulley.png) | **Pulley** | A wheel the rope runs over, so the rope can change direction: the winch on the ground, the rope up a tower and down the other side. | — |
 | ![Pulley hook](docs/blocks/pulleyHook.png) | **Pulley hook** | Hang it on the rope's end and the load under it. Two bits of rope share the load, so it counts **half as heavy**, but it goes up half as fast. | — |
@@ -254,6 +254,17 @@ with no rope.
 But only while it's really going down. A weight lying on the ground pulls on
 nothing (its rope is slack), so it can't turn a winch, it's no free power for a
 generator, and it's no use as a counterweight. A counterweight has to **hang**.
+
+**The catch (ratchet).** Real winches have a little metal finger that clicks
+over the teeth of a wheel, so the drum can't spin backwards when you let go.
+Ours does too. A hanging load can **never** pull the winch round by itself:
+take the crank away (or stop it) and the load just hangs there. Two cranks
+pushing opposite ways just as hard cancel out, so nothing is left to lift
+with: the winch stalls (red ⬇) and the load stays put. The load only comes
+down when something really turns the winch ↺, and then it helps. That means
+a falling weight can't run a generator by itself here, and a heavy weight
+won't haul up a lighter one without a crank to start it. (A real winch with
+its catch lifted off would do both.)
 
 **Cut the rope** (⛏️ dig it) and whatever hangs on it falls.
 

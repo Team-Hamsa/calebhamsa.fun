@@ -274,3 +274,37 @@ test('a motor letting rope out faster than falling can\'t push the load down: ro
   assert.ok(rows.at(-1) > 8, 'the crate did not go down');
   for (let i = 1; i < rows.length; i++) assert.ok(rows[i] - rows[i - 1] <= 1, `${rows[i] - rows[i - 1]} cells in one tick`);
 });
+
+test('the winch\'s catch: two cranks that cancel out can\'t be pulled backwards by the load', () => {
+  for (const load of ['c', 'I']) {
+    const world = run(make(['RwQ', '.|.', '.|.', `.${load}.`, '...', '...', '###']), 60);
+    assert.equal(spinAt(world, 1, 0), 0, `with "${load}" on the rope`);
+    assert.equal(getBlock(world, 1, 3), LETTERS[load], 'the load sank');
+    assert.equal(world.signals.spin.cells.get(1).stalled, true);
+  }
+});
+
+test('the winch\'s catch: with no crank a hanging weight stays up, even with a generator or a lighter weight to pull', () => {
+  const generator = run(make(['wEWW', '|W.L', 'IWWW', '....', '####']), 30);
+  assert.equal(rowOf(generator, 0, 'ironWeight'), 2);
+  assert.equal(spinAt(generator, 0, 0), 0);
+  const pair = run(make(['.wGGw.', '.|..|.', '.I..c.', '......', '......', '######']), 30);
+  assert.equal(rowOf(pair, 1, 'ironWeight'), 2);
+  assert.equal(rowOf(pair, 4, 'crate'), 2);
+});
+
+test('the guide and the README tell you about the winch\'s catch', async () => {
+  const { readFileSync } = await import('node:fs');
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, /ratchet/);
+  assert.match(lifting.guide.blocks.winch.does, /catch/);
+  assert.ok(lifting.guide.rules.some((rule) => /catch/.test(rule) && /ratchet/.test(rule)));
+});
+
+test('the winch is drawn with its little catch', () => {
+  const calls = [];
+  const ctx = { fillRect(...args) { calls.push({ style: ctx.fillStyle, args }); }, fillStyle: '' };
+  const info = blockInfo('winch');
+  info.drawSignals(ctx, info, 0, 0, 16, undefined, 0);
+  assert.ok(calls.some((call) => call.style === '#eceff1'), 'no catch drawn');
+});
