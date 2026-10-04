@@ -219,3 +219,58 @@ test('a weight lying on the ground is not free power for a generator', () => {
   assert.equal(crankSpeed('c'), alone);
   assert.equal(crankSpeed('I'), alone);
 });
+
+/**
+ * Run a world tick by tick and write down which row a block is in after each tick.
+ * @param {object} world - the world
+ * @param {number} x - the column to watch
+ * @param {string} name - the block to watch
+ * @param {number} ticks - how many ticks
+ * @returns {number[]} its row after each tick
+ */
+function rowsOverTime(world, x, name, ticks) {
+  const rows = [];
+  for (let i = 0; i < ticks; i++) rows.push(rowOf(run(world, 1), x, name));
+  return rows;
+}
+
+/**
+ * A tall empty world with a floor, with some rows drawn at the top.
+ * @param {string[]} top - the top rows
+ * @param {number} height - how many rows in all (the last one is stone)
+ * @returns {string[]} the picture
+ */
+function tall(top, height) {
+  const width = top[0].length;
+  return [...top, ...Array(height - top.length - 1).fill('.'.repeat(width)), '#'.repeat(width)];
+}
+
+test('a load let down on a rope never goes down faster than one that is just dropped', () => {
+  const dropped = rowsOverTime(make(tall(['...I'], 14)), 3, 'ironWeight', 12);
+  // Geared UP: the winch turns twice as fast as the crank, the let-out way.
+  const world = make(tall(['RGsw', '...|', '...I'], 14));
+  const lowered = [2, ...rowsOverTime(world, 3, 'ironWeight', 12)];
+  for (let i = 1; i < lowered.length; i++) {
+    assert.ok(lowered[i] - lowered[i - 1] <= 1, `it went down ${lowered[i] - lowered[i - 1]} cells in one tick`);
+  }
+  const ticksToFloor = (rows) => rows.indexOf(12) + 1;
+  assert.ok(ticksToFloor(lowered.slice(1)) >= 10, 'ten cells take at least ten ticks');
+  assert.equal(ticksToFloor(dropped), 12); // free fall: one cell every tick
+});
+
+test('a heavy load going down doesn\'t whirl the crank: the winch stops at falling speed', () => {
+  const world = run(make(tall(['RGsw', '...|', '...I'], 14)), 2);
+  assert.equal(spinAt(world, 3, 0), -4); // 4 turns × 2 cells of rope = 8 cells a second = 1 cell a tick
+  assert.equal(spinAt(world, 0, 0), 2);  // was 5
+  // With no gears the iron weight still helps the crank along, like before.
+  assert.equal(spinAt(run(make(tall(['Qw', '.|', '.I'], 14)), 2), 1, 0), -3);
+});
+
+test('a motor letting rope out faster than falling can\'t push the load down: rope can only pull', () => {
+  // Five batteries: the motor turns the winch ↺ at more than 4 turns a second.
+  const world = make(tall(['.....G--w.', 'WWWWWMWW|.', 'W......Wc.', 'WBBBBBWW..'], 15));
+  const rows = [2, ...rowsOverTime(world, 8, 'crate', 10)];
+  assert.ok(spinAt(world, 8, 0) < -4, `winch speed ${spinAt(world, 8, 0)}`);
+  assert.ok(rows.at(-1) > 8, 'the crate did not go down');
+  for (let i = 1; i < rows.length; i++) assert.ok(rows[i] - rows[i - 1] <= 1, `${rows[i] - rows[i - 1]} cells in one tick`);
+});

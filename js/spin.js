@@ -120,7 +120,11 @@ function sideRatio(a, b, side) {
  *   pull      how hard it pulls (+ is the ↻ way)
  *   resting   true if the load is lying on the ground: its rope is slack,
  *             so it only pulls back while it's being lifted
- * @param {number|{pull: number, resting?: boolean}|undefined} load - from spinLoad
+ *   topSpeed  the fastest the load can pull this block round (turns per
+ *             second). A weight on a rope can't go down faster than it
+ *             would fall with no rope at all: any faster, and the rope
+ *             would go slack.
+ * @param {number|{pull: number, resting?: boolean, topSpeed?: number}|undefined} load - from spinLoad
  * @returns {{pull: number, limit: number}} the pull, and the speed (the
  *   way it pulls) at which it stops pulling: 0 for a load on the ground,
  *   Infinity for one that always pulls
@@ -128,7 +132,7 @@ function sideRatio(a, b, side) {
 function loadOf(load) {
   if (typeof load === 'number') return { pull: load, limit: Infinity };
   if (!load) return { pull: 0, limit: Infinity };
-  return { pull: load.pull, limit: load.resting ? 0 : Infinity };
+  return { pull: load.pull, limit: load.resting ? 0 : load.topSpeed ?? Infinity };
 }
 
 /**
@@ -137,10 +141,16 @@ function loadOf(load) {
  *   ahead − slowing × speed + (every load that's pulling right now) = 0
  *
  * A plain load always pulls. A load with a `limit` only pulls while the
- * group turns slower than that limit the way the load pulls. A weight
- * on the ground has limit 0: it pulls back when it's being lifted, and
- * not at all when rope is let out. If lifting it is too much, the group
- * settles at exactly 0: the ground holds the weight and nothing moves.
+ * group turns slower than that limit the way the load pulls:
+ *
+ *   • A weight on the ground has limit 0: it pulls back when it's being
+ *     lifted, and not at all when rope is let out. If lifting it is too
+ *     much, the group settles at exactly 0: the ground holds the weight
+ *     and nothing moves.
+ *   • A hanging weight's limit is how fast it would fall. It can speed
+ *     the group up to that and no further (the group settles right at
+ *     the limit). If the sources go even faster by themselves, the rope
+ *     is slack and the weight doesn't push at all.
  *
  * Each load switches off as the speed goes up past its limit, so we try
  * the stretches between the limits one at a time, slowest first.
@@ -168,7 +178,7 @@ function balance(ahead, slowing, loads) {
     }
     const speed = (ahead + pull) / slowing;
     if (speed > high) continue;     // faster than this stretch: try the next one
-    if (speed < low) return low;    // a load switched on right at this edge and holds it there
+    if (speed < low) return low;    // a load switches off (or on) right at this edge and holds it there
     return speed;
   }
   return 0; // (never reached: the last stretch has no top)

@@ -182,3 +182,12 @@ The "Realistic strength" section says the generator's drag uses a current per vo
 - `solveSpin` finds Ω with `balance()`: the pushes are still straight lines, but each one-sided load switches off at a speed "edge" (0 for a resting load), so it tries each stretch between edges in turn. The pull only ever drops as Ω rises, so there is exactly one answer.
 - Edge-case table, "Load on the ground, letting out": stops; gears keep turning **at the sources' own speed** (crank ↺ over a grounded iron weight: −1, was −3).
 
+## Addendum 2026-10-04: a roped load never beats free fall (issue #25)
+
+"Lowering with a load runs faster than the crank's top speed (the load helps)" had no upper limit: geared up ×2, an iron weight drove the winch at −10 turns/s (20 cells/s; free fall is 8 cells/s) and the crank at 5× its top speed.
+
+- The winch's `spinLoad` record gains `topSpeed`: the winch speed that pays rope out at free-fall speed, `TICKS_PER_SECOND ÷ ROPE_PER_TURN` = 4 turns/s (8 with a pulley hook, which needs 2 cells of rope per cell).
+- In `balance()` a hanging load pulls only while its winch lets out slower than `topSpeed`. So the load speeds the group up to that speed and no further; if the sources alone are faster, the rope is slack and the load adds nothing.
+- `liftSystem` moves a loaded rope down at most one cell per tick and throws away the extra rope (it is slack; it does not bank up).
+- Unchanged: crank ↺ + iron weight with no gears is still −3 (below the limit). Geared up ×2: winch −4, crank 2 (was −10 and 5). The worst a crank can now be whirled is 4 turns/s (no gears, a load of 6 or more).
+

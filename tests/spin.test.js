@@ -26,6 +26,10 @@ const TEST_BLOCKS = {
   light: { spin: { kind: 'hub' }, spinLoad: () => -1 },
   // Like a winch whose weight is lying on the ground: the rope is slack,
   // so it only pulls back when you try to wind it in (lift it).
+  // Like a winch with a very heavy weight hanging on it. A weight on a rope
+  // can't go down faster than it would fall: past 4 turns a second the rope is slack.
+  falling: { spin: { kind: 'hub' }, spinLoad: () => ({ pull: -8, topSpeed: 4 }) },
+  racer: { spin: { kind: 'hub' }, spinSource: () => ({ speed: -6, strength: 2 }) },
   grounded: { spin: { kind: 'hub' }, spinLoad: () => ({ pull: -3, resting: true }) },
   // Like a generator: pushes back 2 for every turn per second.
   dynamo: { spin: { kind: 'hub' }, spinDrag: () => 2 },
@@ -42,7 +46,7 @@ const blockInfo = (name) => TEST_BLOCKS[name];
 /** What each letter means. */
 const LETTERS = {
   '.': 'air', s: 'gearSmall', G: 'gearBig', '-': 'axle', H: 'hub', R: 'crankCW', Q: 'crankCCW',
-  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light', g: 'grounded', Y: 'strongCCW', D: 'dynamo',
+  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light', g: 'grounded', f: 'falling', Z: 'racer', Y: 'strongCCW', D: 'dynamo',
 };
 
 /**
@@ -214,4 +218,18 @@ test('with no crank at all, a load on the ground just sits there (not stalled)',
   const at = spin(['sg']);
   assert.equal(at(1, 0).speed, 0);
   assert.equal(at(1, 0).stalled, false);
+});
+
+test('a hanging load never pulls its winch round faster than the load could fall', () => {
+  assert.equal(spin(['Qf'])(1, 0).speed, -4); // not (−2 − 8) ÷ 2 = −5
+});
+
+test('gearing up doesn\'t let a falling load whirl the crank: the winch still stops at falling speed', () => {
+  const at = spin(['RGsf']); // the winch turns twice as fast as the crank, the other way
+  assert.equal(at(3, 0).speed, -4);
+  assert.equal(at(0, 0).speed, 2); // not 9
+});
+
+test('a source faster than falling keeps its own speed: the load just can\'t keep up, so it doesn\'t push', () => {
+  assert.equal(spin(['Zf'])(1, 0).speed, -6);
 });

@@ -42,17 +42,25 @@ export const ROPE_PER_TURN = 2;
  * up, so the rope is slack: it can't pull the winch round, and it's no
  * use as a counterweight. But it still has to be lifted, so it pulls
  * back as soon as the winch tries to wind it in.
+ *
+ * And a load going DOWN helps turn the winch, but only up to the speed
+ * it would fall with no rope at all (one cell a tick, like sand). Rope
+ * can only pull, never push: if the winch lets rope out faster than
+ * that, the rope goes slack and the load isn't pushing any more.
  * @param {object} world - the world
  * @param {number} x - the winch's column
  * @param {number} y - the winch's row
  * @param {Function} blockInfo - looks up what a block name means
- * @returns {{pull: number, resting: boolean}} the pull (0 if nothing
- *   hangs on it), and whether the load is resting on something
+ * @returns {{pull: number, resting: boolean, topSpeed: number}} the pull
+ *   (0 if nothing hangs on it), whether the load is resting on
+ *   something, and the fastest the load can turn the winch
  */
 export function winchLoad(world, x, y, blockInfo) {
   const rope = traceRope(world, x, y, blockInfo);
   const load = loadBelow(world, rope, blockInfo);
-  return { pull: -load.weight, resting: !canLower(world, rope, load) };
+  // Falling speed is 1 cell a tick. With a pulley hook, each cell takes 2 cells of rope.
+  const topSpeed = (TICKS_PER_SECOND * (load.hook ? 2 : 1)) / ROPE_PER_TURN;
+  return { pull: -load.weight, resting: !canLower(world, rope, load), topSpeed };
 }
 
 // =============================================================
@@ -77,7 +85,8 @@ export function refreshLift(world, blockInfo) {
  * The lifting rule that runs every tick, just after the gears (so it
  * knows how fast each winch turns). Each turning winch winds in (↻) or
  * lets out (↺) a little rope. Once it has wound a whole cell's worth (two
- * with a pulley hook), the load moves one cell.
+ * with a pulley hook), the load moves one cell. Going down, a load moves
+ * one cell a tick at the very most: that's how fast things fall.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {boolean} true if any block moved
@@ -112,9 +121,16 @@ export function liftSystem(world, blockInfo) {
       moved = true;
     }
     while (amount <= -step()) {
+      const loaded = loadBelow(world, traceRope(world, x, y, blockInfo), blockInfo).cells.length > 0;
       if (!letOut(world, x, y, blockInfo)) { amount = 0; break; } // resting on the ground
       amount += step();
       moved = true;
+      if (loaded) {
+        // Rope can't push: a load never goes down faster than it would
+        // fall, one cell a tick. Any more rope than that is just slack.
+        amount %= step();
+        break;
+      }
     }
     pull.set(index, amount);
   }
@@ -290,7 +306,7 @@ const guide = {
     'Heavy things go up slower. Too heavy for the crank, motor or water wheel, and everything STALLS: nothing turns and the winch shows a red ⬇.',
     'Slower is stronger! A small gear driving a big gear makes the winch slower, so it can lift more. Gearing UP makes it weaker.',
     'Or add strength: two cranks, more batteries for a motor, or a longer fall of water onto a water wheel.',
-    'Going down, a hanging load helps turn the winch. A load lying on the ground helps nothing: its rope is slack. It only pulls when you lift it.',
+    'Going down, a hanging load helps turn the winch, but it never goes down faster than it would fall. A load lying on the ground helps nothing: its rope is slack. It only pulls when you lift it.',
     'Dig the rope and whatever hangs on it falls.',
   ],
   blocks: {
