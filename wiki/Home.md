@@ -16,6 +16,7 @@ The blocks are on five tabs. Here's what every one of them is. The same
 explanations are in the game too: tap **❓** for the guide, or press and hold
 a block in the palette to read about just that block. (The guide's words live
 with the blocks, in each pack's `guide` in `js/blocks/*.js`.)
+
 | Tab | What's on it |
 |---|---|
 | [⛏️ Blocks](Blocks) | Grass, dirt, stone, glass, sand and friends |

@@ -80,3 +80,13 @@ test('the README sends you to the wiki and no longer keeps the block pictures', 
   assert.ok(!readme.includes('docs/blocks/') && !readme.includes('docs/machines/'), 'README still points at docs/blocks or docs/machines');
   assert.ok(readme.split('\n').length < 220, 'README is still long: did the how-to-play sections move?');
 });
+
+for (const name of [...PAGES, '_Sidebar']) {
+  test(`every table on the wiki page "${name}" starts after an empty line`, () => {
+    const lines = readPage(name).split('\n');
+    lines.forEach((line, index) => {
+      const startsTable = line.startsWith('|') && /^\|[-| :]+\|$/.test(lines[index + 1] ?? '');
+      if (startsTable && index > 0) assert.equal(lines[index - 1], '', `${name} line ${index + 1}: a table needs an empty line above it`);
+    });
+  });
+}
