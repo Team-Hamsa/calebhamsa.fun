@@ -17,7 +17,11 @@ import { setBlock } from '../world.js';
  */
 export const CLICKER_TICKS = 8;
 
-/** A note block plays when its current goes above this level. */
+/**
+ * A note block plays when its current goes above this level. Like a real
+ * sounder, it needs a least amount to work: one battery can make 4 note
+ * blocks in a row sing (level 0.26 each), but not 5 (0.21). The guide says so.
+ */
 export const NOTE_ON_LEVEL = 0.25;
 
 /** Wire colors: dull when nothing flows, bright copper when current flows. */
@@ -391,6 +395,8 @@ const guide = {
     'Electricity only flows around a complete LOOP: out of the battery\'s + end, through wires and parts, and back into its other end.',
     'Little yellow dots run along the wires while it flows.',
     'Parts turn to face their wires: wires on the left and right, or above and below. The gray metal ends show which way. Lamps side by side between two wires each get their own path, however many there are.',
+    'A battery\'s + end is always its top or its right: it can\'t be turned round. Two batteries on opposite sides of a loop push against each other and nothing flows. Put them next to each other in a row instead.',
+    'Note blocks need enough electricity to sing. One battery can make 4 in a row sing. With 5 in one loop each gets too little and they stay quiet, even though the dots still crawl. Add a battery, or give each note block its own path side by side.',
     'Short circuit! A battery wired straight back to itself sparks and smokes, however long the wire. A stopped generator or turbine is just wire too. Never try that with a real battery.',
   ],
   blocks: {

@@ -143,6 +143,11 @@ connects up and down. The little gray metal ends show which way it's facing.
 Wires count first: three or more lamps packed side by side between a wire
 above and a wire below all face the wires, and all light.
 
+**Which way a battery pushes.** A battery's **+** end is always its top or its
+right, and it can't be turned round. Two batteries on opposite sides of a loop
+push against each other, so nothing flows: put them next to each other in a
+row instead, and they push twice as hard.
+
 **Short circuit!** If a battery's + end is wired straight back to its other
 end with nothing in between, it **sparks and smokes** (![Sparking battery](docs/blocks/battery-spark.png)). Real
 batteries get dangerously hot when you do that, so never try it with a real
@@ -249,6 +254,9 @@ Add a third or a fourth beside them: every one still gets its own path.
 **Music machine.** A battery, a clicker (top) and a note block (bottom) in a
 loop. Every time the clicker clicks on, the note sings. Add more note blocks
 in other loops on the same clicker for a tune.
+Note blocks need enough electricity to sing: one battery can make 4 in a row
+sing, but with 5 in one loop each gets too little and they all stay quiet
+(the dots still crawl along). Add a battery, or give each note its own path.
 
 ![A clicker and a note block in a loop](docs/machines/music-machine.png)
 

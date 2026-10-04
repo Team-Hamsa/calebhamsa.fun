@@ -166,3 +166,22 @@ test('dots move along a wire that carries current', () => {
   assert.equal(dots(first).length, 2);
   assert.notDeepEqual(dots(first), dots(later));
 });
+
+test('four note blocks in one loop sing, five are too many for one battery, and a second battery fixes it', () => {
+  // The guide says so: each note block in a row gets a smaller share of the push.
+  /**
+   * How many note blocks sing when this picture is first worked out.
+   * @param {string[]} rows - the picture
+   * @returns {number} how many 'note' events there were
+   */
+  const singing = (rows) => {
+    const world = createWorld(rows[0].length, rows.length);
+    rows.forEach((row, y) => [...row].forEach((letter, x) => setBlock(world, x, y, LETTERS[letter])));
+    refreshSignals(world);
+    return world.events.filter((event) => event.type === 'note').length;
+  };
+  assert.equal(singing(['WWWWWWW', 'B.....W', 'WnnnnWW']), 4);
+  assert.equal(singing(['WWWWWWW', 'B.....W', 'WnnnnnW']), 0);
+  assert.equal(singing(['WWWWWWW', 'B.....W', 'B.....W', 'WnnnnnW']), 5);
+});
+

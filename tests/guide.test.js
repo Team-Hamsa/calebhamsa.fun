@@ -40,3 +40,25 @@ test('the guide has a section per tab, in palette order, with every block', () =
 test('the guide explains the three tools', () => {
   assert.deepEqual(TOOLS_GUIDE.map((tool) => tool.icon), ['🧱', '⛏️', '✋']);
 });
+
+/**
+ * Every sentence the guide says about one pack: its rules, and what each block does.
+ * @param {object} pack - a block pack
+ * @returns {string[]} the sentences
+ */
+const guideTexts = (pack) => [...pack.guide.rules, ...Object.values(pack.guide.blocks).flatMap((entry) => [entry.does, entry.use ?? ''])];
+
+test('the guide never tells you to flip a battery round (you can\'t: ✋ does nothing to it)', () => {
+  assert.equal(blockInfo('battery').use, undefined, 'if batteries can be flipped now, this test and the guide should change');
+  for (const pack of PACKS) {
+    for (const text of guideTexts(pack)) assert.doesNotMatch(text, /(flip|turn) the battery/i, `${pack.tab.label}: "${text}"`);
+  }
+  const power = PACKS.find((pack) => pack.tab.id === 'electric');
+  assert.ok(guideTexts(power).some((text) => /\+ end is always/.test(text)), 'the Power guide should say where the + end is');
+  assert.ok(guideTexts(power).some((text) => /against each other/.test(text)), 'the Power guide should explain batteries that cancel');
+});
+
+test('the guide explains why too many note blocks in one loop go quiet', () => {
+  const power = PACKS.find((pack) => pack.tab.id === 'electric');
+  assert.ok(guideTexts(power).some((text) => /note blocks/i.test(text) && /quiet/.test(text) && /battery/.test(text)));
+});

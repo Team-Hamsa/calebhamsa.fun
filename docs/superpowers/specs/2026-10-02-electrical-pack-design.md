@@ -246,3 +246,7 @@ The spark rule in section 5 keeps its two halves (by shape AND more than 2 × `R
 Now another pusher on the path counts as plain wire only when (a) the path goes through it the way it pushes, in at − and out at + (so shorted battery stacks still spark), or (b) it isn't pushing right now (a stopped generator or turbine), or (c) it is overpowered: more than 2 × `REFERENCE_CURRENT` is forced through it backwards. A healthy parallel battery is none of these. The shape test is kept (not replaced by a current or voltage-drop threshold) so that a short through a very long wire still sparks: an 80-wire loop carries only 7.6 A.
 
 Not covered: a battery fighting an opposing pusher that is weaker but not overpowered past the threshold shows no spark (the current is under 2 A there anyway, by the same threshold).
+
+### Guide text (issue #16)
+- The gears guide told you to "flip the battery round" to reverse a motor. A battery has no ✋ action and its + end is fixed (top or right), so the guide now says what the README says: move the battery to the other side of the loop. The Power guide gains a rule saying the + end can't be turned and that batteries on opposite sides of a loop cancel. A battery you can flip is left as a possible feature.
+- `NOTE_ON_LEVEL` stays 0.25 (a real sounder has a least current too). The guide and README now say why five note blocks in one loop stay quiet while the dots still move, and how to fix it. A test pins 4 sing / 5 don't / 5 with two batteries do.

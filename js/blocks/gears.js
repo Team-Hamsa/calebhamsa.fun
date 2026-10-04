@@ -560,7 +560,7 @@ const guide = {
     axle: { does: 'A rod. Carries turning in a straight line, the same way round.' },
     crankStop: { does: 'Hand power, strength 2! Red knob = stopped, green knob = turning.', use: 'stop → ↻ → ↺ → stop' },
     waterWheel: { does: 'Turns when water flows through it. More water = faster AND stronger.' },
-    motor: { does: 'Turns electricity into turning: more electricity = faster and stronger. Put it in a loop with a battery. Flip the battery round and it turns the other way.' },
+    motor: { does: 'Turns electricity into turning: more electricity = faster and stronger. Put it in a loop with a battery. Move the battery to the other side of the loop and it turns the other way.' },
     generator: { does: 'Turns turning into electricity: wire it up like a battery. Its + end swaps when it turns the other way.' },
   },
 };
