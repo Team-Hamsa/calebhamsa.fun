@@ -8,14 +8,17 @@ import assert from 'node:assert/strict';
 import { createWorld, getBlock, setBlock, setFluid, tick } from '../js/world.js';
 import { allSystems, blockInfo, blocksInPack, isKnownBlock, refreshSignals } from '../js/blocks/registry.js';
 import { drawWorld } from '../js/block-art.js';
-import { PUMP_RATE } from '../js/fluids.js';
-import gears, { CRANK_SPEED, CRANK_STRENGTH, GENERATOR_GAIN, GENERATOR_TORQUE, WHEEL_GAIN, spinAt } from '../js/blocks/gears.js';
+import { DROP_POWER, PUMP_HEAD, PUMP_RATE } from '../js/fluids.js';
+import gears, {
+  CRANK_SPEED, CRANK_STRENGTH, GENERATOR_GAIN, GENERATOR_TORQUE, WHEEL_GAIN, WHEEL_STRENGTH, spinAt, wheelSource,
+} from '../js/blocks/gears.js';
 import { REFERENCE_CURRENT } from '../js/circuit.js';
 
 /** What each letter in a test picture means. */
 const LETTERS = {
   '.': 'air', '#': 'stone', W: 'wire', L: 'lamp', B: 'battery', s: 'gearSmall', G: 'gearBig',
   '-': 'axle', R: 'crankCW', Q: 'crankCCW', M: 'motor', E: 'generator', O: 'waterWheel', F: 'faucet',
+  P: 'pipe', '^': 'pumpUp', T: 'turbine', D: 'drain',
 };
 
 /**
@@ -272,10 +275,267 @@ test('a battery wired straight across a stopped generator sparks (a short circui
   assert.equal(cranked.signals.electric.cells.get(3 * 3 + 1).spark, true);
 });
 
-test('water power cannot loop forever either: pump → wheel → generator loses energy', () => {
-  // A pump moving PUMP_RATE water per tick through a wheel makes it turn PUMP_RATE × WHEEL_GAIN;
-  // a generator turning that fast pushes less than the 1 volt that powered the pump.
-  assert.ok(PUMP_RATE * WHEEL_GAIN * GENERATOR_GAIN < 1);
+test('water power cannot loop forever either: the energy books balance at every step', () => {
+  // 1. A pump: the most work it does on the water (half its top flow at half
+  //    its top height) is less than the electricity it uses (current² × its
+  //    resistance of 1). Both grow the same way with more batteries.
+  const pumpBest = DROP_POWER * (PUMP_RATE / 2) * (PUMP_HEAD / 2);
+  const pumpUses = REFERENCE_CURRENT * REFERENCE_CURRENT * blockInfo('pumpUp').part.resistance;
+  assert.ok(pumpBest < 0.9 * pumpUses, `pump gives ${pumpBest}, uses ${pumpUses}`);
+  // 2. A wheel: the most work it does (half its strength at half its top
+  //    speed) is exactly what water falling one cell gives up, never more.
+  const flow = 0.05;
+  const wheelBest = (WHEEL_STRENGTH / 2) * ((flow * WHEEL_GAIN) / 2);
+  assert.ok(Math.abs(wheelBest - DROP_POWER * flow) < 1e-12);
+  // 3. A generator gives back less electricity than the work that turns it.
+  assert.ok(GENERATOR_GAIN / GENERATOR_TORQUE < 1);
+});
+
+// =============================================================
+// Water wheels: water has to FALL to give its push
+// =============================================================
+
+/**
+ * Build a world from a picture (without running it).
+ * @param {string[]} rows - the picture
+ * @returns {object} the world
+ */
+function build(rows) {
+  const world = createWorld(rows[0].length, rows.length);
+  rows.forEach((row, y) => [...row].forEach((letter, x) => setBlock(world, x, y, LETTERS[letter])));
+  return world;
+}
+
+/**
+ * Run a world for some more ticks.
+ * @param {object} world - the world
+ * @param {number} ticks - how many
+ * @returns {object} the world
+ */
+function more(world, ticks) {
+  const systems = allSystems();
+  for (let i = 0; i < ticks; i++) tick(world, systems, blockInfo);
+  return world;
+}
+
+/**
+ * All the water in the world.
+ * @param {object} world - the world
+ * @returns {number} the total amount
+ */
+const allWater = (world) => world.fluid.water.reduce((sum, amount) => sum + amount, 0);
+
+/**
+ * The real current through the part at x, y (0 if none).
+ * @param {object} world - the world
+ * @param {number} x - column
+ * @param {number} y - row
+ * @returns {number} its current
+ */
+const amps = (world, x, y) => world.signals.electric.cells.get(y * world.width + x)?.current ?? 0;
+
+test('one faucet falling one cell through a water wheel is as good as one crank', () => {
+  const world = run(['.F.', '.O.', '.D.', '###'], 200);
+  const wheel = wheelSource(world, 1, 1);
+  assert.ok(Math.abs(wheel.speed - CRANK_SPEED) < 0.02, `top speed ${wheel.speed}`);
+  assert.ok(Math.abs(wheel.strength - CRANK_STRENGTH) < 0.1, `strength ${wheel.strength}`);
+});
+
+test('a wheel in a level stream still turns, but feebly: the water hardly falls', () => {
+  const world = run(['F.....', '..O..D', '######'], 300);
+  assert.ok(spinAt(world, 2, 1) > 0.5, `with nothing to push it turns at ${spinAt(world, 2, 1)}`);
+  const wheel = wheelSource(world, 2, 1);
+  assert.ok(wheel.strength > 0 && wheel.strength < CRANK_STRENGTH / 4, `strength ${wheel.strength}`);
+});
+
+test('a taller fall is stronger: three wheels stacked under one faucet each get a full cell of fall', () => {
+  const world = run(['#F#', '#O#', '#O#', '#O#', '#D#'], 200);
+  for (const y of [1, 2, 3]) {
+    const wheel = wheelSource(world, 1, y);
+    assert.ok(wheel.strength > 0.9 * CRANK_STRENGTH, `wheel ${y}: strength ${wheel.strength}`);
+    assert.ok(wheel.strength < 1.6 * CRANK_STRENGTH, `wheel ${y}: strength ${wheel.strength}`);
+  }
+});
+
+test('a wheel is never credited with more work than the water gave up at it', () => {
+  const pictures = [
+    ['.F.', '.O.', '.D.', '###'],
+    ['.F.', '...', '.O.', '.D.'],
+    ['F.....', '..O..D', '######'],
+    ['#F#', '#O#', '#O#', '#O#', '#D#'],
+    ['#FFFF#', '#....#', '#....#', '###O##', '###D##'],
+    ['..F..', '.....', 'D.O.D', '#####'],
+  ];
+  for (const rows of pictures) {
+    const world = build(rows);
+    for (let i = 0; i < 120; i++) {
+      more(world, 1);
+      world.cells.forEach((name, index) => {
+        if (name !== 'waterWheel') return;
+        const wheel = wheelSource(world, index % world.width, Math.floor(index / world.width));
+        if (!wheel) return;
+        const best = (wheel.strength / 2) * (Math.abs(wheel.speed) / 2);
+        const gaveUp = DROP_POWER * world.signals.spin.wheelWork.get(index);
+        assert.ok(best <= gaveUp + 1e-9, `${rows.join('/')}: wheel could do ${best}, water gave ${gaveUp}`);
+      });
+    }
+  }
+});
+
+test('water standing still in a pool gives a wheel no push at all', () => {
+  const world = build(['#...#', '#.O.#', '#####']);
+  for (const x of [1, 2, 3]) setFluid(world, 'water', x, 1, 1);
+  more(world, 100);
+  assert.equal(spinAt(world, 2, 1), 0);
+  assert.equal(wheelSource(world, 2, 1), null);
+});
+
+// =============================================================
+// No water machine runs forever: every pump → wheels → generator
+// loop winds down once its battery is taken away.
+// =============================================================
+
+/**
+ * Check a loop machine: with its batteries in, water really goes round;
+ * with every battery swapped for plain wire, it all stops, and no water
+ * was made or lost.
+ * @param {string} what - the machine's name, for messages
+ * @param {object} world - the world, batteries placed
+ * @param {number[]} pump - the pump's [x, y]
+ * @param {number[][]} wheels - every wheel's [x, y]
+ * @returns {void}
+ */
+function assertWindsDown(what, world, pump, wheels) {
+  const water = allWater(world);
+  more(world, 300);
+  assert.ok(amps(world, ...pump) > 0.15, `${what}: the battery should run the pump (${amps(world, ...pump)})`);
+  const flowing = Math.abs(world.signals.spin.wheelFlow.get(wheels[0][1] * world.width + wheels[0][0]));
+  assert.ok(flowing > 0.005, `${what}: water should flow through the wheels while the battery is in (${flowing})`);
+  world.cells.forEach((name, index) => {
+    if (name === 'battery') setBlock(world, index % world.width, Math.floor(index / world.width), 'wire');
+  });
+  more(world, 800);
+  for (let i = 0; i < 50; i++) {
+    more(world, 1);
+    assert.ok(amps(world, ...pump) < 0.01, `${what}: the pump still gets ${amps(world, ...pump)} with no battery`);
+    for (const [x, y] of wheels) assert.equal(spinAt(world, x, y), 0, `${what}: the wheel at ${x},${y} still turns`);
+  }
+  assert.ok(Math.abs(allWater(world) - water) < 1e-6, `${what}: water went from ${water} to ${allWater(world)}`);
+}
+
+test('the pump → three (or five) wheels in a level channel → generators loop winds down without its battery', () => {
+  // The machine from issue #17. The pump (^) lifts water from the bottom
+  // channel to the top one; it drops through a turbine (T, only there so
+  // the wire can cross the water) and flows back through the wheels (O),
+  // each with a generator (E) on top, all wired in a row to the pump.
+  for (const count of [3, 5]) {
+    const width = 2 * count + 3;
+    const world = build([
+      '#'.repeat(width),
+      `#${'.'.repeat(width - 2)}#`,
+      `W^${'EW'.repeat(count - 1)}ETW`,
+      `W.${'O.'.repeat(count)}W`,
+      `W${'#'.repeat(width - 2)}W`,
+      'W'.repeat(width),
+    ]);
+    for (let x = 1; x < width - 1; x++) {
+      setFluid(world, 'water', x, 3, 1);
+      setFluid(world, 'water', x, 1, 0.3);
+    }
+    setBlock(world, 3, 5, 'battery');
+    const wheels = Array.from({ length: count }, (_, i) => [2 + 2 * i, 3]);
+    assertWindsDown(`${count} wheels in a channel`, world, [1, 2], wheels);
+  }
+});
+
+/**
+ * Build a ring of pipe lying flat-ish: a pump on the left pushes water up
+ * and along the top through `count` wheels side by side (no fall at all),
+ * and it comes back along the bottom. The last wheel turns a generator
+ * through `chain` (gears), and the generator is wired only to the pump
+ * and a battery.
+ * @param {number} count - how many wheels
+ * @param {string} chain - the gears from the last wheel to the generator, like 'GsE'
+ * @returns {{world: object, pump: number[], wheels: number[][]}} the machine
+ */
+function levelRing(count, chain) {
+  const last = count + chain.length;
+  /**
+   * Finish a row: stone out to the wire that runs down the right-hand side.
+   * @param {string} start - the left part of the row
+   * @returns {string} the whole row
+   */
+  const row = (start) => `${start}${'#'.repeat(last - start.length)}W`;
+  const world = build([
+    'W'.repeat(last + 1),
+    `W${'#'.repeat(count)}${chain}`,
+    row(`WP${'O'.repeat(count)}P`),
+    row(`W^${'W'.repeat(count)}P`),
+    row(`#PPT${'P'.repeat(count - 1)}`),
+    `...${'W'.repeat(last - 2)}`,
+  ]);
+  world.cells.forEach((name, index) => {
+    if (['pipe', 'waterWheel', 'turbine'].includes(name)) world.fluid.water[index] = index >= 4 * world.width ? 1 : 0.5;
+  });
+  setBlock(world, 0, 1, 'battery');
+  return { world, pump: [1, 3], wheels: Array.from({ length: count }, (_, i) => [2 + i, 2]) };
+}
+
+test('a level ring of pipe with a pump, wheels and a geared generator winds down without its battery', () => {
+  for (const count of [3, 4, 6]) {
+    for (const chain of ['GsE', 'Gs-GsE', 'sGE']) { // geared up ×2, up ×4, and down ÷2
+      const { world, pump, wheels } = levelRing(count, chain);
+      assertWindsDown(`ring of ${count} wheels, gears ${chain}`, world, pump, wheels);
+    }
+  }
+});
+
+test('a level ring with no battery, crank or faucet EVER never gets going by itself', () => {
+  const { world, pump, wheels } = levelRing(3, 'GsE');
+  setBlock(world, 0, 1, 'wire');
+  more(world, 1500);
+  assert.ok(amps(world, ...pump) < 0.01, `pump gets ${amps(world, ...pump)}`);
+  for (const [x, y] of wheels) assert.equal(spinAt(world, x, y), 0);
+});
+
+/**
+ * Build a tall loop: a pump lifts water up a pipe on the left, it runs
+ * along the top and falls down the right through `count` wheels stacked
+ * on one shaft (a real, tall fall), then back along the bottom to the
+ * pump. The top wheel turns a generator through `chain`.
+ * @param {number} count - how many stacked wheels
+ * @param {string} chain - the gears from the top wheel to the generator
+ * @param {number} batteries - how many batteries power the pump at first
+ * @returns {{world: object, pump: number[], wheels: number[][]}} the machine
+ */
+function tallLoop(count, chain, batteries) {
+  const last = 4 + chain.length;
+  /**
+   * Finish a row: stone out to the wire that runs down the right-hand side.
+   * @param {string} start - the left part of the row
+   * @returns {string} the whole row
+   */
+  const row = (start) => `${start}${'#'.repeat(last - start.length)}W`;
+  const rows = ['W'.repeat(last + 1), row('WPPPP'), `WP##O${chain}`];
+  for (let i = 1; i < count; i++) rows.push(row('WP##O'));
+  rows.push(row('W^WWP'), row('#PPTP'), `...${'W'.repeat(last - 2)}`);
+  const world = build(rows);
+  world.cells.forEach((name, index) => {
+    if (['pipe', 'waterWheel', 'turbine'].includes(name)) world.fluid.water[index] = 1;
+  });
+  for (let i = 0; i < batteries; i++) setBlock(world, 0, 1 + i, 'battery');
+  return { world, pump: [1, count + 2], wheels: Array.from({ length: count }, (_, i) => [4, 2 + i]) };
+}
+
+test('a tall loop (pump up one side, stacked wheels down the other) winds down without its batteries, however it is geared', () => {
+  const machines = [
+    [3, 'E', 2], [3, 'GsE', 2], [3, 'sGE', 2], [3, 'Gs-GsE', 2],
+    [5, 'E', 3], [5, 'GsE', 3], [6, 'sGE', 4], [6, 'sG-sGE', 4],
+  ];
+  for (const [count, chain, batteries] of machines) {
+    const { world, pump, wheels } = tallLoop(count, chain, batteries);
+    assertWindsDown(`${count} stacked wheels, gears ${chain}, ${batteries} batteries`, world, pump, wheels);
+  }
 });
 
 test('a crank turning a generator that powers a motor pushing back does not flicker', () => {

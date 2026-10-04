@@ -16,6 +16,15 @@
  * Steam follows the very same rules upside down: it rises, and spreads
  * out under ceilings.
  *
+ * WATER HAS TO FALL TO GIVE ITS PUSH. High water (and squished water)
+ * holds energy, like a ball at the top of a slide. Every time some water
+ * moves, we work out how much lower it ended up (see fallEnergy): that
+ * is the only push a water wheel can catch. And LIFTING WATER USES UP A
+ * PUMP'S PUSH: the higher a pump has to lift, the less water it moves,
+ * until the water is too heavy for it and it stops (see pumpAmount).
+ * Because of those two rules, water going round and round through a
+ * pump and some wheels can never give back more than the pump put in.
+ *
  * Fluid only moves between two cells if BOTH let it through on the
  * sides that touch: air lets it through everywhere, solid blocks never
  * do, and pipes only along their open sides (see openSides).
@@ -61,6 +70,50 @@ export function stableBelow(total) {
   if (total <= FULL) return FULL;
   if (total < 2 * FULL + SQUISH) return (FULL * FULL + total * SQUISH) / (FULL + SQUISH);
   return (total + SQUISH) / 2;
+}
+
+/**
+ * How much "height energy" one cell's water holds, counted from the
+ * cell's own floor. Up to a full cell, the more water the higher its
+ * top, like a taller and taller stack of blocks. Past full, the water is
+ * squished like a spring, and squishing it more takes a LOT more push.
+ * (The height of the cell itself is counted separately, in fallEnergy.)
+ * @param {number} amount - how much water the cell holds
+ * @returns {number} its energy, in "one full cell of water, one cell up"
+ */
+export function storedEnergy(amount) {
+  if (amount <= FULL) return (amount * amount) / (2 * FULL);
+  const extra = amount - FULL;
+  return FULL / 2 + extra + (extra * extra) / (2 * SQUISH);
+}
+
+/**
+ * How hard the water in a cell pushes: how high its water would stand
+ * above the cell's floor, in cells (its "head"). Half full is 0.5. Full
+ * with 3 full cells of water standing on it is 4, because each cell
+ * standing on it squishes it by SQUISH.
+ * @param {number} amount - how much water the cell holds
+ * @returns {number} the height, in cells
+ */
+export function headOf(amount) {
+  return amount <= FULL ? amount : FULL + (amount - FULL) / SQUISH;
+}
+
+/**
+ * How much energy some water gives up by moving from one cell to another:
+ * how far it fell, plus how much less squished or piled-up it is now.
+ * Water falling one whole cell into an empty cell gives up 1 for each
+ * full cell of water. Water sliding along a level stream gives up only a
+ * tiny bit. A pump pushing water uphill gets a NEGATIVE answer: that
+ * water GAINED energy, and the pump had to pay for it.
+ * @param {number} from - how much water the cell it leaves holds
+ * @param {number} to - how much water the cell it goes to holds
+ * @param {number} amount - how much water moves
+ * @param {number} drop - how many cells lower the new cell is (up is negative)
+ * @returns {number} the energy given up
+ */
+export function fallEnergy(from, to, amount, drop) {
+  return storedEnergy(from) - storedEnergy(from - amount) + storedEnergy(to) - storedEnergy(to + amount) + amount * drop;
 }
 
 /**
@@ -260,7 +313,8 @@ function clamp(value, low, high) {
  * @param {object} world - the world
  * @param {'water'|'steam'} kind - which fluid
  * @param {Function} canFlow - from flowChecker
- * @param {Function} onMove - told (fromIndex, toIndex, amount) for every move
+ * @param {Function} onMove - told (fromIndex, toIndex, amount, energy) for every
+ *   move: `energy` is how much the water gave up by moving (see fallEnergy; 0 for steam)
  * @returns {number} the total amount that moved
  */
 export function flowFluid(world, kind, canFlow, onMove) {
@@ -276,14 +330,16 @@ export function flowFluid(world, kind, canFlow, onMove) {
    * @param {number} from - the cell it leaves
    * @param {number} to - the cell it goes to
    * @param {number} amount - how much
+   * @param {number} here - how much the cell it leaves holds right now
+   * @param {number} drop - how many cells lower it ends up (1 falling, 0 sideways, −1 rising)
    * @returns {void}
    */
-  const move = (from, to, amount) => {
+  const move = (from, to, amount, here, drop) => {
     if (amount <= 0) return;
     after[from] -= amount;
     after[to] += amount;
     moved += amount;
-    onMove(from, to, amount);
+    onMove(from, to, amount, kind === 'water' ? fallEnergy(here, before[to], amount, drop) : 0);
   };
 
   /**
@@ -302,7 +358,7 @@ export function flowFluid(world, kind, canFlow, onMove) {
     const below = canFlow(index, fall); // for steam, this is the cell ABOVE
     if (below >= 0) {
       const flow = clamp(stableBelow(remaining + before[below]) - before[below], 0, Math.min(MAX_FLOW, remaining));
-      move(index, below, flow);
+      move(index, below, flow, remaining, 1);
       remaining -= flow;
     }
     if (remaining <= 0) continue;
@@ -316,7 +372,7 @@ export function flowFluid(world, kind, canFlow, onMove) {
       const beside = canFlow(index, side);
       if (beside < 0 || !roomFor(beside)) continue;
       const flow = clamp((level - before[beside]) / 4, 0, remaining);
-      move(index, beside, flow);
+      move(index, beside, flow, remaining, 0);
       remaining -= flow;
     }
     if (remaining <= 0) continue;
@@ -324,7 +380,7 @@ export function flowFluid(world, kind, canFlow, onMove) {
     const above = canFlow(index, rise);
     if (above >= 0 && roomFor(above)) {
       const flow = clamp(remaining - stableBelow(remaining + before[above]), 0, Math.min(MAX_FLOW, remaining));
-      move(index, above, flow);
+      move(index, above, flow, remaining, -1);
     }
   }
 
@@ -353,19 +409,83 @@ export const BOIL_RATE = 0.05;
 export const CONDENSE_RATE = 0.05;
 
 /**
- * How much water a fully powered pump moves each tick. Kept small enough
- * that a pump pushing water through a water wheel that turns the
- * generator powering the pump loses energy each time round (see
- * gears.js): no water machine can run forever on its own.
- * 🧪 Try this! 0.5 for a super pump (and a water perpetual-motion machine!).
+ * How much water a pump with one battery moves each tick when it has
+ * nothing to lift (pushing along a level pipe, or downhill). More
+ * batteries move more.
  */
 export const PUMP_RATE = 0.05;
+
+/**
+ * How many cells high a pump with one battery can lift water before it
+ * stalls: the water standing on it is then too heavy to push. Two
+ * batteries lift twice as high.
+ * 🧪 Try this! 8: now the pump gives the water more energy than its
+ * electricity holds, and you can build a machine that runs forever
+ * (tests/gears.test.js will tell you off!).
+ */
+export const PUMP_HEAD = 6;
+
+/**
+ * How much turning-work the energy of falling water is worth: one full
+ * cell of water falling one cell can do this much work on a water wheel,
+ * and a pump must spend at least this much electricity to lift it back.
+ * 10 makes one faucet falling one cell through a wheel as good as one
+ * crank (see WHEEL_GAIN in gears.js). Both the wheel and the pump use
+ * this same number: that's what keeps the energy books honest.
+ */
+export const DROP_POWER = 10;
 
 /** A pump needs at least this much circuit level to work. */
 export const PUMP_ON_LEVEL = 0.25;
 
-/** A pump won't squeeze the cell in front of it fuller than this. */
-const PUMP_FRONT_CAP = FULL + SQUISH;
+/**
+ * How much water a pump moves this tick.
+ *
+ * A pump is like you carrying buckets upstairs: on flat ground you carry
+ * lots, the higher the stairs the fewer you manage, and at some height
+ * you can't lift the bucket at all. So:
+ *
+ *   amount = PUMP_RATE × level × (1 − lift ÷ (PUMP_HEAD × level))
+ *
+ * `lift` is how much higher the water pushes in front of the pump than
+ * behind it (headOf, plus how many cells higher the front cell is),
+ * measured AFTER the water has moved, so the pump never overshoots.
+ * `level` is how much electricity it gets (1 = one battery): more
+ * batteries move more water AND lift it higher.
+ *
+ * The work it does on the water (amount × lift × DROP_POWER) is biggest
+ * half way up, and even there it is less than the electricity the pump
+ * uses. The rest is lost as heat, like in a real pump.
+ * @param {number} level - the pump's current ÷ REFERENCE_CURRENT
+ * @param {number} behind - how much water the cell behind it holds
+ * @param {number} ahead - how much water the cell in front of it holds
+ * @param {number} rise - how many cells higher the front cell is than the back one (down is negative)
+ * @returns {number} how much water it moves
+ */
+export function pumpAmount(level, behind, ahead, rise) {
+  const most = PUMP_RATE * level;
+  const stall = PUMP_HEAD * level;
+  /**
+   * How much MORE the pump could move, if it had already moved `amount`.
+   * @param {number} amount - how much it moved
+   * @returns {number} positive if it can do more, negative if that was too much
+   */
+  const spare = (amount) => {
+    const lift = rise + headOf(ahead + amount) - headOf(behind - amount);
+    return most * Math.min(1, 1 - lift / stall) - amount;
+  };
+  let high = Math.min(most, behind);
+  if (high <= 0 || spare(0) <= 0) return 0;
+  if (spare(high) >= 0) return high;
+  // Somewhere in between: keep halving the gap until we've found it.
+  let low = 0;
+  for (let i = 0; i < 40; i++) {
+    const middle = (low + high) / 2;
+    if (spare(middle) >= 0) low = middle;
+    else high = middle;
+  }
+  return low;
+}
 
 /**
  * A burner stops boiling when the cell above it already holds this much
@@ -434,13 +554,16 @@ export function runSpecials(world, blockInfo, sides) {
     const front = info.fluid?.pump;
     if (front) {
       // The real current (not `level`, which stops at 2 so lamps don't get
-      // too bright): more batteries really do pump faster.
+      // too bright): more batteries really do pump faster and higher.
       const level = (world.signals.electric?.cells?.get(index)?.current ?? 0) / REFERENCE_CURRENT;
       if (level < PUMP_ON_LEVEL) continue;
       const back = beside(index, OPPOSITE[front]);
       const ahead = beside(index, front);
       if (back < 0 || ahead < 0 || !sides[back].includes(front) || !sides[ahead].includes(OPPOSITE[front])) continue;
-      const push = Math.min(PUMP_RATE * level, water[back], Math.max(0, PUMP_FRONT_CAP - water[ahead]));
+      // Lifting costs flow: see pumpAmount. STEP's y counts down, so up is a rise of +2
+      // (from the cell under the pump to the cell above it).
+      const rise = -2 * STEP[front][1];
+      const push = pumpAmount(level, water[back], water[ahead], rise);
       water[back] -= push;
       water[ahead] += push;
       changed += push;
@@ -454,10 +577,11 @@ export function runSpecials(world, blockInfo, sides) {
  * steps), then the special blocks do their jobs once.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
- * @returns {{moved: number, steamOut: Map<number, number>, waterOut: Map<number, number>, sides: string[][]}}
+ * @returns {{moved: number, steamOut: Map<number, number>, waterOut: Map<number, number>, waterWork: Map<number, number>, sides: string[][]}}
  *   how much changed in total, how much steam left each turbine, how much
  *   water left each water wheel (+ going down or right, − going up or left),
- *   and every cell's open sides
+ *   how much energy the water gave up at each water wheel, and every
+ *   cell's open sides
  */
 export function stepFluids(world, blockInfo) {
   const sides = allOpenSides(world, blockInfo);
@@ -474,18 +598,32 @@ export function stepFluids(world, blockInfo) {
     if (blockInfo(world.cells[from])?.turbine) steamOut.set(from, (steamOut.get(from) ?? 0) + amount);
   };
   const waterOut = new Map();
+  const waterWork = new Map();
   /**
    * Count water leaving a water wheel, and which way it went (that's
-   * what turns it): down or right counts +, up or left counts −.
+   * what says how fast it turns, and which way): down or right counts
+   * +, up or left counts −.
+   *
+   * Also count the ENERGY the water gave up leaving a wheel, or landing
+   * on one from somewhere that isn't a wheel (that's what says how hard
+   * the wheel can push). Each bit of energy is only ever given to ONE
+   * wheel: when water goes straight from one wheel into another, the
+   * one it leaves gets it.
    * @param {number} from - the cell the water left
    * @param {number} to - where it went
    * @param {number} amount - how much
+   * @param {number} energy - how much energy the water gave up (see fallEnergy)
    * @returns {void}
    */
-  const countWheels = (from, to, amount) => {
-    if (!blockInfo(world.cells[from])?.wheel) return;
-    const signed = to > from ? amount : -amount; // down (+width) and right (+1) are bigger indexes
-    waterOut.set(from, (waterOut.get(from) ?? 0) + signed);
+  const countWheels = (from, to, amount, energy) => {
+    const leaves = Boolean(blockInfo(world.cells[from])?.wheel);
+    if (leaves) {
+      const signed = to > from ? amount : -amount; // down (+width) and right (+1) are bigger indexes
+      waterOut.set(from, (waterOut.get(from) ?? 0) + signed);
+    }
+    if (energy <= 0) return;
+    const wheel = leaves ? from : to;
+    if (leaves || blockInfo(world.cells[to])?.wheel) waterWork.set(wheel, (waterWork.get(wheel) ?? 0) + energy);
   };
   let moved = 0;
   for (let step = 0; step < FLUID_STEPS; step++) {
@@ -493,5 +631,5 @@ export function stepFluids(world, blockInfo) {
     moved += flowFluid(world, 'steam', canFlow, countTurbines);
   }
   moved += runSpecials(world, blockInfo, sides);
-  return { moved, steamOut, waterOut, sides };
+  return { moved, steamOut, waterOut, waterWork, sides };
 }

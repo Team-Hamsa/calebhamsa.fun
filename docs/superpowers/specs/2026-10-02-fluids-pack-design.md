@@ -250,3 +250,24 @@ Each block's `drawSignals` draws its own look:
 ## Addendum 2026-10-04: no favorite side (issue #18)
 
 Step 2 of the water rule ("Left, then right") worked out the right-hand flow from what was left after the left-hand flow had gone, so a stream landing on the middle of a ridge split 4 : 3 in favor of the left. Both side flows are now worked out from the **same** amount (what the cell holds after the falling step): `flow = clamp((level − neighbor) / 4, 0, remaining)` for each side. Together they are at most half the cell, so nothing else changes. A symmetric splitter now gives exactly half to each side; steam uses the same loop and is fixed too.
+
+## Addendum 2026-10-04: water energy — wheels need a fall, lifting costs the pump (issue #17)
+
+A pump → water wheels → generator → same pump loop ran forever with 3 or more wheels, because a wheel got full power from any water passing through it (even along a level pipe) and a pump paid nothing for height. The fix is one energy ledger, used by both ends. It overrides "The pump's front-cell limit is `FULL + SQUISH`" (refinement 1) and the pump line under "Specials".
+
+**Height energy.** Each cell's water holds `storedEnergy(a)`: `a²/2` up to full, then `½ + (a−1) + (a−1)²/(2·SQUISH)` (squished water is a spring). Its derivative is the cell's **head** `headOf(a)`: `a` up to full, then `1 + (a−1)/SQUISH`, i.e. one more cell of head for each full cell standing on it. With the cell's own height added, this is exactly the quantity `stableBelow` levels out, so still water has the same total head everywhere, every ordinary move goes downhill in head, and the world's total (stored + amount × height) never rises by itself (tested).
+
+**`fallEnergy(from, to, amount, drop)`** is the energy one move gives up, taken on its own: `stored(from) − stored(from − amount) + stored(to) − stored(to + amount) + amount × drop`. `flowFluid` passes it to `onMove` as a 4th argument (0 for steam).
+
+**Wheels.** `stepFluids` also returns `waterWork: Map<index, energy>`: the positive `fallEnergy` of every move that leaves a wheel, or lands on a wheel from a cell that isn't one. Each move's energy goes to exactly one wheel. See the gears spec addendum for how the wheel uses it.
+
+**Pumps** (`pumpAmount(level, behind, ahead, rise)`): a straight-line pump curve, like a real one:
+
+`amount = PUMP_RATE × level × min(1, 1 − lift / (PUMP_HEAD × level))`
+
+- `lift = rise + headOf(ahead + amount) − headOf(behind − amount)`: the head difference across the pump **after** the move (found by halving), so the work done is never under-counted. `rise` is +2 for an up-pump (from the cell below it to the cell above it), 0 sideways, −2 down.
+- `PUMP_RATE` = 0.05, `PUMP_HEAD` = 6 cells per unit of level. More current moves more water **and** lifts higher; one battery stalls with the water about 5 cells above the pump, two at about 10.
+- Work on the water is `DROP_POWER × amount × lift ≤ DROP_POWER × PUMP_RATE × PUMP_HEAD × level² / 4 = 0.75 × level²`; the electricity used is `current² × 1 Ω = 0.907 × level²`. So a pump is at best 83% efficient (tested for many levels and heads).
+- `DROP_POWER` = 10 turning-work units per (full cell of water × cell of fall). It is the single exchange rate between water energy and work, shared by pump and wheel.
+
+**Not changed:** turbines still count steam flow only (stacked turbines over one burner each get full push). A burner is an endless source, so that is not a closed loop, but it is not head-accurate either.

@@ -8,7 +8,8 @@ import assert from 'node:assert/strict';
 import { createWorld, getFluid, setBlock, setFluid } from '../js/world.js';
 import { REFERENCE_CURRENT } from '../js/circuit.js';
 import {
-  BOIL_RATE, CONDENSE_RATE, FAUCET_RATE, PUMP_RATE, SQUISH, openSides, stableBelow, stepFluids,
+  BOIL_RATE, CONDENSE_RATE, DROP_POWER, FAUCET_RATE, PUMP_HEAD, PUMP_RATE, SQUISH, fallEnergy, headOf, openSides, pumpAmount,
+  stableBelow, stepFluids, storedEnergy,
 } from '../js/fluids.js';
 
 /**
@@ -235,7 +236,79 @@ test('a powered pump pushes water uphill; an unpowered one does not', () => {
   const on = build();
   on.signals.electric = { cells: new Map([[1 * 3 + 1, { level: 1, current: REFERENCE_CURRENT }]]) };
   stepFluids(on, blockInfo);
-  assert.ok(Math.abs(getFluid(on, 'water', 1, 0) - PUMP_RATE) < 1e-9);
+  // Lifting uses up some of its push: it moves a bit less than it would on the level.
+  const lifted = getFluid(on, 'water', 1, 0);
+  assert.ok(lifted > 0.7 * PUMP_RATE && lifted < PUMP_RATE, `lifted ${lifted}`);
+  assert.ok(Math.abs(total(on, 'water') - 1) < 1e-12);
+});
+
+test('lifting water uses up a pump\'s push: the higher the water stands on it, the less it moves, until it stalls', () => {
+  // On the level (or downhill) it moves its full PUMP_RATE.
+  assert.ok(Math.abs(pumpAmount(1, 1, 0, 0) - PUMP_RATE) < 0.01 * PUMP_RATE);
+  assert.ok(Math.abs(pumpAmount(1, 0.5, 0, -2) - PUMP_RATE) < 1e-12);
+  // Pushing up against 0, 1, 2, 3 full cells standing on the cell in front: less and less.
+  const amounts = [0, 1, 2, 3].map((cells) => pumpAmount(1, 1, 1 + SQUISH * cells, 2));
+  for (let i = 1; i < amounts.length; i++) assert.ok(amounts[i] < amounts[i - 1], `${amounts}`);
+  assert.ok(amounts[3] > 0);
+  // PUMP_HEAD cells up is too heavy for one battery's worth: it stalls...
+  assert.equal(pumpAmount(1, 1, 1 + SQUISH * (PUMP_HEAD - 2), 2), 0);
+  // ...but two batteries' worth still lifts there, and moves more everywhere.
+  assert.ok(pumpAmount(2, 1, 1 + SQUISH * (PUMP_HEAD - 2), 2) > 0);
+  assert.ok(pumpAmount(2, 1, 1, 2) > pumpAmount(1, 1, 1, 2));
+  // No water behind it, nothing to move.
+  assert.equal(pumpAmount(1, 0, 0, 2), 0);
+});
+
+test('a pump never gives the water more energy than its electricity holds', () => {
+  for (const level of [0.25, 0.5, 1, 2, 3.5, 6]) {
+    const electricity = (level * REFERENCE_CURRENT) ** 2 * 1; // current² × the pump's resistance (1)
+    for (const behind of [0.2, 1, 1.3]) {
+      for (let ahead = 0; ahead < 5; ahead += 0.05) {
+        for (const rise of [2, 0, -2]) {
+          const amount = pumpAmount(level, behind, ahead, rise);
+          assert.ok(amount >= 0 && amount <= behind && amount <= PUMP_RATE * level + 1e-12);
+          const gained = -fallEnergy(behind, ahead, amount, -rise); // the water went UP: it gained
+          assert.ok(DROP_POWER * gained <= 0.9 * electricity, `level ${level}, ${behind} → ${ahead}: gained ${DROP_POWER * gained} of ${electricity}`);
+        }
+      }
+    }
+  }
+});
+
+test('water gives up energy by falling, and hardly any by sliding along', () => {
+  // A full cell of water falling one cell into an empty cell gives up 1.
+  assert.ok(Math.abs(fallEnergy(1, 0, 1, 1) - 1) < 1e-12);
+  // A little water falling one cell: 1 for each cell's worth.
+  assert.ok(Math.abs(fallEnergy(0.05, 0, 0.05, 1) - 0.05) < 1e-12);
+  // The same amount sliding sideways between two nearly level cells: almost nothing.
+  assert.ok(fallEnergy(0.55, 0.5, 0.0125, 0) < 0.001);
+  assert.ok(fallEnergy(0.55, 0.5, 0.0125, 0) > 0);
+  // Lifting water costs energy (a negative "fall").
+  assert.ok(fallEnergy(1, 0, 0.05, -1) < 0);
+  // Water resting level gives nothing either way: deep water's squish holds it up exactly.
+  assert.ok(Math.abs(headOf(1 + SQUISH) - 1 - headOf(1)) < 1e-12);
+});
+
+test('settling water only ever loses height energy: it never gains any by itself', () => {
+  /**
+   * All the height energy in a world (each cell's own, plus how high the cell is).
+   * @param {object} world - the world
+   * @returns {number} the total
+   */
+  const energy = (world) => world.fluid.water.reduce((sum, amount, index) => {
+    const up = world.height - 1 - Math.floor(index / world.width);
+    return sum + storedEnergy(amount) + amount * up;
+  }, 0);
+  for (const rows of [['~..', '~..', '~..', '###'], ['~#.', '~#.', '~#.', '~..', '###'], ['#~~#....', '#~~#....', '#~~#..P.', '#~~PPPP.', '########']]) {
+    const world = worldFrom(rows);
+    let last = energy(world);
+    for (let i = 0; i < 200; i++) {
+      stepFluids(world, blockInfo);
+      const now = energy(world);
+      assert.ok(now <= last + 1e-9, `${rows.join('/')} tick ${i}: energy rose from ${last} to ${now}`);
+      last = now;
+    }
+  }
 });
 
 test('steam leaving a turbine is counted (that is what makes it spin)', () => {
@@ -269,8 +342,31 @@ test('water flowing down through a water wheel is counted, going down = +', () =
   LETTERS.O = 'waterWheel';
   const world = worldFrom(['~', 'O', '.', '#']);
   let out = 0;
-  for (let i = 0; i < 10; i++) out += stepFluids(world, blockInfo).waterOut.get(1) ?? 0;
+  let work = 0;
+  for (let i = 0; i < 10; i++) {
+    const step = stepFluids(world, blockInfo);
+    out += step.waterOut.get(1) ?? 0;
+    work += step.waterWork.get(1) ?? 0;
+  }
   assert.ok(out > 0.5, `only ${out}`);
+  // The energy it gave up is counted too: a full cell fell onto the wheel and off it again.
+  assert.ok(work > 1.5 && work <= 2 + 1e-9, `work ${work}`);
+});
+
+test('water sliding level through a wheel gives up hardly any energy; no energy is counted twice', () => {
+  const stream = worldFrom(['F....', '..O.D', '#####']);
+  run(stream, 300);
+  const level = stepFluids(stream, blockInfo);
+  const flow = level.waterOut.get(1 * 5 + 2);
+  assert.ok(flow > 0.04, `flow ${flow}`);
+  assert.ok(level.waterWork.get(1 * 5 + 2) < 0.2 * flow, `work ${level.waterWork.get(1 * 5 + 2)} for flow ${flow}`);
+  // Three wheels stacked under a faucet, a drain at the bottom: the water falls
+  // 3 cells past them, so all three together get about 3 cells' worth, not 6.
+  const stack = worldFrom(['#F#', '#O#', '#O#', '#O#', '#D#']);
+  run(stack, 300);
+  const fall = stepFluids(stack, blockInfo);
+  const sum = [1, 2, 3].reduce((all, y) => all + fall.waterWork.get(y * 3 + 1), 0);
+  assert.ok(sum > 2.5 * FAUCET_RATE && sum < 3.2 * FAUCET_RATE, `three wheels got ${sum / FAUCET_RATE} cells of fall`);
 });
 
 test('water spreads the same to the left and to the right (no favorite side)', () => {

@@ -168,3 +168,7 @@ At the 8-ticks-a-second clock, rope wound per tick = `speed × ROPE_PER_TURN / 8
 ## Addendum 2026-10-04: generator drag (issue #11)
 
 The "Realistic strength" section says the generator's drag uses a current per volt "remembered in `signals.spin.conducts`". That memory went stale (a once-shorted generator stayed stiff forever) and has been removed: the drag is now worked out fresh from last tick's electric record. See the gears spec addendum of the same date.
+
+## Addendum 2026-10-04: water wheel strength (issue #17)
+
+"Water wheel: flow × 20 turns/s, |flow| × 40 (`WHEEL_STRENGTH`)" is replaced: a wheel's strength is now `WHEEL_STRENGTH` (2) for each cell the water **falls** at the wheel, whatever the flow. One faucet falling one cell through a wheel is still a crank. To lift heavier loads with water, use a longer fall (stacked wheels on one shaft), not more water. See the gears spec addendum of the same date.

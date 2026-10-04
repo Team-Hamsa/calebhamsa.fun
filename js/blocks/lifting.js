@@ -281,7 +281,7 @@ const guide = {
     'A winch turning ↻ winds the rope in (up). Turning ↺ lets it out (down).',
     'Heavy things go up slower. Too heavy for the crank, motor or water wheel, and everything STALLS: nothing turns and the winch shows a red ⬇.',
     'Slower is stronger! A small gear driving a big gear makes the winch slower, so it can lift more. Gearing UP makes it weaker.',
-    'Or add strength: two cranks, more batteries for a motor, or more water on a water wheel.',
+    'Or add strength: two cranks, more batteries for a motor, or a longer fall of water onto a water wheel.',
     'Dig the rope and whatever hangs on it falls.',
   ],
   blocks: {

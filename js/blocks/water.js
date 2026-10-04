@@ -5,7 +5,8 @@
  * fluids.js does the moving; this file says what each block is, runs
  * the fluids every tick, and draws them. It also connects to the ⚡
  * Power pack: a turbine spun by steam is a battery in a circuit, and a
- * pump in a circuit pushes water.
+ * pump in a circuit pushes water (lifting it uses up the pump's push:
+ * see pumpAmount in fluids.js).
  *
  * A steam power plant, like the real ones:
  *
@@ -109,7 +110,7 @@ export function refreshWater(world, blockInfo) {
  * @returns {boolean} always false: no blocks moved
  */
 export function waterSystem(world, blockInfo) {
-  const { moved, steamOut, waterOut } = stepFluids(world, blockInfo);
+  const { moved, steamOut, waterOut, waterWork } = stepFluids(world, blockInfo);
   const before = world.signals.water?.turbineFlow ?? new Map();
   const turbineFlow = new Map();
   world.cells.forEach((name, index) => {
@@ -117,8 +118,9 @@ export function waterSystem(world, blockInfo) {
     const last = before.get(index) ?? 0;
     turbineFlow.set(index, last + ((steamOut.get(index) ?? 0) - last) / TURBINE_SMOOTHING);
   });
-  // waterOut is kept for the ⚙️ pack: water flowing through a water wheel turns it.
-  world.signals.water = { cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow, waterOut };
+  // waterOut and waterWork are kept for the ⚙️ pack: water flowing through a
+  // water wheel turns it, and the energy the water gives up there is its strength.
+  world.signals.water = { cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow, waterOut, waterWork };
   if (moved > MOVE_EPSILON) world.fluidChanged = true;
   const spinning = [...turbineFlow.values()].some((flow) => flow > MIN_AMOUNT);
   if (moved > MOVE_EPSILON || spinning || world.cells.includes('burnerOn')) world.animating = true;
@@ -447,6 +449,8 @@ const guide = {
     'Water and steam are real amounts: a cell can be full, half full or nearly empty. Water never appears or disappears by itself.',
     'Water falls and spreads out. Deep water gets squished, so it pushes UP through pipes and U-tubes.',
     'Steam is the opposite: it rises and spreads out under ceilings.',
+    'Water has to FALL to give its push. High water can turn a wheel on its way down. Water lying level has no push left.',
+    'Lifting water uses up a pump\'s push. The higher the water has to go, the slower the pump lifts it, and at some height it is too heavy and stops. More batteries lift higher AND faster: one battery lifts about 5 blocks.',
   ],
   blocks: {
     water: { does: 'BUILD pours a cell full of water. It falls, spreads out and levels off.' },
@@ -459,7 +463,7 @@ const guide = {
     chiller: { does: 'Very cold: steam touching it turns back into water. It rains!' },
     turbine: { does: 'A fan in a pipe. Steam rushing through spins it and makes electricity: wire it up like a battery.' },
     pumpRight: {
-      does: 'Uses electricity to push water the way its arrow points, even uphill. Wire it into a loop with a battery.',
+      does: 'Uses electricity to push water the way its arrow points, even uphill. Wire it into a loop with a battery. Uphill is hard work: the higher, the slower. If the water stops part way up, add a battery.',
       use: 'turns it: → ↓ ← ↑',
     },
   },

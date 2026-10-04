@@ -109,6 +109,14 @@ the electricity starts flowing.
 Water and steam are real **amounts**: a cell can be full, half full, or
 nearly empty, and water never appears or disappears by itself.
 
+**Water has to fall to give its push.** Water up high holds energy, like a
+ball at the top of a slide. It gives that push away on the way down (to a
+water wheel, if one is there). Water lying level has no push left.
+**Lifting water uses up a pump's push.** The higher a pump has to lift, the
+slower the water goes, and at some height the water is too heavy and it stops.
+More batteries lift **higher and faster**: one battery lifts about 5 blocks,
+two about 10.
+
 | | Block | What it does | ✋ USE |
 |---|---|---|---|
 | ![Water](docs/blocks/water.png) | **Water** | Not really a block: BUILD **pours** a cell full of water. It falls, spreads out and levels off. Deep water gets squished, so it pushes **up** through pipes and U-tubes. | — |
@@ -120,7 +128,7 @@ nearly empty, and water never appears or disappears by itself.
 | ![Burner](docs/blocks/burnerOn.png) | **Burner** | Boils the water just above it into steam. Off, it looks like this: ![Burner off](docs/blocks/burnerOff.png) | on ↔ off |
 | ![Chiller](docs/blocks/chiller.png) | **Chiller** | Very cold: steam touching it turns back into water (it "rains"). | — |
 | ![Turbine](docs/blocks/turbine.png) | **Turbine** | A fan inside a pipe. Steam rushing through it spins it, and that makes **electricity**: wire it up like a battery. More steam = more power. | — |
-| ![Pump](docs/blocks/pumpRight.png) | **Pump** | Uses **electricity** to push water the way its arrow points, even uphill. Wire it into a loop with a battery (wires on the sides the pipe isn't on). The arrow glows when it has power. ![Pump pointing up](docs/blocks/pumpUp.png) | turns: → ↓ ← ↑ |
+| ![Pump](docs/blocks/pumpRight.png) | **Pump** | Uses **electricity** to push water the way its arrow points, even uphill. Wire it into a loop with a battery (wires on the sides the pipe isn't on). The arrow glows when it has power. Uphill is hard work: the higher, the slower. If the water stops part way up, add a battery. ![Pump pointing up](docs/blocks/pumpUp.png) | turns: → ↓ ← ↑ |
 
 ### ⚡ POWER
 
@@ -169,7 +177,7 @@ or a crank, wheel, motor or generator touching a gear) turn the **same** way.
 | ![Big gear](docs/blocks/gearBig.png) | **Big gear** | 16 teeth, so it turns **half as fast** as a small gear it's touching (and a small gear driven by it turns **twice as fast**). Big gears also touch corner to corner. | — |
 | ![Axle](docs/blocks/axle.png) | **Axle** | A rod: carries turning in a straight line, the same way round. | — |
 | ![Crank](docs/blocks/crankStop.png) | **Crank** | Hand power! Red knob = stopped, green knob = turning. ![Turning crank](docs/blocks/crankCW.png) | stop → ↻ → ↺ → stop |
-| ![Water wheel](docs/blocks/waterWheel.png) | **Water wheel** | Turns when 💧 water flows through it. More water = faster. | — |
+| ![Water wheel](docs/blocks/waterWheel.png) | **Water wheel** | Turns when 💧 water flows through it. More water = **faster**. A longer fall = **stronger**: put it where the water drops. | — |
 | ![Motor](docs/blocks/motor.png) | **Motor** | Turns ⚡ electricity into turning. Put it in a loop with a battery (wires on its sides). Move the battery to the other side of the loop and it turns the other way. | — |
 | ![Generator](docs/blocks/generator.png) | **Generator** | Turns turning into ⚡ electricity: wire it up like a battery. Its **+** end swaps when it turns the other way. | — |
 
@@ -181,7 +189,13 @@ red ❌ (![Jammed gear](docs/blocks/gearBig-jammed.png)).
 fast it goes with nothing to push) and a **strength** (how hard it can push
 before it stops). The harder it has to push, the slower it goes, like a real
 motor or a real arm. A crank has strength 2. A water wheel gets stronger the
-more water hits it (one faucet's worth = as strong as a crank). A motor gets
+**further the water falls** on its way through: falling one block (a faucet
+right on top, a drain right below) makes it as strong as a crank, and falling
+onto it from the block above as well makes it twice as strong. One wheel can
+only catch the fall right at the wheel, so for a tall waterfall put several
+wheels one under the other on the same shaft: each catches its own block of
+fall, and their strengths add up. More water makes a wheel faster, not stronger.
+In a level stream it still turns, but only feebly: that water hardly falls. A motor gets
 stronger with more electricity. Two of them on the same gears **add up**. Two
 cranks turning opposite ways push against each other: the stronger one wins.
 
@@ -199,9 +213,11 @@ electricity: a dim lamp, not a dark one.
 
 **Nothing runs forever.** A generator turns at most 8 tenths of the work you
 put in into electricity (the rest becomes heat, like in a real one), so a motor
-powered by a generator on its own gears slows down and stops. (The same goes
-for a pump pushing water through a water wheel that turns the pump's own
-generator.)
+powered by a generator on its own gears slows down and stops. The same goes
+for a pump lifting water for the water wheels that turn the pump's own
+generator, however many wheels and gears you use: the wheels only get the push
+of water that **falls**, and the pump has to spend more than that lifting it
+back up. Take the battery away and it all winds down.
 
 ### 🏗️ LIFTING
 
@@ -224,7 +240,7 @@ gear in between and the winch turns half as fast but pushes twice as hard, so
 the iron weight counts as 2: still too much. Do it twice (a quarter as fast)
 and it counts as 1: up it goes. Gear it UP (big gear driving a small one) and
 it can't even lift a crate. More strength works too: two cranks, a motor with
-more batteries, or lots of water on a water wheel. Real cranes, bike gears and
+more batteries, or a longer fall of water onto a water wheel. Real cranes, bike gears and
 car gears all trade speed for strength.
 
 **Heavier = slower.** The closer the load is to the machine's strength, the
@@ -280,6 +296,8 @@ steam rushes up through the turbine, and the turbine makes electricity. The
 
 **Pump water uphill.** A pump (arrow pointing up) with water under it and a
 battery loop on its sides. The pump pushes the water up, against gravity.
+Try a taller shaft: one battery gets the water about 5 blocks up, slower and
+slower, and then it stops. Add a battery and it climbs higher.
 
 ![A battery-powered pump lifting water](docs/machines/pump-uphill.png)
 
@@ -297,7 +315,9 @@ so they all show a red ❌. Take one away and they spin again.
 
 **Hydro dam.** A faucet pours water through a water wheel (and away down a
 drain). The wheel turns two gears, the gears turn a generator, and the
-generator lights a lamp: water power!
+generator lights a lamp: water power! The wheel sits where the water **falls**:
+that's where water gives its push. (Real dams are tall for the same reason:
+the further the water falls, the more work it can do.)
 
 ![Water turning a wheel, gears and a generator that lights a lamp](docs/machines/hydro-dam.png)
 

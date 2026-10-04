@@ -201,3 +201,28 @@ These override refinement 1 and the "rounded to 0.1" line below.
 - **A shorted generator shows its current** (about 1.6 A for one crank: dots flow), and recovers the moment the wiring is fixed.
 - **Efficiency** is 0.8 × (rounded push ÷ exact push)²: 0.75 to 0.8 in practice, never above 0.8. The README says "at most 8 tenths".
 - **Known simplification:** a generator is never a motor. Current pushed backwards through a turning generator by a battery would help turn a real one; here it gives no help (and no push-back). A battery wired straight across a generator holds it almost still.
+
+## Addendum 2026-10-04: a water wheel's strength comes from the fall (issue #17)
+
+Before: speed = flow × `WHEEL_GAIN`, strength = |flow| × 40, for any water passing through, in any direction, and nothing was taken from the water. N wheels on one stream gave N times the power, and a pump-fed loop of 3 wheels ran forever.
+
+Now (`wheelSource`):
+
+- **top speed** = smoothed flow × `WHEEL_GAIN` (20), as before: one faucet = 1 turn/s. More water = faster.
+- **strength** = `4 × DROP_POWER × work ÷ |top speed|`, where `work` is the smoothed `waterWork` for that wheel (the energy the water gave up at it; see the fluids spec addendum). That equals `WHEEL_STRENGTH` (= 4 × `DROP_POWER` ÷ `WHEEL_GAIN` = 2, one crank) for each cell the water falls at the wheel.
+- So the most work a wheel can do (half strength × half top speed) is exactly `DROP_POWER × work`: what the water gave up, never more (tested).
+- `world.signals.spin` gains `wheelWork` beside `wheelFlow` (same 8-tick smoothing).
+
+What that means in the playground:
+
+| Wheel | Strength |
+|---|---|
+| faucet right above, drain right below (1 cell of fall) | 2 (a crank) |
+| water falls onto it from the cell above and off it below (the hydro-dam machine) | about 4 |
+| in a level stream (undershot) | turns at full speed with no load, strength about 0.15 |
+| N wheels stacked under a faucet | each about 2: a taller fall really has more energy |
+| in still water, or water split evenly left and right | none |
+
+A single wheel only catches the fall at the wheel (the cells either side of it); water that fell further before reaching it has already splashed its energy away. That under-counts a real tall overshot wheel, but never over-counts.
+
+`tests/gears.test.js` builds real loops (the issue's 3- and 5-wheel channel loop, level pipe rings with 3–6 wheels geared ×2, ×4 and ÷2, and tall loops with 3–6 stacked wheels in the down leg) and checks each one runs with its batteries and stops without them, with water conserved.

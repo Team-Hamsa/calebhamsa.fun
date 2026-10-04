@@ -11,11 +11,14 @@
  *
  * Nothing spins forever by itself: a generator gives back a little less
  * than a motor uses (GENERATOR_GAIN), so a motor powered only by its own
- * generator slows down and stops. Real machines lose energy too.
+ * generator slows down and stops. Real machines lose energy too. The
+ * same goes for water: a wheel only gets the push of water that FALLS
+ * (WHEEL_STRENGTH), and a pump spends more than that lifting it back up.
  */
 import { solveSpin, MIN_SPEED } from '../spin.js';
 import { swapBlock } from '../world.js';
 import { PUSH_STEP, REFERENCE_CURRENT, plusSide, roundPush } from '../circuit.js';
+import { DROP_POWER } from '../fluids.js';
 
 /**
  * How fast a crank turns, in turns per second.
@@ -38,17 +41,32 @@ export const MOTOR_SPEED = 1;
 export const MOTOR_STRENGTH = 2;
 
 /**
- * How fast a water wheel turns for each unit of water flowing through
- * it per tick. A faucet drips 0.05 a tick, so 20 makes that 1 turn a second.
+ * How fast a water wheel turns (with nothing to push) for each unit of
+ * water flowing through it per tick. A faucet drips 0.05 a tick, so 20
+ * makes that 1 turn a second. More water = faster.
  */
 export const WHEEL_GAIN = 20;
 
 /**
- * How hard a water wheel can push for each unit of water flowing through
- * it per tick. More water hitting the paddles pushes harder: one faucet
- * (0.05 a tick) makes it as strong as a crank.
+ * How hard a water wheel can push for each cell the water FALLS on its
+ * way through. Water has to fall to give its push: falling one cell
+ * through the wheel makes it as strong as a crank, falling onto it from
+ * the cell above as well makes it twice as strong, and water sliding
+ * along a level stream only gives a feeble push. (A wheel only catches
+ * the fall right at the wheel. For a tall waterfall, stack wheels: each
+ * one catches its own cell of fall.)
+ *
+ * It isn't a number you can pick freely: it comes from DROP_POWER (in
+ * fluids.js), which says how much work falling water can do. A wheel
+ * does its most work at half its top speed (half its strength × half its
+ * speed), and that must be exactly what the water gave up:
+ *
+ *   strength ÷ 2 × speed ÷ 2 = DROP_POWER × water × cells fallen
+ *
+ * The pump uses the same DROP_POWER for lifting, so a wheel can never
+ * give back more than a pump spent lifting the water.
  */
-export const WHEEL_STRENGTH = 40;
+export const WHEEL_STRENGTH = (4 * DROP_POWER) / WHEEL_GAIN;
 
 /**
  * How hard a generator pushes (volts) for each turn per second.
@@ -194,17 +212,29 @@ export function motorSource(world, x, y) {
 }
 
 /**
- * How a water wheel drives: the more water flowing through it
- * (smoothed), the faster AND stronger. Water going down or right turns it ↻.
+ * How a water wheel drives (both numbers smoothed):
+ *
+ *   • how MUCH water flows through it says how FAST it turns. Water
+ *     going down or right turns it ↻.
+ *   • how FAR that water falls says how STRONG it is: WHEEL_STRENGTH for
+ *     each cell fallen. We know that from the energy the water gave up
+ *     at the wheel (wheelWork, from fluids.js) ÷ the water that flowed.
+ *
+ * So the most work the wheel can do (half its strength at half its top
+ * speed) is exactly DROP_POWER × the energy the water gave up, and never
+ * more. Water that didn't fall gives no push, however much of it there is.
  * @param {object} world - the world
  * @param {number} x - the wheel's column
  * @param {number} y - the wheel's row
  * @returns {{speed: number, strength: number}|null} its top speed and strength, or null if hardly any water flows
  */
 export function wheelSource(world, x, y) {
-  const flow = world.signals.spin?.wheelFlow?.get(y * world.width + x) ?? 0;
+  const index = y * world.width + x;
+  const flow = world.signals.spin?.wheelFlow?.get(index) ?? 0;
+  const work = world.signals.spin?.wheelWork?.get(index) ?? 0;
   const speed = flow * WHEEL_GAIN;
-  return Math.abs(speed) < MIN_SOURCE ? null : { speed, strength: Math.abs(flow) * WHEEL_STRENGTH };
+  if (Math.abs(speed) < MIN_SOURCE) return null;
+  return { speed, strength: (4 * DROP_POWER * work) / Math.abs(speed) };
 }
 
 // =============================================================
@@ -224,7 +254,8 @@ export function refreshSpin(world, blockInfo) {
   const blocks = world.cells.join(',');
   if (world.signals.spin?.blocks === blocks) return;
   const wheelFlow = world.signals.spin?.wheelFlow ?? new Map();
-  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, blocks };
+  const wheelWork = world.signals.spin?.wheelWork ?? new Map();
+  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, wheelWork, blocks };
 }
 
 /**
@@ -237,14 +268,21 @@ export function refreshSpin(world, blockInfo) {
  */
 export function gearsSystem(world, blockInfo) {
   const before = world.signals.spin?.wheelFlow ?? new Map();
+  const workBefore = world.signals.spin?.wheelWork ?? new Map();
   const waterOut = world.signals.water?.waterOut ?? new Map();
+  const waterWork = world.signals.water?.waterWork ?? new Map();
   const wheelFlow = new Map();
+  const wheelWork = new Map();
   world.cells.forEach((name, index) => {
     if (!blockInfo(name)?.wheel) return;
     const last = before.get(index) ?? 0;
     wheelFlow.set(index, last + ((waterOut.get(index) ?? 0) - last) / WHEEL_SMOOTHING);
+    const lastWork = workBefore.get(index) ?? 0;
+    wheelWork.set(index, lastWork + ((waterWork.get(index) ?? 0) - lastWork) / WHEEL_SMOOTHING);
   });
-  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, blocks: world.cells.join(',') };
+  // The wheels read these two maps while solveSpin works out the turning.
+  world.signals.spin = { ...world.signals.spin, wheelFlow, wheelWork };
+  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, wheelWork, blocks: world.cells.join(',') };
   if (world.signals.spin.turning) world.animating = true;
   return false;
 }
@@ -552,14 +590,14 @@ const guide = {
     'Everything that turns has a top speed and a strength. The harder it pushes, the slower it goes. Two on the same gears add their strength.',
     'Gears change speed, not power: they can make things faster or stronger, never both.',
     'Generators push back: the more lamps they light, the harder they are to turn. With nothing wired up they spin freely. Joined by plain wire (a short circuit) they are very hard to turn, until you take the wire away.',
-    'Nothing runs forever. A motor powered by its own generator slows down and stops, like a real one.',
+    'Nothing runs forever. A motor powered by its own generator slows down and stops, like a real one. So does a pump that lifts water for the water wheels that power it: lifting the water costs more than its fall gives back.',
   ],
   blocks: {
     gearSmall: { does: '8 teeth. Turns the gears next to it the other way.' },
     gearBig: { does: '16 teeth: half as fast as a small gear it touches. Big gears also touch corner to corner.' },
     axle: { does: 'A rod. Carries turning in a straight line, the same way round.' },
     crankStop: { does: 'Hand power, strength 2! Red knob = stopped, green knob = turning.', use: 'stop → ↻ → ↺ → stop' },
-    waterWheel: { does: 'Turns when water flows through it. More water = faster AND stronger.' },
+    waterWheel: { does: 'Turns when water flows through it. More water = faster. A longer fall = stronger: put it where the water drops, like under a faucet. For a tall waterfall, stack wheels one under the other. In a level stream it turns, but too feebly to do much work.' },
     motor: { does: 'Turns electricity into turning: more electricity = faster and stronger. Put it in a loop with a battery. Move the battery to the other side of the loop and it turns the other way.' },
     generator: { does: 'Turns turning into electricity: wire it up like a battery. Its + end swaps when it turns the other way.' },
   },
