@@ -365,3 +365,11 @@ The round 1 fade scaled a motor's `speed` and `strength` by the same faded amoun
 - An echo motor that is STRONGER than the wheel still reverses it, the honest way: the group's speed comes out the motor's way, and on the next tick rule 2 (the way it was already turning) has the wheel follow.
 - Result: that build turns steadily at 0.354, the same as with a crank in place of the wheel; 0 of 24 wheel builds flip.
 
+## Addendum 2026-10-04 (round 2 review): a leap that goes wrong costs one plain round, not all the leaps (issue #17 review)
+
+The round 1 addendum said no solve reaches `MAX_ROUNDS`. That was wrong: in a sweep of 2 to 7 cranked generators, each on its own gears, in one series loop, about 8 of 1500 builds ran all 200 rounds on their first tick without settling (4e-8 to 4e-4 turns a second still changing per round). In `RGE / battery / RGs-Gs-GsE / MsGE / RGs-Gs-GsE` (one loop) the two identical ×8 rungs came out −1.1798 and −1.1412 on tick 0 and −1.1604 both from tick 1. No energy excess, flicker or order dependence came of it: one tick of a 2 to 3% lopsided answer after a build or a rewire.
+
+- Cause: when a round after a `leap` moved the speeds more than twice as far as the round before, leaping was switched off for the rest of that solve, and the plain rounds then crept (stiff coupling closes about 1% of the gap a round). One brake switching on or off on the way is enough to spoil one leap.
+- Now a spoiled leap is followed by ONE plain round, and then leaping carries on. The loop still only ends on a plain round that changes nothing (or at `MAX_ROUNDS`), so the answer is still a fixed point of the plain rounds.
+- Result: that build settles in 9 rounds on tick 0, with both twins at −1.1604. In 4000 random stacks (4 seeds × 1000) one still reaches `MAX_ROUNDS`, with 1.5e-7 turns a second left per round; the most rounds any other needs is 103. So `MAX_ROUNDS` can still be hit, rarely, and what is left over then is far below anything that can be seen or measured in the energy sums.
+

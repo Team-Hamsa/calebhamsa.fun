@@ -1395,3 +1395,29 @@ test('a motor with hardly any current hardly holds its gears back: no flicker ar
   ]);
   assert.ok(wobble(seen) < 1e-6, `the three-generator build wobbles by ${wobble(seen)}`);
 });
+
+test('two rungs exactly alike among four generators in one loop turn exactly alike from the very first tick', () => {
+  // Four generators in one loop, each on its own gears: a crank ×2, a
+  // battery, two cranks ×8 that are exactly alike, and a motor's. They
+  // all lean on each other hard. (The sums used to give up before they
+  // settled: on the first tick the twins turned −1.1798 and −1.1412.)
+  const rows = [
+    '............WWW.',
+    '..........RGE.W.',
+    '............B.W.',
+    '...RGs-Gs-GsE.W.',
+    '............W.W.',
+    '.........MsGE.W.',
+    '............W.W.',
+    '...RGs-Gs-GsE.W.',
+    '............WWW.',
+    '................',
+  ];
+  const world = run(rows, 1);
+  const first = [spinAt(world, 12, 3), spinAt(world, 12, 7)];
+  assert.ok(Math.abs(first[0]) > 1, `the twins turn (${first[0]})`);
+  assert.ok(Math.abs(first[0] - first[1]) < 1e-6, `on the first tick the twins turn ${first[0]} and ${first[1]}`);
+  // And that first answer is already the settled one.
+  more(world, 1);
+  assert.ok(Math.abs(spinAt(world, 12, 3) - first[0]) < 1e-6, `the first tick gave ${first[0]}, the second ${spinAt(world, 12, 3)}`);
+});

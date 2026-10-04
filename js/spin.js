@@ -608,7 +608,7 @@ export function solveSpin(world, blockInfo) {
   // exactly alike come out different: the first one turned, the second
   // was cut to 0, and the rounds stopped there.)
   let guess = null; // the last round: the speeds it started from, and how far it moved them
-  let leaping = true; // are the leaps ahead (see `leap`) still helping?
+  let resting = false; // is this a plain round after a leap ahead (see `leap`) that went wrong?
   for (const group of groups) group.speed = speeds.get(group.ratio.keys().next().value) ?? 0; // the first block's speed is the group's
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const from = groups.map((group) => group.speed);
@@ -629,10 +629,16 @@ export function solveSpin(world, blockInfo) {
     // smaller steps. So we look at how the last two rounds went and LEAP
     // ahead to where the steps are heading. The next round checks the
     // leap like any other guess, so a bad leap can't give a wrong answer.
+    // A leap can go wrong (a brake switched on or off on the way, so the
+    // steps stopped shrinking evenly). Then we take one plain round and
+    // try again. (We used to give up leaping for good. Four generators
+    // that lean on each other hard then crept along for all 200 rounds
+    // and still weren't there.)
     const moved = groups.map((group, k) => group.speed - from[k]);
-    if (leaping && guess && round < MAX_ROUNDS - 1) {
+    if (guess && round < MAX_ROUNDS - 1) {
       const size = Math.hypot(...moved);
-      if (size > guess.size * 2) leaping = false; // the leaps are making it worse: plain rounds from here on
+      if (size > guess.size * 2) resting = true; // that leap made it worse: one plain round before the next
+      else if (resting) resting = false;
       else leap(groups, speeds, from, moved, guess);
     }
     guess = { from, moved, size: Math.hypot(...moved) };
