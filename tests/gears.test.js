@@ -262,6 +262,16 @@ test('a generator with a steady load does not flicker', () => {
   }
 });
 
+test('a battery wired straight across a stopped generator sparks (a short circuit through its coil)', () => {
+  const world = run(['WWW', 'B.E', 'WWW'], 3);
+  const battery = world.signals.electric.cells.get(3);
+  assert.ok(battery.current > 9, `only ${battery.current} flows`);
+  assert.equal(battery.spark, true);
+  // And it keeps sparking while a crank tries (and fails) to turn the generator.
+  const cranked = run(['.Q.', 'WEW', 'W.W', 'WBW'], 20);
+  assert.equal(cranked.signals.electric.cells.get(3 * 3 + 1).spark, true);
+});
+
 test('water power cannot loop forever either: pump → wheel → generator loses energy', () => {
   // A pump moving PUMP_RATE water per tick through a wheel makes it turn PUMP_RATE × WHEEL_GAIN;
   // a generator turning that fast pushes less than the 1 volt that powered the pump.

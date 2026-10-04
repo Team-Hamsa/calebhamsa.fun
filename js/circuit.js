@@ -51,7 +51,9 @@ const SHORT_PATH_RESISTANCE = 0.01;
 /**
  * A short circuit only sparks if the battery is really pushing a lot of
  * current: more than this. (Two batteries pushing against each other
- * make a loop with no current, which is safe.)
+ * make a loop with no current, which is safe.) A big current alone is
+ * NOT a short circuit: a battery lighting six lamps works hard, but
+ * every bit of its current goes through a lamp.
  */
 const SHORT_CURRENT = 2 * REFERENCE_CURRENT;
 
@@ -342,44 +344,70 @@ function groupsOf(indexes, links) {
 
 /**
  * Is this battery short-circuited? That's when its + end and − end are
- * joined by a path of plain wire (wires, gold, closed switches, other
- * batteries) with nothing to slow the current down, like a lamp.
+ * joined by a path of plain wire with nothing to slow the current down,
+ * like a lamp. However long the wire is, it's still a short circuit.
+ *
+ * "Plain wire" means wires, gold and closed switches. ANOTHER pusher (a
+ * battery, turbine or generator) on the path counts as plain wire only if:
+ *   • the path goes through it the way it pushes (in at −, out at +):
+ *     batteries in a row, wired straight back, short each other; or
+ *   • it isn't pushing right now: a stopped generator's coil is just wire; or
+ *   • it's being overpowered: so much current is forced through it
+ *     BACKWARDS that it plainly isn't holding anything back.
+ * A healthy battery side by side with this one (parallel) is none of
+ * those: it pushes back just as hard, so no current goes round through
+ * it, and it is not a short circuit.
  * @param {number} battery - the battery's cell index
  * @param {object} point - the battery's point
  * @param {Map<number, object>} points - every point
  * @param {Map<number, number[]>} touching - cell index → the indexes it's connected to
+ * @param {Map<number, object>} cells - every cell's record (for the currents)
  * @param {number} width - the world's width
  * @returns {boolean} true if + and − are joined by plain wire
  */
-function shortedByShape(battery, point, points, touching, width) {
+function shortedByShape(battery, point, points, touching, cells, width) {
   /**
-   * The cell index next to the battery on one side.
+   * The cell index next to a cell on one side.
+   * @param {number} index - a cell index
    * @param {string} side - which side
    * @returns {number} the neighbor's cell index
    */
-  const beside = (side) => battery + STEP[side][0] + STEP[side][1] * width;
-  const plus = beside(plusSide(point.axis));
-  const minus = beside(OPPOSITE[plusSide(point.axis)]);
+  const beside = (index, side) => index + STEP[side][0] + STEP[side][1] * width;
+  /**
+   * The side a pusher is pushing current OUT of right now: its + end, or
+   * the other end if its push is backwards (a generator turning ↺).
+   * @param {{push: number, axis: string}} p - a pushing point
+   * @returns {string} the side
+   */
+  const outSide = (p) => (p.push > 0 ? plusSide(p.axis) : OPPOSITE[plusSide(p.axis)]);
+  const plus = beside(battery, outSide(point));
+  const minus = beside(battery, OPPOSITE[outSide(point)]);
   const linked = touching.get(battery) ?? [];
   if (!linked.includes(plus) || !linked.includes(minus)) return false;
 
   /**
-   * Can current pass this point without slowing down?
-   * @param {number} index - a cell index
-   * @returns {boolean} true for wire-like points and batteries
+   * Can current step from one point into the next without being slowed
+   * down or pushed back?
+   * @param {number} from - the cell index it comes from
+   * @param {number} index - the cell index it steps into
+   * @returns {boolean} true for wire-like points, and other pushers (see above)
    */
-  const plain = (index) => {
+  const plain = (from, index) => {
     const p = points.get(index);
-    return p.info.conducts || p.part.resistance <= SHORT_PATH_RESISTANCE || p.push !== 0;
+    if (p.info.conducts || p.part.resistance <= SHORT_PATH_RESISTANCE) return true;
+    if (p.part.push === undefined && !p.part.pushNow) return false; // a lamp, a motor...
+    if (p.push === 0) return true; // a pusher that's stopped
+    if (beside(index, OPPOSITE[outSide(p)]) === from) return true; // going through it the way it pushes
+    return (cells.get(index).arms[outSide(p)] ?? 0) < -SHORT_CURRENT; // overpowered
   };
-  if (!plain(plus) || !plain(minus)) return false;
+  if (!plain(battery, plus)) return false;
   const seen = new Set([battery, plus]);
   const queue = [plus];
   while (queue.length > 0) {
     const index = queue.shift();
     if (index === minus) return true;
     for (const next of touching.get(index) ?? []) {
-      if (!seen.has(next) && plain(next)) {
+      if (!seen.has(next) && plain(index, next)) {
         seen.add(next);
         queue.push(next);
       }
@@ -484,7 +512,7 @@ export function solveCircuit(world, blockInfo) {
     cell.current = through;
     cell.level = Math.min(MAX_LEVEL, through / REFERENCE_CURRENT);
     if (point.push !== 0 && through > SHORT_CURRENT) {
-      cell.spark = shortedByShape(index, point, points, touching, world.width);
+      cell.spark = shortedByShape(index, point, points, touching, cells, world.width);
     }
   }
 

@@ -243,6 +243,72 @@ test('a pushing turbine wired straight back to itself sparks, like a battery', (
   assert.equal(solveCircuit(world, blockInfo).cells.get(1 * 2 + 0).spark, true);
 });
 
+test('a very long shorting wire still sparks', () => {
+  // A loop of wire 40 cells wide: about 80 wires between + and −, and still nothing to slow the current.
+  const rows = [`W${'W'.repeat(39)}`, `B${'.'.repeat(38)}W`, `W${'W'.repeat(39)}`];
+  const battery = cellAt(rows, 0, 1);
+  assert.ok(battery.current > 5, `only ${battery.current} flows`);
+  assert.equal(battery.spark, true);
+});
+
+test('two healthy batteries side by side (parallel) lighting lots of lamps do NOT spark', () => {
+  // Each battery works LESS hard than one alone would. The other battery is not "plain wire".
+  for (const rows of [
+    ['WWWWWWWWWWWWWWWW', 'B.B.L.L.L.L.L.L.', 'WWWWWWWWWWWWWWWW'],
+    ['WWWWWWWWWWW', 'BB.LLLLLLLL', 'WWWWWWWWWWW'],
+    ['WWWWWWWWWWWW', 'BBB.LLLLLLLL', 'WWWWWWWWWWWW'],
+  ]) {
+    const world = worldFrom(rows);
+    const { cells } = solveCircuit(world, blockInfo);
+    [...rows[1]].forEach((letter, x) => {
+      const cell = cells.get(world.width + x);
+      if (letter === 'B') assert.equal(cell.spark, false, `${rows[1]}: battery ${x} sparks with ${cell.current}`);
+      if (letter === 'L') assert.ok(cell.level > 0.7, `${rows[1]}: lamp ${x} is dim`);
+    });
+    assert.ok(cells.get(world.width).current > 2 || rows[1].startsWith('BBB'), 'the batteries are working hard');
+  }
+});
+
+test('parallel batteries DO spark when a plain wire really joins + to −', () => {
+  const world = worldFrom(['WWWWW', 'B.B.W', 'WWWWW']);
+  const { cells } = solveCircuit(world, blockInfo);
+  assert.equal(cells.get(5).spark, true);
+  assert.equal(cells.get(7).spark, true);
+});
+
+test('a battery wired straight across a STOPPED turbine or generator sparks: its coil is just wire', () => {
+  TEST_BLOCKS.turbine = { part: { resistance: 0.05, pushNow: (world) => world.turbinePush } };
+  LETTERS.T = 'turbine';
+  const world = worldFrom(['WWW', 'B.T', 'WWW']);
+  world.turbinePush = 0;
+  const battery = solveCircuit(world, blockInfo).cells.get(3);
+  assert.ok(battery.current > 9, `only ${battery.current} flows`);
+  assert.equal(battery.spark, true);
+  // With a lamp beside it too: the stopped turbine steals nearly all the current.
+  const beside = worldFrom(['WWWWW', 'B.T.L', 'WWWWW']);
+  beside.turbinePush = 0;
+  const cells = solveCircuit(beside, blockInfo).cells;
+  assert.equal(cells.get(5).spark, true);
+  assert.ok(cells.get(9).level < 0.6);
+  // Mirror image: the same thing happens the other way round.
+  const mirror = worldFrom(['WWW', 'T.B', 'WWW']);
+  mirror.turbinePush = 0;
+  assert.equal(solveCircuit(mirror, blockInfo).cells.get(5).spark, true);
+});
+
+test('a battery beside a turbine that pushes the same way does not spark; one overpowering a weak turbine does', () => {
+  const world = worldFrom(['WWWWW', 'B.T.L', 'WWWWW']);
+  world.turbinePush = 1; // as strong as the battery: they share the lamp
+  let cells = solveCircuit(world, blockInfo).cells;
+  assert.equal(cells.get(5).spark, false);
+  assert.equal(cells.get(7).spark, false);
+  world.turbinePush = 0.3; // much weaker: the battery forces current backwards through it
+  cells = solveCircuit(world, blockInfo).cells;
+  assert.ok(cells.get(5).current > 5, `only ${cells.get(5).current} flows`);
+  assert.equal(cells.get(5).spark, true);
+  assert.equal(cells.get(7).spark, false, 'the turbine is not the one pushing too hard');
+});
+
 test('a turbine pushing almost nothing pushes nothing, so a stopped turbine stops the circuit', () => {
   // The push is rounded down to a hundredth of a volt for the solve, the same
   // as the circuit key, so a dying turbine can't leave a tiny current flowing forever.

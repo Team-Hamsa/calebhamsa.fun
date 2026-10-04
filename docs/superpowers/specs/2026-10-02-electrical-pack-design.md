@@ -236,3 +236,13 @@ Section 2's five rules counted any electric neighbor, so in `['WWWWW','B.LLL','W
 3. to 7. the old rules 1 to 5, unchanged.
 
 Switches are parts, not conductors, so flipping one still never re-turns its neighbors. A row of parts joined end to end (`WLLLW`) still faces along the row. One layout changes on purpose: a part with wire above and below AND parts on its left and right now faces the wires.
+
+### Short-circuit sparks (issue #13)
+The spark rule in section 5 keeps its two halves (by shape AND more than 2 × `REFERENCE_CURRENT`), but "other batteries are plain wire" was too loose and too tight at once:
+
+- **False sparks:** two parallel batteries lighting six lamps (2.4 A and 2.6 A each) both sparked, because each saw the other as a wire from + to −, while one battery carrying 4.4 A did not.
+- **Missed shorts:** a battery straight across a stopped generator or idle turbine (9.4 A) did not spark, because a 0.05 Ω pusher at rest was neither wire nor battery.
+
+Now another pusher on the path counts as plain wire only when (a) the path goes through it the way it pushes, in at − and out at + (so shorted battery stacks still spark), or (b) it isn't pushing right now (a stopped generator or turbine), or (c) it is overpowered: more than 2 × `REFERENCE_CURRENT` is forced through it backwards. A healthy parallel battery is none of these. The shape test is kept (not replaced by a current or voltage-drop threshold) so that a short through a very long wire still sparks: an 80-wire loop carries only 7.6 A.
+
+Not covered: a battery fighting an opposing pusher that is weaker but not overpowered past the threshold shows no spark (the current is under 2 A there anyway, by the same threshold).

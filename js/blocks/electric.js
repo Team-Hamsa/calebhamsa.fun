@@ -391,7 +391,7 @@ const guide = {
     'Electricity only flows around a complete LOOP: out of the battery\'s + end, through wires and parts, and back into its other end.',
     'Little yellow dots run along the wires while it flows.',
     'Parts turn to face their wires: wires on the left and right, or above and below. The gray metal ends show which way. Lamps side by side between two wires each get their own path, however many there are.',
-    'Short circuit! A battery wired straight back to itself sparks and smokes. Never try that with a real battery.',
+    'Short circuit! A battery wired straight back to itself sparks and smokes, however long the wire. A stopped generator or turbine is just wire too. Never try that with a real battery.',
   ],
   blocks: {
     battery: { does: 'Pushes electricity out of its + end. Two batteries in a row push twice as hard.' },

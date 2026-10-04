@@ -242,3 +242,7 @@ Each block's `drawSignals` draws its own look:
 ## Addendum 2026-10-04: push rounding (issue #11)
 
 `partPush` and `circuitKey` now round a changing push (a turbine's or a generator's) toward zero to **0.01 V** (`PUSH_STEP` in circuit.js), not 0.1. A turbine pushing under 0.01 V still pushes exactly nothing, so a stopped turbine still stops the circuit. See the gears spec addendum of the same date for why.
+
+## Addendum 2026-10-04: shorts and turbines (issue #13)
+
+"Short detection treats any part with push as a battery" is refined: see "Short-circuit sparks (issue #13)" in the electrical spec. An idle turbine now counts as plain wire, so a battery wired straight across one sparks.
