@@ -74,9 +74,11 @@ export function isSpin(info) {
  *
  * One extra rule, for an axle with just ONE neighbor on each line (the
  * end of a shaft with something beside it): it stays in line with the
- * SHAFT. Another axle that can point at it, or a crank, motor or other
- * hub, counts for more than a gear. So putting a gear beside the end of
- * a turning shaft never swings the axle round and cuts the shaft.
+ * SHAFT. An axle that points at it with something more behind it (a
+ * real shaft) counts most; then a crank, winch or other hub, or a loose
+ * axle; then a gear. So putting a gear, a winch or a generator beside
+ * the end of a turning shaft never swings the axle round and cuts the
+ * shaft. The block beside it just isn't joined: put it on the END.
  * @param {object} world - the world
  * @param {number} x - the axle's column
  * @param {number} y - the axle's row
@@ -95,11 +97,12 @@ export function spinAxis(world, x, y, blockInfo) {
   const spinOf = (px, py, dx, dy) => blockInfo(getBlock(world, px + dx, py + dy))?.spin;
   /**
    * How much the neighbor dx, dy away looks like more of this axle's shaft:
-   * 2 for a shaft (a hub, or an axle that can point back at us), 1 for a
-   * gear, 0 for nothing (or an axle that has to face across us).
+   * 3 for an axle that can point back at us and has another spinning
+   * block behind it (a shaft that goes on), 2 for a hub or a loose axle,
+   * 1 for a gear, 0 for nothing (or an axle that has to face across us).
    * @param {number} dx - columns across
    * @param {number} dy - rows down
-   * @returns {number} 0, 1 or 2
+   * @returns {number} 0, 1, 2 or 3
    */
   const pulls = (dx, dy) => {
     const spin = spinOf(x, y, dx, dy);
@@ -112,7 +115,8 @@ export function spinAxis(world, x, y, blockInfo) {
     const sideways = Boolean(spinOf(nx, ny, -1, 0)) && Boolean(spinOf(nx, ny, 1, 0));
     const upDown = Boolean(spinOf(nx, ny, 0, -1)) && Boolean(spinOf(nx, ny, 0, 1));
     const facesAcross = dx !== 0 ? upDown && !sideways : sideways;
-    return facesAcross ? 0 : 2;
+    if (facesAcross) return 0;
+    return spinOf(nx, ny, dx, dy) ? 3 : 2;
   };
   const left = Boolean(spinOf(x, y, -1, 0));
   const right = Boolean(spinOf(x, y, 1, 0));

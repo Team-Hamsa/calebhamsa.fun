@@ -304,3 +304,28 @@ test('an axle doesn\'t turn toward an axle that can\'t point back at it', () => 
   assert.equal(axisAt(rows, 1, 1), 'v');
   assert.equal(spin(rows)(1, 1).speed, 1);
 });
+
+test('a winch, generator, crank or loose axle beside the end of a shaft doesn\'t swing the end round and cut the shaft', () => {
+  // H stands for any hub (a winch, generator, motor, stopped crank, water wheel).
+  for (const side of ['H', '-']) {
+    const upright = [['.-x', '.-.', '.R.'], ['x-.', '.-.', '.R.'], ['.R.', '.-.', '.-x'], ['.R.', '.-.', 'x-.']];
+    for (const picture of upright) {
+      const rows = picture.map((row) => row.replace('x', side));
+      const end = picture[0].includes('x') ? 0 : 2;
+      const at = spin(rows);
+      assert.equal(at(1, end).axis, 'v', rows.join('/'));
+      assert.equal(at(1, end).speed, 1, rows.join('/')); // the shaft still turns, all the way along
+      assert.equal(at(picture[end].indexOf('x'), end).speed, 0, rows.join('/')); // the block beside it isn't joined
+    }
+    const sideways = [['R--', '..x'], ['--R', 'x..'], ['..x', 'R--'], ['x..', '--R']];
+    for (const picture of sideways) {
+      const rows = picture.map((row) => row.replace('x', side));
+      const y = picture[0].includes('-') ? 0 : 1;
+      const x = picture[1 - y].indexOf('x');
+      const at = spin(rows);
+      assert.equal(at(x, y).axis, 'h', rows.join('/'));
+      assert.equal(at(x, y).speed, 1, rows.join('/'));
+      assert.equal(at(x, 1 - y).speed, 0, rows.join('/'));
+    }
+  }
+});
