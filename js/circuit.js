@@ -224,14 +224,15 @@ function pushOut(point, side) {
  * The current coming OUT of each part's + end (its top or right end), for
  * one circuit whose connections have been solved. Negative means the
  * current goes in there.
+ * @param {object} ready - the circuit, ready for solving (from prepareCircuit)
  * @param {number[]} members - the cell indexes in this circuit
  * @param {object[]} links - this circuit's connections (with their pushes)
  * @param {Map<number, object>} points - every point
  * @returns {Map<number, number>|null} part's cell index → current out of
  *   its + end, or null if the circuit can't be solved
  */
-function currentsOut(members, links, points) {
-  const voltages = solveVoltages(members, links);
+function currentsOut(ready, members, links, points) {
+  const voltages = solveVoltages(ready, members, links);
   if (!voltages) return null;
   const out = new Map();
   const other = new Map(); // the current out of the − end, for a part whose + end isn't joined to anything
@@ -271,13 +272,23 @@ function currentsOut(members, links, points) {
  * to solve the circuit again and again. A generator's own perVolt is its
  * `load`: lots of lamps side by side = a big load, nothing wired to it
  * = none, plain wire across its ends = a huge one.
+ *
+ * Every one of these sums uses the same wiring, so the slow half of the
+ * math is done just once for the whole circuit (`ready`, see
+ * prepareCircuit), however many generators there are.
+ * @param {object} ready - the circuit, ready for solving (from prepareCircuit)
  * @param {number[]} members - the cell indexes in this circuit
  * @param {object[]} links - this circuit's connections
  * @param {Map<number, object>} points - every point
+ * And `perVolt` only depends on the wiring, not on how hard anybody
+ * pushes right now. So when the wiring is the same as the last time the
+ * circuit was worked out (only a generator's speed changed), we keep
+ * the old `perVolt` lists (`known`) and only work out `fixed` again.
  * @param {Map<number, object>} cells - every cell's record (gets `perVolt`, `fixed`, and `load` for generators)
+ * @param {Map<number, object>|null} known - the records from last time, if the wiring is still the same
  * @returns {void}
  */
-function shareOut(members, links, points, cells) {
+function shareOut(ready, members, links, points, cells, known) {
   const makers = members.filter((index) => points.get(index).part?.feelsLoad);
   if (makers.length === 0) return;
   const parts = members.filter((index) => points.get(index).part);
@@ -291,32 +302,55 @@ function shareOut(members, links, points, cells) {
     push: pushOut({ push: pushOf(link.a), axis: points.get(link.a).axis }, link.side)
       - pushOut({ push: pushOf(link.b), axis: points.get(link.b).axis }, OPPOSITE[link.side]),
   }));
+  const kept = Boolean(known) && parts.every((index) => known.get(index)?.perVolt?.size === makers.length);
   for (const index of parts) {
-    cells.get(index).perVolt = new Map();
+    cells.get(index).perVolt = kept ? known.get(index).perVolt : new Map();
     cells.get(index).fixed = 0;
   }
   for (const maker of makers) {
-    const out = currentsOut(members, pushedBy((index) => (index === maker ? 1 : 0)), points);
+    if (kept) {
+      cells.get(maker).load = known.get(maker).load;
+      continue;
+    }
+    const out = currentsOut(ready, members, pushedBy((index) => (index === maker ? 1 : 0)), points);
     for (const index of parts) cells.get(index).perVolt.set(maker, out?.get(index) ?? 0);
     cells.get(maker).load = Math.abs(out?.get(maker) ?? 0);
   }
   const others = members.some((index) => !makers.includes(index) && points.get(index).push !== 0);
   if (!others) return;
-  const out = currentsOut(members, pushedBy((index) => (makers.includes(index) ? 0 : points.get(index).push)), points);
+  const out = currentsOut(ready, members, pushedBy((index) => (makers.includes(index) ? 0 : points.get(index).push)), points);
   for (const index of parts) cells.get(index).fixed = out?.get(index) ?? 0;
 }
 
 /**
- * Solve a set of equations  A · x = b  by Gaussian elimination (the
- * method taught in school: clear out one unknown at a time). We pick
- * the biggest number in each column to divide by ("partial pivoting"),
- * which keeps rounding errors small.
- * @param {number[][]} matrix - A, a square grid of numbers (it gets changed)
- * @param {number[]} rhs - b, the right-hand side (it gets changed)
- * @returns {number[]|null} x, or null if there's no single answer
+ * A count of the heavy work done so far, for tests and timing tools.
+ * `factorings` goes up by one every time factorLinear clears out a grid
+ * of equations (the slow part of working out a circuit), `answers` every
+ * time solveFactored answers them for one set of pushes.
  */
-export function solveLinear(matrix, rhs) {
-  const n = rhs.length;
+export const work = { factorings: 0, answers: 0 };
+
+/**
+ * The slow half of solving a set of equations  A · x = b  by Gaussian
+ * elimination (the method taught in school: clear out one unknown at a
+ * time). We pick the biggest number in each column to divide by
+ * ("partial pivoting"), which keeps rounding errors small.
+ *
+ * This half only needs A, not b. It writes down every step it took, so
+ * the same steps can be done to ANY b afterwards, quickly (see
+ * solveFactored). A circuit with fifty generators asks for fifty
+ * different b's with the very same A: clearing A out once instead of
+ * fifty times is fifty times less work. (Grown-ups call this an "LU
+ * factorization".)
+ * @param {number[][]} matrix - A, a square grid of numbers (it gets changed)
+ * @returns {{matrix: number[][], swaps: number[]}|null} the cleared-out
+ *   grid with the steps written into it, and which rows were swapped;
+ *   null if there's no single answer
+ */
+export function factorLinear(matrix) {
+  work.factorings += 1;
+  const n = matrix.length;
+  const swaps = new Array(n);
   for (let col = 0; col < n; col++) {
     let best = col;
     for (let row = col + 1; row < n; row++) {
@@ -324,36 +358,81 @@ export function solveLinear(matrix, rhs) {
     }
     if (Math.abs(matrix[best][col]) < 1e-12) return null; // no single answer
     [matrix[col], matrix[best]] = [matrix[best], matrix[col]];
-    [rhs[col], rhs[best]] = [rhs[best], rhs[col]];
+    swaps[col] = best;
+    const pivot = matrix[col];
     for (let row = col + 1; row < n; row++) {
-      const factor = matrix[row][col] / matrix[col][col];
+      const line = matrix[row];
+      const factor = line[col] / pivot[col];
+      line[col] = factor; // write the step down where the cleared-out number was
       if (factor === 0) continue;
-      for (let k = col; k < n; k++) matrix[row][k] -= factor * matrix[col][k];
-      rhs[row] -= factor * rhs[col];
+      for (let k = col + 1; k < n; k++) line[k] -= factor * pivot[k];
+    }
+  }
+  return { matrix, swaps };
+}
+
+/**
+ * The quick half: answer  A · x = b  for one b, using the steps that
+ * factorLinear wrote down for A.
+ * @param {{matrix: number[][], swaps: number[]}} factored - from factorLinear
+ * @param {number[]} rhs - b, the right-hand side (it gets changed)
+ * @returns {number[]|null} x, or null if the numbers went wrong
+ */
+export function solveFactored(factored, rhs) {
+  work.answers += 1;
+  const { matrix, swaps } = factored;
+  const n = rhs.length;
+  // First the same row swaps, in the same order; then the same clearing out.
+  for (let col = 0; col < n; col++) {
+    const best = swaps[col];
+    if (best !== col) [rhs[col], rhs[best]] = [rhs[best], rhs[col]];
+  }
+  for (let col = 0; col < n; col++) {
+    const value = rhs[col];
+    if (value === 0) continue;
+    for (let row = col + 1; row < n; row++) {
+      const factor = matrix[row][col];
+      if (factor !== 0) rhs[row] -= factor * value;
     }
   }
   const x = new Array(n).fill(0);
   for (let row = n - 1; row >= 0; row--) {
+    const line = matrix[row];
     let sum = rhs[row];
-    for (let k = row + 1; k < n; k++) sum -= matrix[row][k] * x[k];
-    x[row] = sum / matrix[row][row];
+    for (let k = row + 1; k < n; k++) sum -= line[k] * x[k];
+    x[row] = sum / line[row];
   }
   return x.every(Number.isFinite) ? x : null;
 }
 
 /**
- * Work out the voltage at every point of one separate circuit.
+ * Solve a set of equations  A · x = b  in one go (see factorLinear and
+ * solveFactored for the two halves).
+ * @param {number[][]} matrix - A, a square grid of numbers (it gets changed)
+ * @param {number[]} rhs - b, the right-hand side (it gets changed)
+ * @returns {number[]|null} x, or null if there's no single answer
+ */
+export function solveLinear(matrix, rhs) {
+  const factored = factorLinear(matrix);
+  return factored && solveFactored(factored, rhs);
+}
+
+/**
+ * Get one separate circuit ready for solving: do the slow half of the
+ * sums, which only depends on how the circuit is WIRED (who is joined
+ * to whom, and every connection's resistance), not on who is pushing.
  * Each connection is a "conductance" g = 1 / resistance (how easily
- * current flows), and a battery's push becomes a current source g × push.
+ * current flows).
  * @param {number[]} members - the cell indexes in this circuit
  * @param {object[]} links - this circuit's connections
- * @returns {Map<number, number>|null} cell index → voltage, or null if it can't be solved
+ * @returns {{position: Map<number, number>, factored: object|null}} where
+ *   each point is in the equations, and the cleared-out equations (null
+ *   if they can't be solved)
  */
-function solveVoltages(members, links) {
+function prepareCircuit(members, links) {
   const position = new Map(members.map((index, k) => [index, k]));
   const n = members.length;
   const matrix = Array.from({ length: n }, () => new Array(n).fill(0));
-  const rhs = new Array(n).fill(0);
   for (const link of links) {
     const a = position.get(link.a);
     const b = position.get(link.b);
@@ -362,15 +441,33 @@ function solveVoltages(members, links) {
     matrix[b][b] += g;
     matrix[a][b] -= g;
     matrix[b][a] -= g;
-    rhs[a] -= g * link.push;
-    rhs[b] += g * link.push;
   }
   // Voltages only matter compared to each other, so we pin the first
   // point at 0 volts. Without this there'd be endless answers.
   matrix[0] = new Array(n).fill(0);
   matrix[0][0] = 1;
-  rhs[0] = 0;
-  const voltages = solveLinear(matrix, rhs);
+  return { position, factored: factorLinear(matrix) };
+}
+
+/**
+ * Work out the voltage at every point of one separate circuit, for one
+ * set of pushes. A battery's push becomes a current source g × push.
+ * @param {{position: Map<number, number>, factored: object|null}} ready - from prepareCircuit
+ * @param {number[]} members - the cell indexes in this circuit
+ * @param {object[]} links - this circuit's connections (with their pushes)
+ * @returns {Map<number, number>|null} cell index → voltage, or null if it can't be solved
+ */
+function solveVoltages(ready, members, links) {
+  if (!ready.factored) return null;
+  const rhs = new Array(members.length).fill(0);
+  for (const link of links) {
+    if (link.push === 0) continue;
+    const g = 1 / link.resistance;
+    rhs[ready.position.get(link.a)] -= g * link.push;
+    rhs[ready.position.get(link.b)] += g * link.push;
+  }
+  rhs[0] = 0; // the first point is pinned at 0 volts
+  const voltages = solveFactored(ready.factored, rhs);
   return voltages && new Map(members.map((index, k) => [index, voltages[k]]));
 }
 
@@ -496,9 +593,13 @@ function shortedByShape(battery, point, points, touching, cells, width) {
  *
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
+ * @param {Map<number, object>|null} [known] - the records from the last
+ *   time, but ONLY if nothing about the wiring has changed since (the same
+ *   blocks, switches and clicker beat): then the `perVolt` lists are kept
+ *   instead of worked out again (see shareOut)
  * @returns {{cells: Map<number, object>, flowing: boolean}} the records, and whether any current flows
  */
-export function solveCircuit(world, blockInfo) {
+export function solveCircuit(world, blockInfo, known = null) {
   const cells = new Map();
   const points = new Map();
   for (let y = 0; y < world.height; y++) {
@@ -548,9 +649,13 @@ export function solveCircuit(world, blockInfo) {
     for (const index of members) cells.get(index).group = groupNumber; // which separate circuit it's in
     const inside = new Set(members);
     const groupLinks = links.filter((link) => inside.has(link.a));
-    shareOut(members, groupLinks, points, cells);
-    if (!members.some((index) => points.get(index).push !== 0)) continue;
-    const voltages = solveVoltages(members, groupLinks);
+    const makers = members.some((index) => points.get(index).part?.feelsLoad);
+    const pushing = members.some((index) => points.get(index).push !== 0);
+    if (!makers && !pushing) continue; // nothing here could ever push: no sums needed
+    const ready = prepareCircuit(members, groupLinks); // the slow half, done once for this circuit
+    shareOut(ready, members, groupLinks, points, cells, known);
+    if (!pushing) continue;
+    const voltages = solveVoltages(ready, members, groupLinks);
     if (!voltages) {
       console.warn('A circuit could not be solved, so it gets no current.');
       continue;

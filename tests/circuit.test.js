@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, setBlock } from '../js/world.js';
-import { partAxis, partPush, plusSide, solveCircuit, solveLinear } from '../js/circuit.js';
+import { factorLinear, partAxis, partPush, plusSide, solveCircuit, solveFactored, solveLinear, work } from '../js/circuit.js';
 
 /**
  * Stand-in blocks, with the same electric settings as the real ones in
@@ -347,4 +347,59 @@ test('a part that feels its load is told the current per volt it would push, eve
   assert.ok(loadOf(['WW', 'DW', 'WW']) > 10, 'joined by plain wire: a huge load');
   assert.equal(loadOf(['WWW', 'D..', 'WLW']), 0, 'no loop: no load');
   assert.equal(solveCircuit(worldFrom(['WWW', 'B.W', 'WLW']), blockInfo).cells.get(3).load, undefined, 'batteries are not told');
+});
+
+test('equations can be cleared out ONCE and then answered for many right-hand sides', () => {
+  /**
+   * A fresh copy of the same grid of numbers (solving changes it).
+   * @returns {number[][]} the grid
+   */
+  const grid = () => [[0, 2, 1, -1], [4, -6, 0, 2], [-2, 7, 2, 1], [1, 1, 1, 9]];
+  const factored = factorLinear(grid());
+  for (const rhs of [[1, 0, 0, 0], [0, 0, 0, 1], [3, -2, 5, 7], [0, 0, 0, 0]]) {
+    const once = solveFactored(factored, [...rhs]);
+    const fresh = solveLinear(grid(), [...rhs]);
+    once.forEach((value, k) => assert.ok(Math.abs(value - fresh[k]) < 1e-12, `${rhs}: ${once} against ${fresh}`));
+    // And it really is the answer: grid × answer = rhs.
+    grid().forEach((row, r) => assert.ok(Math.abs(row.reduce((sum, value, k) => sum + value * once[k], 0) - rhs[r]) < 1e-12));
+  }
+  assert.equal(factorLinear([[1, 2], [2, 4]]), null, 'no single answer');
+});
+
+test('a circuit with many generators costs ONE big sum, not one for each generator', () => {
+  // Twenty stand-in generators and a battery in one loop with a lamp.
+  const blocks = { ...TEST_BLOCKS, maker: { part: { resistance: 0.05, pushNow: () => 0.5, feelsLoad: true } } };
+  const world = createWorld(24, 3);
+  for (let x = 0; x < 24; x++) {
+    setBlock(world, x, 0, x >= 2 && x < 22 ? 'maker' : 'wire');
+    setBlock(world, x, 2, x === 10 ? 'lamp' : x === 12 ? 'battery' : 'wire');
+  }
+  setBlock(world, 0, 1, 'wire');
+  setBlock(world, 23, 1, 'wire');
+  const before = work.factorings;
+  const solved = solveCircuit(world, (name) => blocks[name]);
+  assert.equal(work.factorings - before, 1);
+  // The shares still add up to the real current: fixed + each generator's share × its push.
+  const lamp = solved.cells.get(2 * 24 + 10);
+  let sum = lamp.fixed;
+  for (const share of lamp.perVolt.values()) sum += share * 0.5;
+  assert.equal(lamp.perVolt.size, 20);
+  assert.ok(Math.abs(Math.abs(sum) - lamp.current) < 1e-9, `shares add up to ${sum}, the current is ${lamp.current}`);
+  assert.ok(lamp.current > 1, `the lamp only gets ${lamp.current}`);
+
+  // The generators push harder, the wiring stays the same: told so, the
+  // circuit keeps its shares and does only two quick sums, and gets the
+  // very same answer as working everything out afresh.
+  blocks.maker = { part: { resistance: 0.05, pushNow: () => 0.75, feelsLoad: true } };
+  const fresh = solveCircuit(world, (name) => blocks[name]);
+  const answers = work.answers;
+  const again = solveCircuit(world, (name) => blocks[name], solved.cells);
+  assert.equal(work.answers - answers, 2);
+  for (const [index, cell] of fresh.cells) {
+    const other = again.cells.get(index);
+    assert.equal(other.current, cell.current);
+    assert.equal(other.fixed, cell.fixed);
+    assert.equal(other.load, cell.load);
+    assert.deepEqual(other.perVolt && [...other.perVolt], cell.perVolt && [...cell.perVolt]);
+  }
 });

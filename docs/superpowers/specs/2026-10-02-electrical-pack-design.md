@@ -250,3 +250,13 @@ Not covered: a battery fighting an opposing pusher that is weaker but not overpo
 ### Guide text (issue #16)
 - The gears guide told you to "flip the battery round" to reverse a motor. A battery has no ✋ action and its + end is fixed (top or right), so the guide now says what the README says: move the battery to the other side of the loop. The Power guide gains a rule saying the + end can't be turned and that batteries on opposite sides of a loop cancel. A battery you can flip is left as a possible feature.
 - `NOTE_ON_LEVEL` stays 0.25 (a real sounder has a least current too). The guide and README now say why five note blocks in one loop stay quiet while the dots still move, and how to fix it. A test pins 4 sing / 5 don't / 5 with two batteries do.
+
+## Addendum 2026-10-04 (round 1 review): a circuit with many generators is cleared out once (issue #17 review)
+
+`shareOut` (see the gears spec, "generators load each other on the same tick") did one full Gaussian elimination per generator plus one for the fixed part, every time the circuit key changed, and the key changes with every generator push and every clicker beat. A 24 × 14 world with 54 cranked generators, 12 motors, lamps and a clicker took 10.2 s for 150 ticks (57 ticks over 33 ms, p90 260 ms); before `shareOut` existed it took 3.3 s.
+
+- `solveLinear` is split into `factorLinear(matrix)` (the elimination, with partial pivoting; the multipliers are written into the cleared-out grid and the row swaps are kept) and `solveFactored(factored, rhs)` (the same swaps, forward and back substitution). `solveLinear` calls both and gives the same answers as before.
+- `solveCircuit` factors each circuit's matrix once (`prepareCircuit`; the matrix only holds conductances) and reuses it for every unit solve of `shareOut`, the fixed part, and the real solve. A circuit with no pusher and no generator is not factored at all.
+- `solveCircuit(world, blockInfo, known)`: when the wiring is unchanged since the last solve (`wiringKey` = blocks + clicker beat, kept in `signals.electric.wiring`), `refreshElectric` passes the old records and `shareOut` keeps their `perVolt` and `load` and only works out `fixed` again. `perVolt` depends on resistances and joins only, never on pushes.
+- `work` (`factorings`, `answers`) counts the heavy steps, for the tests and for timing tools.
+- Result for that world: 1.1 s for 150 ticks, p90 24 ms, 2 ticks over 33 ms (both on a clicker beat). 12 generators, 9 motors and a clicker: worst tick 5.8 ms (was 21). The answers are unchanged.

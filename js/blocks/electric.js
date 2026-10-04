@@ -51,6 +51,18 @@ export function clickerOn(world) {
 }
 
 /**
+ * A short text that changes whenever the WIRING could change: the blocks
+ * (a switch that is flipped is a different block), and the clicker beat
+ * (only if there's a clicker). How hard anything pushes is not in it.
+ * @param {{cells: string[], ticks: number}} world - the world
+ * @returns {string} the key
+ */
+export function wiringKey(world) {
+  const beat = world.cells.includes('clicker') ? String(clickerOn(world)) : '';
+  return `${world.cells.join(',')}|${beat}`;
+}
+
+/**
  * A short text that changes whenever the circuit could change: the
  * blocks, the clicker beat (only if there's a clicker), and how hard any
  * changing pushers (turbines, generators) push, rounded down to a
@@ -61,13 +73,12 @@ export function clickerOn(world) {
  * @returns {string} the key
  */
 export function circuitKey(world, blockInfo) {
-  const beat = world.cells.includes('clicker') ? String(clickerOn(world)) : '';
   const pushes = [];
   world.cells.forEach((name, index) => {
     const part = blockInfo(name)?.part;
     if (part?.pushNow) pushes.push(partPush(part, world, index % world.width, Math.floor(index / world.width)));
   });
-  return `${world.cells.join(',')}|${beat}|${pushes.join(',')}`;
+  return `${wiringKey(world)}|${pushes.join(',')}`;
 }
 
 /**
@@ -87,7 +98,11 @@ export function refreshElectric(world, blockInfo) {
   const key = circuitKey(world, blockInfo);
   if (old && old.key === key) return false;
 
-  const { cells, flowing } = solveCircuit(world, blockInfo);
+  // Same wiring as last time (only a turbine or generator pushes harder
+  // or softer)? Then the circuit can keep what it worked out about the
+  // wiring, which is most of the work when there are lots of generators.
+  const wiring = wiringKey(world);
+  const { cells, flowing } = solveCircuit(world, blockInfo, old?.wiring === wiring ? old.cells : null);
   const wasOn = old?.wasOn ?? new Set();
   const nowOn = new Set();
   let hum = 0;
@@ -101,7 +116,7 @@ export function refreshElectric(world, blockInfo) {
       }
     }
   }
-  world.signals.electric = { key, cells, flowing, hum, wasOn: nowOn, solves: (old?.solves ?? 0) + 1 };
+  world.signals.electric = { key, wiring, cells, flowing, hum, wasOn: nowOn, solves: (old?.solves ?? 0) + 1 };
   return true;
 }
 
