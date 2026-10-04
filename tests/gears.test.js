@@ -19,6 +19,7 @@ const LETTERS = {
   '.': 'air', '#': 'stone', W: 'wire', L: 'lamp', B: 'battery', s: 'gearSmall', G: 'gearBig',
   '-': 'axle', R: 'crankCW', Q: 'crankCCW', M: 'motor', E: 'generator', O: 'waterWheel', F: 'faucet',
   P: 'pipe', '^': 'pumpUp', T: 'turbine', D: 'drain', K: 'clicker', '/': 'switchClosed',
+  Z: 'winch', r: 'rope', I: 'ironWeight', c: 'crate',
 };
 
 /**
@@ -900,4 +901,225 @@ test('a clicker switching OFF asks for a redraw, so its lamp is not left drawn l
   world.animating = false;
   tick(world, allSystems(), blockInfo); // nothing changes on the next tick
   assert.equal(world.animating, false);
+});
+
+// =============================================================
+// Lots of generators, and generators feeding motors: the electricity
+// that comes out is never more than the work that went in.
+// =============================================================
+
+/**
+ * Build a gear train (from a picture, like 'RGs') turning `count`
+ * generators, one after the other on the same gears, all wired in a row
+ * (in series, each adding its push) into one bus wire along the bottom.
+ * @param {number} count - how many generators
+ * @param {string} train - the crank and gears in front of the first generator
+ * @returns {{world: object, generators: number[], busY: number, busX: number}} the
+ *   world, each generator's column (they are all in row 2), and where the
+ *   bus wire starts (put lamps on it from busX + 1)
+ */
+function generatorsInARow(count, train) {
+  const first = train.length;
+  const columns = Array.from({ length: count }, (unused, i) => first + 3 * i);
+  const last = columns[count - 1];
+  const width = last + 3;
+  const world = createWorld(width, 6);
+  [...train].forEach((letter, x) => setBlock(world, x, 2, LETTERS[letter]));
+  columns.forEach((x, i) => {
+    setBlock(world, x, 2, 'generator');
+    if (i === count - 1) return;
+    setBlock(world, x + 1, 2, 'gearSmall');
+    setBlock(world, x + 2, 2, 'gearSmall');
+    for (let k = x; k <= x + 3; k++) setBlock(world, k, i % 2 === 0 ? 1 : 3, 'wire'); // top to top, then bottom to bottom
+  });
+  setBlock(world, first, 3, 'wire');
+  setBlock(world, first, 4, 'wire');
+  for (let x = first; x <= last + 2; x++) setBlock(world, x, 5, 'wire');
+  if (count % 2 === 0) { // the last generator's free end is its bottom: straight down to the bus
+    setBlock(world, last, 3, 'wire');
+    setBlock(world, last, 4, 'wire');
+    for (let x = last + 1; x <= last + 2; x++) setBlock(world, x, 5, 'air');
+  } else { // its free end is its top: up, over and down the far side
+    setBlock(world, last, 1, 'wire');
+    for (let x = last; x <= last + 2; x++) setBlock(world, x, 0, 'wire');
+    for (let y = 1; y < 5; y++) setBlock(world, last + 2, y, 'wire');
+  }
+  return { world, generators: columns, busY: 5, busX: first };
+}
+
+/**
+ * The work a crank does in one tick: how hard it pushes × how far it turns.
+ * @param {object} world - the world
+ * @param {number} x - the crank's column
+ * @param {number} y - the crank's row
+ * @returns {number} the work (strength × turns)
+ */
+function crankWorkAt(world, x, y) {
+  const speed = Math.abs(spinAt(world, x, y));
+  return (CRANK_STRENGTH * (1 - speed / CRANK_SPEED) * speed) / 8;
+}
+
+test('any number of generators on one crank, wired in a row: the lamp never gets more than 8 tenths of the crank\'s work, and nothing flickers', () => {
+  for (const train of ['R', 'RGs', 'Q']) {
+    for (const count of [1, 2, 3, 4, 6, 8]) {
+      const { world, generators, busY, busX } = generatorsInARow(count, train);
+      setBlock(world, busX + 1, busY, 'lamp');
+      let work = 0;
+      let heat = 0;
+      const seen = new Set();
+      for (let t = 0; t < 200; t++) {
+        more(world, 1);
+        work += crankWorkAt(world, 0, 2);
+        heat += amps(world, busX + 1, busY) ** 2 / 8;
+        if (t >= 2) seen.add(`${spinAt(world, generators[0], 2).toFixed(9)}/${amps(world, busX + 1, busY).toFixed(9)}`);
+      }
+      const what = `${count} generators, train ${train}: lamp heat ${heat}, crank work ${work}`;
+      assert.ok(heat > 0.05, what); // (it does light)
+      assert.ok(heat <= (GENERATOR_GAIN / GENERATOR_TORQUE) * work + 1e-9, what);
+      assert.equal(seen.size, 1, `${what}: it flickers: ${[...seen].slice(0, 4).join(' ')}`);
+    }
+  }
+});
+
+test('two generators on one crank settle at once: the same speed from the second tick on, with a lamp, shorted, or charging a battery', () => {
+  const machines = [
+    () => build(['.WWWW.', 'REssE.', '.WWLW.']),
+    () => build(['.WWWW.', 'REssE.', '.WWWW.']),
+    () => {
+      const { world, busX, busY } = generatorsInARow(2, 'QGs');
+      setBlock(world, busX + 1, busY, 'battery');
+      return world;
+    },
+    () => {
+      const { world, busX, busY } = generatorsInARow(2, 'RGs');
+      setBlock(world, busX + 1, busY, 'battery');
+      return world;
+    },
+  ];
+  machines.forEach((make, number) => {
+    const world = make();
+    const at = world.cells.indexOf('generator');
+    more(world, 1);
+    const seen = new Set();
+    for (let t = 0; t < 30; t++) {
+      more(world, 1);
+      seen.add(`${spinAt(world, at % world.width, Math.floor(at / world.width)).toFixed(9)}`);
+    }
+    assert.equal(seen.size, 1, `machine ${number} swings: ${[...seen].slice(0, 6).join(' ')}`);
+  });
+});
+
+test('generators with a crank each, all wired in a row, settle and never give more than their cranks put in', () => {
+  for (const count of [2, 3, 6]) {
+    for (const load of ['L', 'W']) { // through a lamp, or joined by plain wire
+      const width = 2 * count + 1;
+      const rows = [
+        Array.from({ length: width }, (unused, x) => (x % 2 === 1 ? 'R' : '.')).join(''),
+        Array.from({ length: width }, (unused, x) => (x % 2 === 1 ? 'E' : 'W')).join(''),
+        `W${'.'.repeat(width - 2)}W`,
+        `W${load}${'W'.repeat(width - 2)}`,
+      ];
+      const world = build(rows);
+      let work = 0;
+      let heat = 0;
+      const seen = new Set();
+      for (let t = 0; t < 120; t++) {
+        more(world, 1);
+        for (let x = 1; x < width; x += 2) work += crankWorkAt(world, x, 0);
+        // All the heat: the lamp (resistance 1) and every generator's coil (0.05).
+        heat += amps(world, 1, 1) ** 2 * ((load === 'L' ? 1 : 0) + 0.05 * count) / 8;
+        if (t >= 100) seen.add(spinAt(world, 1, 1).toFixed(6));
+      }
+      const what = `${count} cranked generators, load ${load}: heat ${heat}, work ${work}`;
+      assert.ok(heat > 0.1, what);
+      assert.ok(heat <= (GENERATOR_GAIN / GENERATOR_TORQUE) * work + 1e-6, what);
+      assert.equal(seen.size, 1, `${what}: it swings: ${[...seen].join(' ')}`);
+      assert.ok(Math.abs(spinAt(world, 1, 1) - spinAt(world, width - 2, 1)) < 1e-6, `${what}: the same machines should turn alike`);
+    }
+  }
+});
+
+test('two trains, each a motor and generators that feed the OTHER train\'s motor, stop when the crank is taken away', () => {
+  for (const count of [3, 4, 6]) {
+    const last = 3 * count;
+    const world = createWorld(last + 3, 15);
+    /**
+     * Put a block in train A, and the same block in train B (A turned half way round).
+     * @param {number} x - column in train A
+     * @param {number} y - row in train A
+     * @param {string} name - the block
+     * @returns {void}
+     */
+    const put = (x, y, name) => {
+      setBlock(world, x + 1, y, name);
+      setBlock(world, last - x + 1, 14 - y, name);
+    };
+    put(0, 2, 'gearSmall'); put(1, 2, 'axle'); put(2, 2, 'axle'); put(0, 3, 'motor'); put(-1, 3, 'wire'); put(1, 3, 'wire');
+    for (let i = 0; i < count; i++) {
+      const x = 3 + 3 * i;
+      put(x, 2, 'generator');
+      if (i === count - 1) continue;
+      put(x + 1, 2, 'gearSmall'); put(x + 2, 2, 'gearSmall');
+      for (let k = x; k <= x + 3; k++) put(k, i % 2 === 0 ? 1 : 3, 'wire');
+    }
+    put(3, 3, 'wire'); put(3, 4, 'wire');
+    for (let x = 3; x <= last - 1; x++) put(x, 5, 'wire');
+    for (let y = 5; y <= 11; y++) put(last - 1, y, 'wire');
+    put(last, 3, 'wire'); put(last, 4, 'wire');
+    for (let y = 4; y <= 11; y++) put(last + 1, y, 'wire');
+    setBlock(world, 1, 1, 'crankCW');
+    more(world, 16);
+    assert.ok(Math.abs(spinAt(world, 4, 2)) > 0.01, `${count}: the crank should turn train A`);
+    setBlock(world, 1, 1, 'air');
+    let fastest = 0;
+    for (let t = 0; t < 400; t++) {
+      more(world, 1);
+      for (const cell of world.signals.spin.cells.values()) fastest = Math.max(fastest, Math.abs(cell.speed));
+    }
+    assert.ok(fastest < CRANK_SPEED, `${count} generators a train: it ran away to ${fastest}`);
+    for (const cell of world.signals.spin.cells.values()) assert.equal(cell.speed, 0, `${count} generators a train: still turning`);
+  }
+});
+
+test('a clicker (or a tapped switch) between a generator and a motor gives the motor no burst: a winch never lifts more than the crank\'s work', () => {
+  /**
+   * A crank and gears turning a generator, wired through a gate to a
+   * motor on a winch with a load on the floor.
+   * @param {string} train - the crank, gears and generator
+   * @param {string} gate - 'K', '/' or 'W'
+   * @param {string} load - 'I' or 'c'
+   * @returns {string[]} the picture
+   */
+  const crane = (train, gate, load) => {
+    const at = train.length - 1;
+    const gap = '.'.repeat(at);
+    return [`${gap}WWWW`, `${train}..${gate}`, `${gap}WW.W`, `${gap}.WMW`, `${gap}..Z`, `${gap}..r`, `${gap}..r`, `${gap}..r`, `${gap}..r`, `${gap}..${load}`, '#'.repeat(at + 5)]
+      .map((row) => row.padEnd(at + 5, '.'));
+  };
+  for (const train of ['RGs-Gs-GsE', 'QGs-Gs-GsE', 'RGs-GsE', 'QGs-GsE', 'RGsE', 'QE']) {
+    for (const load of ['I', 'c']) {
+      const lifted = {};
+      for (const gate of ['W', 'K', '/']) {
+        const world = build(crane(train, gate, load));
+        const column = train.length + 1;
+        const rowOf = () => Math.floor(world.cells.indexOf(LETTERS[load]) / world.width);
+        const start = rowOf();
+        let work = 0;
+        for (let t = 0; t < 400; t++) {
+          // A hand tapping the switch: on for 1 tick, off for 7.
+          if (gate === '/') setBlock(world, column + 1, 1, t % 8 < 1 ? 'switchClosed' : 'switchOpen');
+          more(world, 1);
+          work += crankWorkAt(world, 0, 1);
+          const weight = load === 'I' ? 4 : 1;
+          const liftWork = (weight * (start - rowOf())) / 2; // weight × turns of the winch (2 cells of rope a turn)
+          assert.ok(liftWork <= work + 1e-9, `${train} ${gate} ${load}: lifted ${liftWork} of work by tick ${t} for ${work} of crank work`);
+        }
+        lifted[gate] = start - rowOf();
+      }
+      if (lifted.W === 0) {
+        assert.equal(lifted.K, 0, `${train} ${load}: too weak on plain wire, but a clicker lifted it ${lifted.K}`);
+        assert.equal(lifted['/'], 0, `${train} ${load}: too weak on plain wire, but a tapped switch lifted it ${lifted['/']}`);
+      }
+    }
+  }
 });

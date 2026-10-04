@@ -17,7 +17,7 @@
  */
 import { solveSpin, MIN_SPEED } from '../spin.js';
 import { swapBlock } from '../world.js';
-import { REFERENCE_CURRENT, plusSide, roundPush } from '../circuit.js';
+import { REFERENCE_CURRENT, plusSide } from '../circuit.js';
 import { DROP_POWER, wheelTurn } from '../fluids.js';
 import { refreshElectric } from './electric.js';
 
@@ -156,46 +156,7 @@ export function generatorPush(world, x, y) {
 }
 
 /**
- * What a generator's wiring means for its shaft, from the electricity
- * (world.signals.electric, which gearsSystem works out again at the start
- * of every tick if the wiring changed: a block, a switch, a clicker's
- * beat). Nothing is remembered from before, so fixing the wiring always
- * fixes the generator.
- *
- * The current through a generator has two parts:
- *
- *   current = forced + load × its own push
- *
- *   load     the current that flows for each volt IT pushes (see loadOn in
- *            circuit.js): lots of lamps side by side = a big load, nothing
- *            wired up = none, plain wire across its ends = a huge one
- *   forced   the current OTHER things (a battery, another generator) push
- *            through it, even when it stands still. We find it by taking
- *            the generator's own part away from the real current.
- *
- * Both are counted coming out of its + end (the end it pushes current out
- * of when it turns ↻).
- * @param {object} world - the world
- * @param {number} x - the generator's column
- * @param {number} y - the generator's row
- * @returns {{load: number, forced: number}} current per volt, and current
- */
-function generatorWiring(world, x, y) {
-  const index = y * world.width + x;
-  const electric = world.signals.electric?.cells?.get(index);
-  if (!electric) return { load: 0, forced: 0 };
-  const speed = world.signals.spin?.cells?.get(index)?.speed ?? 0;
-  const load = electric.load ?? 0;
-  // The current coming out of its + end (negative = going in there).
-  const current = electric.arms[plusSide(electric.axis)] ?? 0;
-  // The push the electricity was worked out with, rounded the same way the circuit rounds it (partPush).
-  const forced = current - load * roundPush(speed * GENERATOR_GAIN);
-  return { load, forced: load > 0 && Math.abs(forced) > 1e-9 ? forced : 0 };
-}
-
-/**
- * How hard a generator pushes back on its shaft for each turn per second,
- * when nothing else pushes current through it.
+ * How hard a generator pushes back on its shaft.
  *
  * Its push makes current flow: how much depends on what it's wired to
  * (more lamps side by side = more current). The current pushes back on
@@ -204,28 +165,27 @@ function generatorWiring(world, x, y) {
  * harder to turn, and one whose ends are joined by plain wire (a short
  * circuit) is very hard to turn, for as long as the wire is there.
  *
- * (With a battery or another generator in its loop, generatorBrake does
- * this job instead.)
- * @param {object} world - the world
- * @param {number} x - the generator's column
- * @param {number} y - the generator's row
- * @returns {number} push-back (strength) per turn per second
- */
-export function generatorDrag(world, x, y) {
-  const { load, forced } = generatorWiring(world, x, y);
-  if (forced !== 0) return 0;
-  return GENERATOR_TORQUE * load * GENERATOR_GAIN; // push-back per current × current per volt × volts per turn
-}
-
-/**
- * How a generator pushes back when a battery (or another generator) is
- * pushing current through it as well. The current through it is then
+ * The current through it is everything in its circuit added up (the
+ * circuit says how much each pusher sends through it: `perVolt` and
+ * `fixed`, see shareOut in circuit.js):
  *
- *   forced + load × volts per turn × its speed
+ *   • its OWN push, and the push of every other generator on the SAME
+ *     gears. Those all turn together, so their share grows with this
+ *     generator's speed. Three generators in a row on one crank each
+ *     feel the current all three make: three times as hard to turn.
+ *   • what batteries and turbines push through it, and generators on
+ *     OTHER gears (spin.js tells us how fast those turn right now). That
+ *     share is there even when this generator stands still.
  *
- * and it pushes back GENERATOR_TORQUE for each unit of that, but ONLY
- * while the current goes the way the generator itself is pushing: then
- * it is really generating, and that takes work. So:
+ * Nothing is remembered from before: all of it comes from the wiring as
+ * it is NOW (gearsSystem works the circuit out again first if a block, a
+ * switch or a clicker's beat changed), and the speeds as they are now.
+ * So fixing the wiring always fixes the generator, and the generators
+ * always pay for exactly the current that flows.
+ *
+ * It pushes back ONLY while the current goes the way the generator
+ * itself is pushing: then it is really generating, and that takes work.
+ * So, with a battery in its loop:
  *
  *   • Turned the way that ADDS to the battery's current, it is very hard
  *     to turn, even from standing still. A crank too weak for it doesn't
@@ -243,14 +203,28 @@ export function generatorDrag(world, x, y) {
  * @param {object} world - the world
  * @param {number} x - the generator's column
  * @param {number} y - the generator's row
+ * @param {{ratio: Map<number, number>, speedOf: Function}} [group] - from
+ *   spin.js: how fast each block on this generator's gears turns compared
+ *   to the others, and a way to ask any block's speed right now
  * @returns {{pull: number, perTurn: number}|null} the push-back standing
  *   still (+ pushes back against ↻), and how much it grows per turn per
- *   second; null if nothing else pushes current through it
+ *   second; null if no current can flow through it
  */
-export function generatorBrake(world, x, y) {
-  const { load, forced } = generatorWiring(world, x, y);
-  if (forced === 0) return null;
-  return { pull: GENERATOR_TORQUE * forced, perTurn: GENERATOR_TORQUE * load * GENERATOR_GAIN };
+export function generatorBrake(world, x, y, group) {
+  const index = y * world.width + x;
+  const electric = world.signals.electric?.cells?.get(index);
+  if (!electric?.perVolt) return null;
+  const own = group?.ratio.get(index) ?? 1;
+  let still = electric.fixed ?? 0; // current out of its + end when it stands still
+  let perTurn = 0;                 // and how much more for each turn per second
+  for (const [other, share] of electric.perVolt) {
+    if (other === index) perTurn += share * GENERATOR_GAIN;
+    else if (group?.ratio.has(other)) perTurn += (share * GENERATOR_GAIN * group.ratio.get(other)) / own;
+    else still += share * GENERATOR_GAIN * (group ? group.speedOf(other) : spinAt(world, other % world.width, Math.floor(other / world.width)));
+  }
+  if (Math.abs(still) < 1e-9) still = 0;
+  if (still === 0 && Math.abs(perTurn) < 1e-9) return null;
+  return { pull: GENERATOR_TORQUE * still, perTurn: GENERATOR_TORQUE * perTurn };
 }
 
 /**
@@ -261,20 +235,32 @@ export function generatorBrake(world, x, y) {
  * (A motor powered by a generator on its OWN gears can't keep itself
  * going: the generator only gives back 8 tenths of the work, so each time
  * round there's less, and it winds down. No special rule needed!)
+ *
+ * A motor feels a generator's electricity ONE TICK LATE: it uses the
+ * current the generators made (and were pushed back for) on the tick
+ * before. So every bit of current a motor uses was paid for by somebody
+ * turning a generator. On the tick its wiring changes (a clicker closes,
+ * a switch is flipped, a wire is added) there is no such current yet for
+ * the new wiring: the generator may have been spinning freely with
+ * nothing to push against. So for that one tick the motor only gets what
+ * batteries and turbines send it, and the generators' share starts on
+ * the next tick. (Without this, a clicker would hand a motor one tick of
+ * free full-speed electricity on every beat.)
  * @param {object} world - the world
  * @param {number} x - the motor's column
  * @param {number} y - the motor's row
  * @returns {{speed: number, strength: number}|null} its top speed and strength, or null if it has no power
  */
 export function motorSource(world, x, y) {
-  const electric = world.signals.electric?.cells;
-  const cell = electric?.get(y * world.width + x);
-  if (!cell || cell.level < MIN_SOURCE) return null;
-  const out = cell.arms[cell.axis === 'v' ? 'up' : 'right'] ?? 0;
-  if (out === 0) return null;
+  const index = y * world.width + x;
+  const cell = world.signals.electric?.cells?.get(index);
+  if (!cell) return null;
+  const rewired = world.signals.spin?.rewired?.has(index);
+  const out = rewired ? cell.fixed ?? 0 : cell.arms[plusSide(cell.axis)] ?? 0;
   // The real current, not `level` (that stops at MAX_LEVEL, only so lamps
   // don't get too bright): five batteries make a motor five times as strong.
-  const amount = cell.current / REFERENCE_CURRENT;
+  const amount = Math.abs(out) / REFERENCE_CURRENT;
+  if (amount < MIN_SOURCE) return null;
   return { speed: Math.sign(out) * amount * MOTOR_SPEED, strength: amount * MOTOR_STRENGTH };
 }
 
@@ -335,8 +321,48 @@ export function refreshSpin(world, blockInfo) {
   const wheels = world.signals.spin?.wheels ?? new Map();
   const wheelFlow = world.signals.spin?.wheelFlow ?? new Map();
   const wheelWork = world.signals.spin?.wheelWork ?? new Map();
+  const felt = world.signals.spin?.felt;
+  world.signals.spin = { ...world.signals.spin, rewired: rewiredParts(world, felt) };
   const solved = keepAngles(solveSpin(world, blockInfo), world.signals.spin?.cells, false);
-  world.signals.spin = { ...solved, wheels, wheelFlow, wheelWork, blocks };
+  world.signals.spin = { ...solved, wheels, wheelFlow, wheelWork, blocks, felt };
+}
+
+/**
+ * How every part in a circuit with a generator is wired to the
+ * generators right now: the circuit's `perVolt` lists (see shareOut in
+ * circuit.js). gearsSystem keeps these from tick to tick to notice when
+ * a motor's wiring changes.
+ * @param {object} world - the world
+ * @returns {Map<number, Map<number, number>>} part's cell index → (generator's cell index → current per volt)
+ */
+function generatorWiring(world) {
+  const wiring = new Map();
+  for (const [index, cell] of world.signals.electric?.cells ?? []) {
+    if (cell.perVolt) wiring.set(index, cell.perVolt);
+  }
+  return wiring;
+}
+
+/**
+ * The parts whose wiring to the generators is not the same as it was on
+ * the last tick (see motorSource for why that matters).
+ * @param {object} world - the world
+ * @param {Map<number, Map<number, number>>|undefined} felt - the wiring on the last tick (from generatorWiring)
+ * @returns {Set<number>} their cell indexes
+ */
+function rewiredParts(world, felt) {
+  const rewired = new Set();
+  for (const [index, now] of generatorWiring(world)) {
+    const before = felt?.get(index);
+    let same = Boolean(before) && before.size === now.size;
+    if (same) {
+      for (const [maker, share] of now) {
+        if (Math.abs((before.get(maker) ?? Infinity) - share) > 1e-9) same = false;
+      }
+    }
+    if (!same) rewired.add(index);
+  }
+  return rewired;
 }
 
 /**
@@ -397,9 +423,10 @@ export function gearsSystem(world, blockInfo) {
   if (refreshElectric(world, blockInfo)) world.animating = true;
   // The wheels read `wheels` while solveSpin works out the turning.
   const cellsBefore = world.signals.spin?.cells;
-  world.signals.spin = { ...world.signals.spin, wheels, wheelFlow, wheelWork };
+  const rewired = rewiredParts(world, world.signals.spin?.felt);
+  world.signals.spin = { ...world.signals.spin, wheels, wheelFlow, wheelWork, rewired };
   const solved = keepAngles(solveSpin(world, blockInfo), cellsBefore, true);
-  world.signals.spin = { ...solved, wheels, wheelFlow, wheelWork, blocks: world.cells.join(',') };
+  world.signals.spin = { ...solved, wheels, wheelFlow, wheelWork, blocks: world.cells.join(','), felt: generatorWiring(world) };
   if (world.signals.spin.turning) world.animating = true;
   return false;
 }
@@ -675,8 +702,7 @@ function crank(speed, name) {
  * Every block in this pack, in the order the palette shows them.
  *   spin         how it joins the spinning: a gear (with teeth), an axle, or a hub (a shaft)
  *   spinSource   its top speed and strength right now (null = not driving)
- *   spinDrag     how hard it pushes back for each turn per second (generator)
- *   spinBrake    a push-back that only works against the turning (generator with a battery in its loop)
+ *   spinBrake    a push-back that only works against the turning (generator: making electricity takes work)
  *   wheel        the 💧 pack counts water flowing through it
  *   part         it's also an ⚡ circuit part (motor, generator)
  *   hidden       not in the palette (you get it with ✋)
@@ -701,7 +727,7 @@ const blocks = {
   generator: {
     title: 'Generator', color: '#546e7a',
     spin: { kind: 'hub' }, part: { resistance: 0.05, pushNow: generatorPush, feelsLoad: true },
-    spinDrag: generatorDrag, spinBrake: generatorBrake, drawSignals: drawGenerator,
+    spinBrake: generatorBrake, drawSignals: drawGenerator,
   },
   crankCW: crank(CRANK_SPEED, 'crankCW'),
   crankCCW: crank(-CRANK_SPEED, 'crankCCW'),
@@ -718,7 +744,7 @@ const guide = {
     'Jammed! Three big gears touching in an L can\'t turn: each would have to turn both ways at once. They show a red ❌.',
     'Everything that turns has a top speed and a strength. The harder it pushes, the slower it goes. Two on the same gears add their strength.',
     'Gears change speed, not power: they can make things faster or stronger, never both.',
-    'Generators push back: the more lamps they light, the harder they are to turn. With nothing wired up they spin freely. Joined by plain wire (a short circuit) they are very hard to turn, until you take the wire away.',
+    'Generators push back: the more lamps they light, the harder they are to turn. With nothing wired up they spin freely. Joined by plain wire (a short circuit) they are very hard to turn, until you take the wire away. Generators wired in a row each feel all the current they make together.',
     'Nothing runs forever. A motor powered by its own generator slows down and stops, like a real one. So does a pump that lifts water for the water wheels that power it: lifting the water costs more than its fall gives back.',
   ],
   blocks: {

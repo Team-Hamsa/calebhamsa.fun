@@ -275,3 +275,21 @@ Now, from the smoothed per-wheel counts `{lean, sideOut, down, gross, work}` (se
 - Water leaving both sides cancels: a symmetric ledge gives no source; a lopsided one is weaker than a one-sided one, never stronger.
 - Direction (`wheelTurn`): sideways outflow right is ↻, left is ↺; downward outflow takes the sign of the sideways lean (in and out); with no sideways water at all, down is ↻. So mirrored builds turn at equal and opposite speeds. The one case that cannot be opposite is water falling dead straight through (its mirror image is itself): that stays ↻.
 - Known jump: because of that default, a tiny sideways lean decides the sign of a big straight-down flow.
+
+## Addendum 2026-10-04 (final review): generators load each other on the same tick, and motors get no burst (issues #17, #11 review)
+
+Two holes were left by the `forced` rule above.
+
+**Several generators in one circuit.** `forced` was "the real current minus my own part", taken from the last solved circuit. That counts the OTHER generators' pushes as if they were a battery, but they depend on this tick's speed. With n generators on one train the tick-to-tick gain passed 1 from n = 3: the train locked into a moving/stopped two-tick cycle, each generator was billed for its own load only, and the lamp got 2 to 4 times the crank's work (n = 3: 1.96, n = 8: 4.07). Two trains of motor + 4 generators feeding each other's motors ran away to 1e293 with no source. Two generators swung for ever (0.407 ↔ 0.413).
+
+- `solveCircuit` now publishes, for every part in a circuit that has a `feelsLoad` part (`shareOut`): `perVolt` (Map: generator index → current out of this part's + end per volt of that generator, one unit solve per generator, as `loadOn` did) and `fixed` (the current from the other pushers with every generator at 0). `load` is the generator's own `perVolt`.
+- `generatorBrake(world, x, y, {ratio, speedOf})` builds one brake from them: `perTurn` sums its own share and the shares of generators in the SAME spin group (× their ratio ÷ its own: they turn together), `pull` is `fixed` plus the shares of generators in OTHER groups × their speed now. `spinDrag` is no longer used by the generator (`generatorDrag` is gone); `forced` is gone.
+- `solveSpin` settles groups Gauss–Seidel style: it goes round the groups, each using the newest speeds of the others (starting from last tick's), until nothing changes by more than 1e-9 (`SETTLED`; at most `MAX_ROUNDS`). Only groups whose brake asked for another group's speed need more than one round. The linear part is symmetric and positive (a passive network), so it converges.
+- A brake's `perTurn` can now be negative (generators wired against each other); `balance` takes its far edge too.
+- Result: one crank, n generators in a row, one lamp: lamp ÷ crank work 0.75, 0.69, 0.63, 0.57, 0.46, 0.48 for n = 1, 2, 3, 4, 6, 8, steady from the first tick. Two generators + battery: steady (was flipping −1.242/+0.621 A). The twin trains stop within a second of losing the crank.
+
+**A motor behind a clicker.** `gearsSystem` re-solves the circuit with the NEW wiring but the generator's OLD (free-spinning) speed. The generator was then loaded correctly, but `motorSource` read that same record: one tick of free-speed current per beat. A crank geared ×8 into generator → clicker → motor → winch lifted the iron weight 3 cells for 0.23 of crank work (26×), which the same machine on plain wire cannot lift at all.
+
+- Motors still feel generators one tick late (the current of the last tick, which the generators were braked for). `gearsSystem` keeps each part's `perVolt` from the last tick (`signals.spin.felt`); a part whose `perVolt` changed is in `signals.spin.rewired`, and for that one tick `motorSource` uses only `fixed` (batteries, turbines). The generators' share starts the tick after.
+- Result: the ×8 clicker crane lifts 0 cells (as on plain wire); cranes that do lift never lift more than the crank's work (worst seen 0.26).
+- Cost: a motor fed by a generator pauses for one tick whenever its circuit is rewired.

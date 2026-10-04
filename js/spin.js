@@ -34,9 +34,11 @@
  *   spinDrag   a push back that grows with speed, like a generator
  *              making electricity (more lamps = harder to turn)
  *   spinBrake  a push back that only ever works AGAINST the turning (it
- *              can stop a group, never drive it), like the extra work a
- *              generator takes when a battery in its loop adds to the
- *              current it makes (see `balance`)
+ *              can stop a group, never drive it), like a generator making
+ *              electricity (more lamps = harder to turn; see `balance`).
+ *              It is told its group's ratios and can ask how fast any
+ *              block turns, because generators in one circuit load each
+ *              other (see generatorBrake in gears.js).
  *
  * A winch has a RATCHET (a little catch), like a real one: a load
  * hanging on its rope can never pull the gears round by itself. With
@@ -62,6 +64,12 @@ export const MIN_SPEED = 0.001;
 
 /** Sources whose pushes add up to less than this cancel each other out. */
 const BALANCED = 1e-9;
+
+/** Groups that lean on each other have settled when no speed changes by more than this in a round. */
+const SETTLED = 1e-9;
+
+/** The most rounds we go through groups that lean on each other (they nearly always settle much sooner). */
+const MAX_ROUNDS = 200;
 
 /**
  * Is this block part of the spinning world?
@@ -224,7 +232,7 @@ function balance(ahead, slowing, loads, brakes = []) {
    * @returns {number} that speed
    */
   const edge = (load) => Math.sign(load.pull) * load.limit;
-  const brakeEdges = brakes.flatMap((brake) => (brake.perTurn > 0 ? [0, -brake.pull / brake.perTurn] : [0]));
+  const brakeEdges = brakes.flatMap((brake) => (brake.perTurn !== 0 ? [0, -brake.pull / brake.perTurn] : [0]));
   const edges = [...new Set([...loads.map(edge), ...brakeEdges].filter(Number.isFinite).map((value) => value || 0))].sort((a, b) => a - b);
   for (let k = 0; k <= edges.length; k++) {
     const low = k === 0 ? -Infinity : edges[k - 1];
@@ -241,12 +249,15 @@ function balance(ahead, slowing, loads, brakes = []) {
       pull -= brake.pull;
       fading += brake.perTurn;
     }
+    // (`fading` is more than 0 in any machine we know of. If some odd mix
+    // of brakes made it 0 or less, there's no balance here: move on.)
+    if (fading <= 0) continue;
     const speed = (ahead + pull) / fading;
     if (speed > high) continue;     // faster than this stretch: try the next one
     if (speed < low) return low;    // a load or brake switches off (or on) right at this edge and holds it there
     return speed;
   }
-  return 0; // (never reached: the last stretch has no top)
+  return 0; // (only reached in that odd case: the last stretch has no top)
 }
 
 /**
@@ -365,21 +376,47 @@ export function solveSpin(world, blockInfo) {
    */
   const isDriven = (index) => drivenCells.has(index);
 
-  const cells = new Map();
-  let turning = false;
-  for (const { ratio, jammed, ahead, slowing } of groups) {
-    const loads = []; // loads (a hanging weight), at the first block
-    let drag = 0; // push-back that grows with speed (generators)
-    const brakes = []; // push-back that only works against the turning
-    for (const [index, r] of ratio) {
+  // What pushes back on each group. Loads and drags are worked out once.
+  // Brakes are asked again every time round (see below).
+  for (const group of groups) {
+    group.loads = []; // loads (a hanging weight), at the first block
+    group.drag = 0; // push-back that grows with speed
+    group.brakers = []; // the blocks with a spinBrake
+    for (const [index, r] of group.ratio) {
       const point = points.get(index);
       const load = loadOf(point.info.spinLoad?.(world, point.x, point.y, blockInfo, isDriven));
-      if (load.pull !== 0) loads.push({ pull: load.pull * r, limit: load.limit / Math.abs(r) });
-      drag += (point.info.spinDrag?.(world, point.x, point.y) ?? 0) * r * r;
-      const brake = point.info.spinBrake?.(world, point.x, point.y) ?? null;
+      if (load.pull !== 0) group.loads.push({ pull: load.pull * r, limit: load.limit / Math.abs(r) });
+      group.drag += (point.info.spinDrag?.(world, point.x, point.y) ?? 0) * r * r;
+      if (point.info.spinBrake) group.brakers.push({ point, r });
+    }
+  }
+
+  // Every block's speed so far. We start from last time's speeds: a good
+  // first guess, so a machine that's running steadily settles at once.
+  const speeds = new Map();
+  for (const index of points.keys()) speeds.set(index, world.signals?.spin?.cells?.get(index)?.speed ?? 0);
+  let asked = false; // did a brake ask how fast a block in ANOTHER group turns?
+  /**
+   * Work out one group's speed, from its sources, loads and brakes.
+   * @param {object} group - the group
+   * @returns {{speed: number, stalled: boolean}} its speed at the first block, and whether it's stalled
+   */
+  const settle = (group) => {
+    const { ratio, ahead, slowing, loads, drag } = group;
+    const brakes = [];
+    /**
+     * How fast a block is turning (for brakes that depend on other groups).
+     * @param {number} index - a spinning block's cell index
+     * @returns {number} turns per second
+     */
+    const speedOf = (index) => {
+      if (!ratio.has(index)) asked = true;
+      return speeds.get(index) ?? 0;
+    };
+    for (const { point, r } of group.brakers) {
+      const brake = point.info.spinBrake(world, point.x, point.y, { ratio, speedOf }) ?? null;
       if (brake) brakes.push({ pull: brake.pull * r, perTurn: brake.perTurn * r * r });
     }
-
     // The speed where the pushing and the pushing back balance:
     //   ahead − slowing × speed + pull − drag × speed − brakes = 0
     let speed = slowing > 0 ? balance(ahead, slowing + drag, loads, brakes) : 0;
@@ -398,12 +435,37 @@ export function solveSpin(world, blockInfo) {
     let stalled = false;
     if (driven ? Math.sign(speed) !== Math.sign(ahead) : slowing > 0 && hanging !== 0) stalled = true;
     if (stalled || !driven) speed = 0;
-    const stopped = jammed || stalled;
+    return { speed, stalled };
+  };
 
-    for (const [index, r] of ratio) {
+  // Groups can lean on each other: two generators in the same circuit,
+  // each on its own gears, both feel the current they make TOGETHER. So
+  // one group's speed depends on the other's. We go round all the groups
+  // again and again, each time using the newest speeds, until nothing
+  // changes any more. (That always settles: every generator only ever
+  // pushes back.) Groups that don't lean on any other need just one go.
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    let change = 0;
+    for (const group of groups) {
+      const { speed, stalled } = settle(group);
+      group.speed = speed;
+      group.stalled = stalled;
+      for (const [index, r] of group.ratio) {
+        const turns = group.jammed || stalled ? 0 : speed * r;
+        const own = Math.abs(turns) < MIN_SPEED ? 0 : turns; // also turns −0 into a plain 0
+        change = Math.max(change, Math.abs(own - speeds.get(index)));
+        speeds.set(index, own);
+      }
+    }
+    if (!asked || change < SETTLED) break;
+  }
+
+  const cells = new Map();
+  let turning = false;
+  for (const { ratio, jammed, slowing, stalled } of groups) {
+    for (const index of ratio.keys()) {
       const point = points.get(index);
-      const turns = stopped ? 0 : speed * r;
-      const own = Math.abs(turns) < MIN_SPEED ? 0 : turns; // also turns −0 into a plain 0
+      const own = speeds.get(index);
       if (Math.abs(own) > MIN_SPEED) turning = true;
       cells.set(index, {
         speed: own,

@@ -16,7 +16,9 @@
  * fields blocks have: `conducts`, `part`, `partWhen`, `electric`. A part
  * pushes with `part.push` volts, or, if it has `part.pushNow`, with
  * whatever that says right now (a turbine pushes harder with more steam).
- * A part with `part.feelsLoad` (a generator) is also told its "load".
+ * A part with `part.feelsLoad` (a generator) is also told its "load", and
+ * every part in its circuit is told how much of its current comes from
+ * each generator (see shareOut).
  */
 import { getBlock, inBounds } from './world.js';
 
@@ -219,31 +221,89 @@ function pushOut(point, side) {
 }
 
 /**
- * How much current flows through a part for each volt IT pushes, if it
- * were the only thing pushing in its circuit: its "load". Lots of lamps
- * side by side = a big load; nothing wired to it = no load. A generator
- * uses this to know how hard its lamps make it to turn, even before it
- * has started turning.
- * @param {number} index - the part's cell index
- * @param {{axis: string|null}} point - the part's point
- * @param {number[]} members - the cell indexes in its circuit
- * @param {object[]} links - that circuit's connections
- * @returns {number} current per volt (0 if it isn't in a loop)
+ * The current coming OUT of each part's + end (its top or right end), for
+ * one circuit whose connections have been solved. Negative means the
+ * current goes in there.
+ * @param {number[]} members - the cell indexes in this circuit
+ * @param {object[]} links - this circuit's connections (with their pushes)
+ * @param {Map<number, object>} points - every point
+ * @returns {Map<number, number>|null} part's cell index → current out of
+ *   its + end, or null if the circuit can't be solved
  */
-function loadOn(index, point, members, links) {
-  const alone = { push: 1, axis: point.axis };
-  const unit = links.map((link) => ({
-    ...link,
-    push: (link.a === index ? pushOut(alone, link.side) : 0) - (link.b === index ? pushOut(alone, OPPOSITE[link.side]) : 0),
-  }));
-  const voltages = solveVoltages(members, unit);
-  if (!voltages) return 0;
-  let most = 0;
-  for (const link of unit) {
-    if (link.a !== index && link.b !== index) continue;
-    most = Math.max(most, Math.abs((voltages.get(link.a) - voltages.get(link.b) + link.push) / link.resistance));
+function currentsOut(members, links, points) {
+  const voltages = solveVoltages(members, links);
+  if (!voltages) return null;
+  const out = new Map();
+  const other = new Map(); // the current out of the − end, for a part whose + end isn't joined to anything
+  for (const link of links) {
+    const current = (voltages.get(link.a) - voltages.get(link.b) + link.push) / link.resistance;
+    for (const [index, side, amount] of [[link.a, link.side, current], [link.b, OPPOSITE[link.side], -current]]) {
+      const point = points.get(index);
+      if (!point.part) continue;
+      if (side === plusSide(point.axis)) out.set(index, amount);
+      else other.set(index, amount);
+    }
   }
-  return most < 1e-9 ? 0 : most;
+  for (const index of members) {
+    if (!points.get(index).part) continue;
+    // What comes out of one end went in at the other.
+    const current = out.get(index) ?? -(other.get(index) ?? 0);
+    out.set(index, Math.abs(current) < 1e-9 ? 0 : current);
+  }
+  return out;
+}
+
+/**
+ * Work out, for one circuit with generators in it (parts marked
+ * `feelsLoad`), how much of every part's current each generator is
+ * answerable for. A circuit is "linear": the current anywhere is just
+ * the currents each pusher would make by itself, added up. So:
+ *
+ *   current out of a part's + end = fixed + perVolt(g1) × g1's push + perVolt(g2) × g2's push + ...
+ *
+ *   perVolt  the current each generator sends through this part, for
+ *            each volt that generator pushes
+ *   fixed    the current the OTHER pushers (batteries, turbines) send
+ *            through it, with every generator standing still
+ *
+ * The gears use these to find how hard each generator is to turn at any
+ * speed, and how a group of generators load each other, without having
+ * to solve the circuit again and again. A generator's own perVolt is its
+ * `load`: lots of lamps side by side = a big load, nothing wired to it
+ * = none, plain wire across its ends = a huge one.
+ * @param {number[]} members - the cell indexes in this circuit
+ * @param {object[]} links - this circuit's connections
+ * @param {Map<number, object>} points - every point
+ * @param {Map<number, object>} cells - every cell's record (gets `perVolt`, `fixed`, and `load` for generators)
+ * @returns {void}
+ */
+function shareOut(members, links, points, cells) {
+  const makers = members.filter((index) => points.get(index).part?.feelsLoad);
+  if (makers.length === 0) return;
+  const parts = members.filter((index) => points.get(index).part);
+  /**
+   * The connections again, with only some of the points pushing.
+   * @param {Function} pushOf - (cell index) => that point's push, in volts
+   * @returns {object[]} the connections
+   */
+  const pushedBy = (pushOf) => links.map((link) => ({
+    ...link,
+    push: pushOut({ push: pushOf(link.a), axis: points.get(link.a).axis }, link.side)
+      - pushOut({ push: pushOf(link.b), axis: points.get(link.b).axis }, OPPOSITE[link.side]),
+  }));
+  for (const index of parts) {
+    cells.get(index).perVolt = new Map();
+    cells.get(index).fixed = 0;
+  }
+  for (const maker of makers) {
+    const out = currentsOut(members, pushedBy((index) => (index === maker ? 1 : 0)), points);
+    for (const index of parts) cells.get(index).perVolt.set(maker, out?.get(index) ?? 0);
+    cells.get(maker).load = Math.abs(out?.get(maker) ?? 0);
+  }
+  const others = members.some((index) => !makers.includes(index) && points.get(index).push !== 0);
+  if (!others) return;
+  const out = currentsOut(members, pushedBy((index) => (makers.includes(index) ? 0 : points.get(index).push)), points);
+  for (const index of parts) cells.get(index).fixed = out?.get(index) ?? 0;
 }
 
 /**
@@ -429,7 +489,9 @@ function shortedByShape(battery, point, points, touching, cells, width) {
  *          (a motor's strength and a generator's push-back use this)
  *   spark  true for a short-circuited battery
  *   load   only for parts marked `part.feelsLoad` (generators): the current
- *          that flows through it for each volt it pushes (see loadOn)
+ *          that flows through it for each volt it pushes (see shareOut)
+ *   perVolt, fixed  only for parts in a circuit that has a generator in it:
+ *          how the current out of its + end is made up (see shareOut)
  *   group  which separate circuit it's in (a number), or null if it's a gap
  *
  * @param {object} world - the world
@@ -486,10 +548,7 @@ export function solveCircuit(world, blockInfo) {
     for (const index of members) cells.get(index).group = groupNumber; // which separate circuit it's in
     const inside = new Set(members);
     const groupLinks = links.filter((link) => inside.has(link.a));
-    for (const index of members) {
-      const point = points.get(index);
-      if (point.part?.feelsLoad) cells.get(index).load = loadOn(index, point, members, groupLinks);
-    }
+    shareOut(members, groupLinks, points, cells);
     if (!members.some((index) => points.get(index).push !== 0)) continue;
     const voltages = solveVoltages(members, groupLinks);
     if (!voltages) {

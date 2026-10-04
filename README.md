@@ -228,6 +228,11 @@ electricity: a dim lamp, not a dark one. A battery wired into a generator's
 loop does not spin it (a real generator would run as a motor; ours doesn't, so
 use the motor block for that). It only makes the generator very hard to turn
 the way that adds to the battery's current, and leaves it free the other way.
+Generators wired in a row each feel **all** the current they make together:
+three on one crank are much harder to turn than one, and never give out more
+than the crank puts in. A motor feels a generator's electricity one tick late,
+and skips a tick when its wiring changes (a clicker closing, a switch flipped):
+so a clicker can't hand it a burst of electricity nobody pushed for.
 
 **Nothing runs forever.** A generator turns at most 8 tenths of the work you
 put in into electricity (the rest becomes heat, like in a real one), so a motor
