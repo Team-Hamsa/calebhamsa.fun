@@ -595,7 +595,7 @@ const guide = {
   blocks: {
     gearSmall: { does: '8 teeth. Turns the gears next to it the other way.' },
     gearBig: { does: '16 teeth: half as fast as a small gear it touches. Big gears also touch corner to corner.' },
-    axle: { does: 'A rod. Carries turning in a straight line, the same way round.' },
+    axle: { does: 'A rod. Carries turning in a straight line, the same way round. It joins things at its two ends only: put a gear on the end of a shaft, not beside it.' },
     crankStop: { does: 'Hand power, strength 2! Red knob = stopped, green knob = turning.', use: 'stop → ↻ → ↺ → stop' },
     waterWheel: { does: 'Turns when water flows through it. More water = faster. A longer fall = stronger: put it where the water drops, like under a faucet. For a tall waterfall, stack wheels one under the other. In a level stream it turns, but too feebly to do much work.' },
     motor: { does: 'Turns electricity into turning: more electricity = faster and stronger. Put it in a loop with a battery. Move the battery to the other side of the loop and it turns the other way.' },

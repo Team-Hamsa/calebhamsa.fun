@@ -252,3 +252,55 @@ test('with nothing turning it at all, the catch holds any load (and nothing is "
   const withDynamo = spin(['KD']); // a hanging weight can't run a generator by itself
   assert.equal(withDynamo(1, 0).speed, 0);
 });
+
+/**
+ * Which way the axle at x, y faces in a picture.
+ * @param {string[]} rows - the picture
+ * @param {number} x - the axle's column
+ * @param {number} y - the axle's row
+ * @returns {'h'|'v'} the way it faces
+ */
+function axisAt(rows, x, y) {
+  const world = createWorld(rows[0].length, rows.length);
+  rows.forEach((row, yy) => [...row].forEach((letter, xx) => setBlock(world, xx, yy, LETTERS[letter])));
+  return spinAxis(world, x, y, blockInfo);
+}
+
+test('a gear put beside the end of an upright shaft doesn\'t swing the axle round and cut the shaft', () => {
+  const plain = spin(['.-.', '.-.', '.R.']);
+  assert.equal(plain(1, 0).speed, 1);
+  for (const rows of [['.-s', '.-.', '.R.'], ['s-.', '.-.', '.R.'], ['.R.', '.-.', '.-s'], ['.R.', '.-.', 's-.']]) {
+    const end = rows[0].includes('-') ? 0 : 2;
+    const at = spin(rows);
+    assert.equal(at(1, end).axis, 'v', rows.join('/'));
+    assert.equal(at(1, end).speed, 1, rows.join('/')); // the shaft still turns, all the way along
+    assert.equal(at(rows[end].indexOf('s'), end).speed, 0, rows.join('/')); // a gear beside a shaft doesn't mesh with it
+  }
+});
+
+test('a gear above or below the end of a sideways shaft doesn\'t swing it either', () => {
+  for (const rows of [['R--', '..s'], ['R--', 's..'], ['..s', 'R--'], ['--R', 's..']]) {
+    const y = rows[0].includes('-') ? 0 : 1;
+    const x = rows[y].indexOf('s') >= 0 ? rows[y].indexOf('s') : rows[1 - y].indexOf('s');
+    assert.equal(axisAt(rows, x, y), 'h', rows.join('/'));
+    assert.equal(spin(rows)(x, y).speed, 1, rows.join('/'));
+  }
+});
+
+test('an axle between one gear beside it and one gear above still picks sideways (the same rule as pipes)', () => {
+  assert.equal(axisAt(['.s.', '.-s'], 1, 1), 'h');
+  assert.equal(axisAt(['.s.', 's-.'], 1, 1), 'h');
+});
+
+test('an axle follows a crank (a shaft) rather than a gear beside it', () => {
+  assert.equal(axisAt(['.-s', '.R.'], 1, 0), 'v');
+  assert.equal(axisAt(['R-.', '.s.'], 1, 0), 'h');
+});
+
+test('an axle doesn\'t turn toward an axle that can\'t point back at it', () => {
+  // The right-hand column is an upright shaft of its own (gear, axle, gear). The
+  // axle at the top of the left shaft must stay upright, not reach for it.
+  const rows = ['..s', '.--', '.-s', '.R.'];
+  assert.equal(axisAt(rows, 1, 1), 'v');
+  assert.equal(spin(rows)(1, 1).speed, 1);
+});

@@ -226,3 +226,10 @@ What that means in the playground:
 A single wheel only catches the fall at the wheel (the cells either side of it); water that fell further before reaching it has already splashed its energy away. That under-counts a real tall overshot wheel, but never over-counts.
 
 `tests/gears.test.js` builds real loops (the issue's 3- and 5-wheel channel loop, level pipe rings with 3–6 wheels geared ×2, ×4 and ÷2, and tall loops with 3–6 stacked wheels in the down leg) and checks each one runs with its batteries and stops without them, with water conserved.
+
+## Addendum 2026-10-04: an axle at the end of a shaft stays in line with the shaft (issue #28)
+
+`spinAxis` put "one side → h" before "one up or down → v". So a gear placed beside the top axle of an upright shaft swung that axle sideways: it let go of the axle under it and the shaft was cut (top axle speed 0, the rest still 1).
+
+Added rule, only for an axle with exactly one spin neighbor on each line: each neighbor scores 2 if it is shaft (a hub, or an axle that could point back: not one forced to face across by neighbors on both of its other sides), 1 if it is a gear, 0 otherwise. The axle faces `v` only if its up/down score beats its sideways score; a tie stays `h` as before. The both-sides and both-ends cases, and pipes and wires, are untouched. A gear beside a shaft's end therefore simply doesn't connect.
+

@@ -69,8 +69,14 @@ export function isSpin(info) {
 
 /**
  * Which way an axle faces: sideways ('h') or up-down ('v'), from the
- * spinning blocks around it (the same rule as pipes and wires: both
- * sides, then above and below, then one side, then one above or below).
+ * spinning blocks around it. Like pipes and wires: both sides, then
+ * above and below, then one side, then one above or below.
+ *
+ * One extra rule, for an axle with just ONE neighbor on each line (the
+ * end of a shaft with something beside it): it stays in line with the
+ * SHAFT. Another axle that can point at it, or a crank, motor or other
+ * hub, counts for more than a gear. So putting a gear beside the end of
+ * a turning shaft never swings the axle round and cuts the shaft.
  * @param {object} world - the world
  * @param {number} x - the axle's column
  * @param {number} y - the axle's row
@@ -79,18 +85,47 @@ export function isSpin(info) {
  */
 export function spinAxis(world, x, y, blockInfo) {
   /**
-   * Is the cell dx, dy away a spinning block?
+   * The spin settings of the cell dx, dy away from px, py.
+   * @param {number} px - column to start from
+   * @param {number} py - row to start from
    * @param {number} dx - columns across
    * @param {number} dy - rows down
-   * @returns {boolean} true if it is
+   * @returns {object|undefined} its `spin` (undefined if it isn't a spinning block)
    */
-  const at = (dx, dy) => isSpin(blockInfo(getBlock(world, x + dx, y + dy)));
-  const left = at(-1, 0);
-  const right = at(1, 0);
-  const up = at(0, -1);
-  const down = at(0, 1);
+  const spinOf = (px, py, dx, dy) => blockInfo(getBlock(world, px + dx, py + dy))?.spin;
+  /**
+   * How much the neighbor dx, dy away looks like more of this axle's shaft:
+   * 2 for a shaft (a hub, or an axle that can point back at us), 1 for a
+   * gear, 0 for nothing (or an axle that has to face across us).
+   * @param {number} dx - columns across
+   * @param {number} dy - rows down
+   * @returns {number} 0, 1 or 2
+   */
+  const pulls = (dx, dy) => {
+    const spin = spinOf(x, y, dx, dy);
+    if (!spin) return 0;
+    if (spin.kind !== 'axle') return spin.kind === 'gear' ? 1 : 2;
+    // Would that axle have to face across us? It does if it has spinning
+    // blocks on both of its sides the other way (and not both our way).
+    const nx = x + dx;
+    const ny = y + dy;
+    const sideways = Boolean(spinOf(nx, ny, -1, 0)) && Boolean(spinOf(nx, ny, 1, 0));
+    const upDown = Boolean(spinOf(nx, ny, 0, -1)) && Boolean(spinOf(nx, ny, 0, 1));
+    const facesAcross = dx !== 0 ? upDown && !sideways : sideways;
+    return facesAcross ? 0 : 2;
+  };
+  const left = Boolean(spinOf(x, y, -1, 0));
+  const right = Boolean(spinOf(x, y, 1, 0));
+  const up = Boolean(spinOf(x, y, 0, -1));
+  const down = Boolean(spinOf(x, y, 0, 1));
   if (left && right) return 'h';
   if (up && down) return 'v';
+  if ((left || right) && (up || down)) {
+    // One neighbor on each line: stay in line with the shaft.
+    const across = Math.max(pulls(-1, 0), pulls(1, 0));
+    const along = Math.max(pulls(0, -1), pulls(0, 1));
+    return along > across ? 'v' : 'h';
+  }
   if (left || right) return 'h';
   if (up || down) return 'v';
   return 'h';
