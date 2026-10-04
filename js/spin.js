@@ -322,6 +322,42 @@ function climb(ahead, slowing, loads, brakes) {
 }
 
 /**
+ * Leap ahead to where the rounds in solveSpin are heading.
+ *
+ * Each round moves every group's speed a bit. If two rounds in a row
+ * move them almost the same (a long slow creep), we can work out where
+ * the creep ends and jump there: it's the spot where "how far a round
+ * moves the speeds" would shrink to nothing, if it keeps shrinking the
+ * way it did between the last two rounds. (Grown-ups call this Anderson
+ * acceleration, or the secant method.)
+ * @param {object[]} groups - the groups (their `speed` gets the leap)
+ * @param {Map<number, number>} speeds - every block's speed so far (gets the leap too)
+ * @param {number[]} from - the speeds this round started from, one for each group
+ * @param {number[]} moved - how far this round moved each of them
+ * @param {{from: number[], moved: number[]}} last - the same two lists for the round before
+ * @returns {void}
+ */
+function leap(groups, speeds, from, moved, last) {
+  let top = 0;
+  let bottom = 0;
+  moved.forEach((step, k) => {
+    const turn = step - last.moved[k]; // how the step itself changed from one round to the next
+    top += step * turn;
+    bottom += turn * turn;
+  });
+  if (bottom < 1e-30) return; // the steps didn't change: nothing to go by
+  const share = top / bottom;
+  if (!Number.isFinite(share)) return;
+  groups.forEach((group, k) => {
+    if (group.jammed) return;
+    const landed = from[k] + moved[k];           // where this round ended
+    const before = last.from[k] + last.moved[k]; // where the round before ended
+    group.speed = landed - share * (landed - before);
+    for (const [index, r] of group.ratio) speeds.set(index, group.speed * r || 0);
+  });
+}
+
+/**
  * Work out how every spinning block turns.
  *
  * Returns a record for every spinning block:
@@ -560,21 +596,44 @@ export function solveSpin(world, blockInfo) {
   // again and again, each time using the newest speeds, until nothing
   // changes any more. (That always settles: every generator only ever
   // pushes back.) Groups that don't lean on any other need just one go.
+  //
+  // While we go round we keep every speed exactly as worked out, however
+  // tiny. Only at the very end does "slower than MIN_SPEED" count as
+  // standing still. (Cutting tiny speeds off on the way made two machines
+  // exactly alike come out different: the first one turned, the second
+  // was cut to 0, and the rounds stopped there.)
+  let guess = null; // the last round: the speeds it started from, and how far it moved them
+  let leaping = true; // are the leaps ahead (see `leap`) still helping?
+  for (const group of groups) group.speed = speeds.get(group.ratio.keys().next().value) ?? 0; // the first block's speed is the group's
   for (let round = 0; round < MAX_ROUNDS; round++) {
+    const from = groups.map((group) => group.speed);
     let change = 0;
     for (const group of groups) {
       const { speed, stalled, blockedWay } = settle(group);
-      group.speed = speed;
+      group.speed = group.jammed || stalled ? 0 : speed;
       group.stalled = stalled;
       group.blockedWay = group.jammed ? 0 : blockedWay;
       for (const [index, r] of group.ratio) {
-        const turns = group.jammed || stalled ? 0 : speed * r;
-        const own = Math.abs(turns) < MIN_SPEED ? 0 : turns; // also turns −0 into a plain 0
+        const own = group.speed * r || 0; // "|| 0" turns −0 into a plain 0
         change = Math.max(change, Math.abs(own - speeds.get(index)));
         speeds.set(index, own);
       }
     }
     if (!asked || change < SETTLED) break;
+    // Groups that lean hard on each other creep toward the answer in ever
+    // smaller steps. So we look at how the last two rounds went and LEAP
+    // ahead to where the steps are heading. The next round checks the
+    // leap like any other guess, so a bad leap can't give a wrong answer.
+    const moved = groups.map((group, k) => group.speed - from[k]);
+    if (leaping && guess && round < MAX_ROUNDS - 1) {
+      const size = Math.hypot(...moved);
+      if (size > guess.size * 2) leaping = false; // the leaps are making it worse: plain rounds from here on
+      else leap(groups, speeds, from, moved, guess);
+    }
+    guess = { from, moved, size: Math.hypot(...moved) };
+  }
+  for (const [index, speed] of speeds) {
+    if (Math.abs(speed) < MIN_SPEED) speeds.set(index, 0);
   }
 
   const cells = new Map();

@@ -328,3 +328,11 @@ An `eitherWay` wheel took the sign of the group's other sources. In `..F / .#OEM
 - A source may be marked `echo`: its push comes from the turning of its own group. `motorSource` sets it when the motor's `perVolt` names a generator among the group's `members`.
 - `solveSpin` points an `eitherWay` source, in order: by the push of the sources that are neither `eitherWay` nor `echo` (as before: wheels on one shaft agree, mirrored builds mirror); else the way that wheel turned on the last tick; else (standing still) by any push there is; else its own default (↻).
 - Result: that build turns steadily at +0.444 (+0.544 with a taller fall), the motor acting as a brake; with a lamp in place of the motor +1.022 as before.
+
+## Addendum 2026-10-04 (round 1 review): groups that lean on each other settle on the same answer whichever comes first (issue #17 review)
+
+Two identical rows, each a crank geared ×8 into a generator, the generators joined by plain wire: the top generator turned at −0.0348 and the bottom one stood still, for ever (×16: 0.0175 and 0). With such stiff coupling each Gauss–Seidel round only closes about 1% of the gap, so 200 rounds were not enough; and `MIN_SPEED` was applied inside every round, which cut the second group's small speed to exactly 0 and made the lopsided state a fixed point.
+
+- The rounds in `solveSpin` now work on exact speeds. `MIN_SPEED` is applied once, after the last round.
+- After each round, `leap` extrapolates from the last two rounds (Anderson acceleration with a memory of one: the secant step on "how far a round moved the speeds"). The next round checks the leap like any other guess, and the loop still only ends on a plain round that changes nothing (or at `MAX_ROUNDS`), so the answer is always a fixed point of the plain rounds. If a round after a leap moves the speeds more than twice as far as the round before, leaping is switched off for that solve.
+- Result: both generators turn at 0.0175 (×8) and 0.0087 (×16) from the first tick. In 400 random multi-generator circuits the most rounds needed went from 31 to 27; none reaches `MAX_ROUNDS`.

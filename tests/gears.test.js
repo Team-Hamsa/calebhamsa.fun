@@ -1214,3 +1214,19 @@ test('a water wheel with water falling straight through keeps turning ONE way wh
     assert.ok(Math.max(...seen) - Math.min(...seen) < 1e-6, `${rows.join('/')}: the wheel's speed wobbles between ${Math.min(...seen)} and ${Math.max(...seen)}`);
   }
 });
+
+test('two cranks alike, each geared up into a generator, the two generators joined by plain wire: both turn just as fast', () => {
+  // Nothing is different between the top machine and the bottom one, so
+  // neither generator may do all the turning while the other stands still.
+  for (const count of [3, 4]) {
+    const train = `R${'Gs-'.repeat(count - 1)}Gs`;
+    const gap = '.'.repeat(train.length);
+    for (const middle of ['W', 'L']) {
+      const world = run([`${gap}WWW`, `${train}E.${middle}`, `${gap}W.W`, `${gap}W.W`, `${train}E.W`, `${gap}WWW`], 3);
+      const top = spinAt(world, train.length, 1);
+      const bottom = spinAt(world, train.length, 4);
+      assert.ok(Math.abs(top) > 0.005, `×${2 ** count} ${middle}: the top generator only turns ${top}`);
+      assert.ok(Math.abs(Math.abs(top) - Math.abs(bottom)) < 1e-6, `×${2 ** count} ${middle}: top ${top}, bottom ${bottom}`);
+    }
+  }
+});
