@@ -343,3 +343,14 @@ Rule 2 of the drawing ("room only where the whole sideways stretch is wet or is 
 - `source` of water drawn on a shelf is `from`, so DIG there takes the scoop from the real water beside it.
 - Result: the stepped tanks are drawn exactly (drawn = real at every pour, level across the step); the 300 random tanks: 1 under-drawn by more than half a cell (a pocket under a lid, as documented), 1.1 cells missing in all, none over-drawn.
 - Side effect: a brim-full shaft whose rim is level ground between walls now shows its squished-in extra as a thin film on that ground, instead of not at all. A rim with open air beside it is unchanged (nothing drawn above it).
+
+
+## Addendum 2026-10-04 (round 2 review): a brim is a lid for all the water joined to it (issue #20 review)
+
+A settled water tower joined by a pipe to an open spout one cell up (`#~~#......` ×7, `#~~#..P...`, `#~~PPPP...`, 18 cells) was drawn with a 0.2-cell blob of water standing in the open air over the pipe's mouth, with nothing beside it and a 1.4-cell drop next to it, and the tower was drawn 0.2 higher than the pool it is joined to (tower 2.2, pool 2.0). Two causes:
+
+- **Room in a basin nobody can fill.** The cell over the mouth counted as contained because the dry ground beside it lies in a walled basin whose puddle "has room" all the way up. Room now also needs reach: a column has room in a cell only if `real surface + all the extra of its body` gets at least to that cell's floor (`reachOf`; a shelf goes by the column it is drawn from). A cell refused for that reason is a hole for its stretch, like any other dry cell with nothing under it.
+- **No brim.** New step 3b: a column whose highest cell (its top, or its last room cell) has open, dry air above that is not room is a **brim**, at the height of its lid. Still water can't stand higher than its lowest brim anywhere, so for every column of the same body: if its real surface is at or below the brim, its lid is cut down to the brim; if it is above (water on its way out), its room is scaled by `(surface − brim) ÷ NEAR`, capped at 1, so a tower emptying through a spout is still drawn as tall as it is and nothing jumps as it comes down to the brim.
+- Result: that scene is drawn level at 2.0 in the tower, the pool and the mouth, with nothing over the mouth and nothing over the ground (mirrored too); 17.40 of its 18.00 cells are drawn. The missing 0.6 is squished in below the brim: the same leftover as under a lid ("looks full, holds a bit more"), now also at a brim.
+- Cost, measured on the 300 random settled stone-and-pipe tanks of the round 1 addendum: 10 are under-drawn by more than half a cell (13.7 cells in all; was 1 and 1.1), none over-drawn. Every one looked at is a pool that is full to a rim it would spill over, with more squished in below; before, that extra was drawn as a slab standing over the rim and over the empty space beside it.
+

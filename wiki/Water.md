@@ -12,8 +12,9 @@ that squish is how the game makes water push up a U-tube. The picture puts the
 squished-in water back on top, so what you see is how much there is: on a step
 or ledge inside the tank too, once the level gets that high. One thing
 still isn't right: a tank that **looks** brim-full can swallow a bit more water
-before it spills over, and a pipe that ends only just below the drawn surface
-may stay dry. That needs a new water engine: issue #30.)
+before it spills over (so can a tower joined to an open spout: it is drawn
+level with the spout, like real water, however much is squished in below),
+and a pipe that ends only just below the drawn surface may stay dry. That needs a new water engine: issue #30.)
 
 **Water has to fall to give its push.** Water up high holds energy, like a
 ball at the top of a slide. It gives that push away on the way down (to a

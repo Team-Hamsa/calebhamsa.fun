@@ -354,8 +354,17 @@ const NEAR = 1;
  *      standing on it, level with the rest (it is taken from the columns
  *      beside it, so the total stays right). Under a lid (a sealed full tank,
  *      or a full shaft) there is nowhere to draw it, so it isn't drawn:
- *      the tank just looks full. That is the one place where the picture
- *      still shows less water than there is.
+ *      the tank just looks full.
+ *   4. A BRIM works like a lid for all the water joined to it. A brim is
+ *      a surface that is as high as it can go: the rim of a full tank,
+ *      the open mouth of a pipe. Any higher and the water would run out
+ *      there, so no surface of that water is drawn higher than the brim:
+ *      a tower joined to a spout is drawn level with the spout. And a
+ *      dry basin only counts as somewhere water could stand as high as
+ *      its own water could ever fill it.
+ *
+ * Under a lid and at a brim are the two places where the picture still
+ * shows less water than there is.
  *
  * The machines (pipes, wheels, pumps, sand) still only feel the REAL
  * water. `source` says, for a cell that is drawn with more water than
@@ -448,6 +457,22 @@ export function waterPicture(world, blockInfo, sides = allOpenSides(world, block
     bodies += 1;
   }
   for (const column of columns) column.body = bodyOf[column.top];
+  // How much extra each body has in all. A surface can never be drawn
+  // higher than that above where it really is: there isn't the water.
+  const extraOf = new Float64Array(bodies);
+  for (let index = 0; index < size; index++) {
+    if (wet(index) && water[index] > FULL) extraOf[bodyOf[index]] += water[index] - FULL;
+  }
+  /**
+   * The highest a column could possibly be drawn: its real surface plus
+   * all the extra of its body. (A shelf goes by the column it is drawn from.)
+   * @param {object} column - a column
+   * @returns {number} that height, in cells from the bottom of the world
+   */
+  const reachOf = (column) => {
+    const real = column.shelf ? columns[columnOf[column.from]] : column;
+    return real.surface + extraOf[real.body];
+  };
 
   // --- 3. Room. Where could each column's surface be drawn higher? Row
   // by row from the bottom: a dry cell has room if it is straight above
@@ -461,7 +486,13 @@ export function waterPicture(world, blockInfo, sides = allOpenSides(world, block
   // row has more water falling on top of it). Such a cell starts a column
   // of its own with no real water in it (a "shelf"); the water drawn
   // beside it is levelled out over it further down (see 4b).
+  //
+  // And a column only has room as high as its water could ever be drawn
+  // (reachOf). So a puddle at the bottom of a big dry basin does not make
+  // the whole basin count as "about to fill up", and water is not drawn
+  // standing on the basin's rim with nothing beside it.
   const roomOf = new Int32Array(size).fill(-1); // which column may be drawn up into each dry cell
+  const tooHigh = new Uint8Array(size); // dry cells a column would have room in, if only it had the water
   const pools = []; // the stretches where drawn water has to be levelled out over a shelf, bottom row first
   for (let y = height - 1; y >= 0; y--) {
     const maybe = new Int32Array(width).fill(-1);
@@ -479,6 +510,10 @@ export function waterPicture(world, blockInfo, sides = allOpenSides(world, block
         if (columns[columnOf[below]].lid >= floorOf(below) + 1) maybe[x] = columnOf[below];
       }
       else if (roomOf[below] >= 0) maybe[x] = roomOf[below];
+      if (maybe[x] >= 0 && reachOf(columns[maybe[x]]) < floorOf(index) - 1e-9) {
+        maybe[x] = -1;
+        tooHigh[index] = 1;
+      }
     }
     // Walk along each stretch of cells that are open to each other sideways.
     let x = 0;
@@ -534,6 +569,33 @@ export function waterPicture(world, blockInfo, sides = allOpenSides(world, block
       }
       x = end + 1;
     }
+  }
+
+  // --- 3b. Brims. A surface with open air above it that is NOT room
+  // (water drawn there would run off sideways) is a brim: the rim of a
+  // full tank, the open mouth of a pipe. Still water joined to a brim
+  // can't stand higher than the brim anywhere: it would run out there
+  // first. So a brim works like a lid for its whole body of water: no
+  // column of it is drawn higher than its lowest brim. (That is the other
+  // place where the picture shows less water than there is: the extra
+  // squished in below a brim has nowhere true to be drawn.)
+  //
+  // Water that stands HIGHER than the brim is on its way out (a tower
+  // emptying through a spout). It is still drawn as tall as it is, but
+  // less and less so as it comes down to within NEAR of the brim, so
+  // nothing jumps when it gets there.
+  const brimOf = new Float64Array(bodies).fill(Infinity);
+  for (const column of columns) {
+    if (column.shelf) continue;
+    const last = column.room.length > 0 ? column.room[column.room.length - 1] : column.top; // its highest cell
+    const above = joined(last, 'up');
+    if (above >= 0 && !wet(above) && roomOf[above] < 0 && !tooHigh[above]) brimOf[column.body] = Math.min(brimOf[column.body], column.lid);
+  }
+  for (const column of columns) {
+    if (column.shelf || column.lid <= column.surface) continue;
+    const brim = brimOf[column.body];
+    if (column.surface <= brim) column.lid = Math.min(column.lid, brim);
+    else column.lid = column.surface + (column.lid - column.surface) * clamp((column.surface - brim) / NEAR, 0, 1);
   }
 
   // --- 4. Put the extra back on top. An over-full cell is squished by the

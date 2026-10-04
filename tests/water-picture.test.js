@@ -594,3 +594,33 @@ test('a ledge only counts beside calm water: no film is drawn on the floor besid
   const { shown } = waterPicture(world, blockInfo);
   for (let x = 2; x <= 6; x++) assert.equal(drawnHeight(world, shown, x), 0, `water drawn in column ${x}`);
 });
+
+test('a tower joined by a pipe to an open spout: no water is drawn standing in the air over the spout, and the tower is drawn level with the pool beside it', () => {
+  // The pipe runs from the foot of the tower, along the ground and up one
+  // cell to an open mouth. Water that comes out stands in a pool on top of
+  // the pipes (between the tower's wall and the pipe's riser) and runs
+  // off over the ground on the right. When it has all settled, the
+  // tower, the pool and the mouth are level: the mouth is as high as the
+  // water can stand, like the rim of a full glass.
+  const rows = [];
+  for (let y = 0; y < 7; y++) rows.push('#~~#...........');
+  rows.push('#~~#..P........');
+  rows.push('#~~PPPP........');
+  rows.push('###############');
+  for (const picture of [rows, mirrored(rows)]) {
+    const world = worldFrom(picture);
+    const flip = picture === rows ? (x) => x : (x) => 14 - x;
+    run(world, 2500);
+    const { shown } = waterPicture(world, blockInfo);
+    const at = (x, y) => shown[y * world.width + flip(x)];
+    assert.ok(world.fluid.water[8 * world.width + flip(1)] > 1.05, 'the water at the foot of the tower is squished');
+    assert.equal(at(6, 6), 0, 'nothing is drawn in the open air over the pipe\'s mouth');
+    const tower = drawnHeight(world, shown, flip(1));
+    const pool = 1 + drawnHeight(world, shown, flip(4)) - at(4, 8); // the pool stands on a pipe, one cell up
+    assert.ok(Math.abs(tower - drawnHeight(world, shown, flip(2))) < 1e-6, 'the tower is level across');
+    assert.ok(Math.abs(tower - pool) < 0.02, `the tower is drawn ${tower} tall, the pool beside it ${pool}`);
+    // Nothing is drawn that isn't there.
+    assert.ok(total(shown) <= total(world.fluid.water) + 1e-6, `drawn ${total(shown)} of ${total(world.fluid.water)}`);
+    for (let x = 7; x < 15; x++) assert.equal(at(x, 7), 0, 'and nothing floats over the ground');
+  }
+});
