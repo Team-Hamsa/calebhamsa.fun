@@ -18,7 +18,7 @@ import { REFERENCE_CURRENT } from '../js/circuit.js';
 const LETTERS = {
   '.': 'air', '#': 'stone', W: 'wire', L: 'lamp', B: 'battery', s: 'gearSmall', G: 'gearBig',
   '-': 'axle', R: 'crankCW', Q: 'crankCCW', M: 'motor', E: 'generator', O: 'waterWheel', F: 'faucet',
-  P: 'pipe', '^': 'pumpUp', T: 'turbine', D: 'drain',
+  P: 'pipe', '^': 'pumpUp', T: 'turbine', D: 'drain', K: 'clicker', '/': 'switchClosed',
 };
 
 /**
@@ -535,6 +535,79 @@ test('a tall loop (pump up one side, stacked wheels down the other) winds down w
   for (const [count, chain, batteries] of machines) {
     const { world, pump, wheels } = tallLoop(count, chain, batteries);
     assertWindsDown(`${count} stacked wheels, gears ${chain}, ${batteries} batteries`, world, pump, wheels);
+  }
+});
+
+test('a clicker (or a tapped switch) in a generator\'s loop gives no free electricity: the lamps never get more than 8 tenths of the crank\'s work', () => {
+  for (const gate of ['K', '/']) {
+    for (const chain of ['', 'Gs', 'Gs-Gs']) { // the generator geared ×1, ×2, ×4
+      for (const lamps of [1, 3, 6]) {
+        const at = 1 + chain.length; // the generator's column
+        const width = at + 4 + lamps;
+        const world = build([
+          `${'.'.repeat(at)}W${gate}${'W'.repeat(lamps + 1)}`.padEnd(width, '.'),
+          `R${chain}E..${'L'.repeat(lamps)}`.padEnd(width, '.'),
+          `${'.'.repeat(at)}${'W'.repeat(lamps + 3)}`.padEnd(width, '.'),
+        ]);
+        let crankWork = 0;
+        let lampEnergy = 0;
+        for (let t = 0; t < 640; t++) { // 40 whole on-and-off beats
+          // A hand tapping the switch: on for 5 ticks, off for 3.
+          if (gate === '/') setBlock(world, at + 1, 0, t % 8 < 5 ? 'switchClosed' : 'switchOpen');
+          more(world, 1);
+          const speed = spinAt(world, 0, 1);
+          crankWork += CRANK_STRENGTH * (1 - speed / CRANK_SPEED) * speed;
+          for (let i = 0; i < lamps; i++) lampEnergy += amps(world, at + 3 + i, 1) ** 2;
+        }
+        const what = `${gate} gears "${chain}" ${lamps} lamps: lamps ${lampEnergy}, crank ${crankWork}`;
+        assert.ok(lampEnergy > 1, what); // (it does light)
+        assert.ok(lampEnergy <= (GENERATOR_GAIN / GENERATOR_TORQUE) * crankWork, what);
+      }
+    }
+  }
+});
+
+/**
+ * Check a loop machine that has a clicker in its wiring: take every
+ * battery away part way through, and soon nothing runs any more.
+ * @param {string} what - the machine's name, for messages
+ * @param {object} world - the world, batteries placed
+ * @param {number[]} pump - the pump's [x, y]
+ * @param {number[][]} wheels - every wheel's [x, y]
+ * @returns {void}
+ */
+function assertClickerWindsDown(what, world, pump, wheels) {
+  const water = allWater(world);
+  assert.equal(getBlock(world, 2, 0), 'wire');
+  setBlock(world, 2, 0, 'clicker');
+  let most = 0;
+  for (let t = 0; t < 326; t++) {
+    more(world, 1);
+    most = Math.max(most, amps(world, ...pump));
+  }
+  assert.ok(most > 0.15, `${what}: the battery should run the pump (${most})`);
+  world.cells.forEach((name, index) => {
+    if (name === 'battery') setBlock(world, index % world.width, Math.floor(index / world.width), 'wire');
+  });
+  more(world, 2000);
+  for (let i = 0; i < 64; i++) {
+    more(world, 1);
+    assert.ok(amps(world, ...pump) < 0.01, `${what}: the pump still gets ${amps(world, ...pump)} with no battery`);
+    for (const [x, y] of wheels) assert.equal(spinAt(world, x, y), 0, `${what}: the wheel at ${x},${y} still turns`);
+  }
+  assert.ok(Math.abs(allWater(world) - water) < 1e-6, `${what}: water went from ${water} to ${allWater(world)}`);
+}
+
+test('a clicker in the loop doesn\'t keep a pump and wheel machine going without its battery, however high it is geared', () => {
+  for (const count of [3, 4, 6]) {
+    for (const chain of ['Gs-Gs-Gs-Gs-GsE', 'Gs-Gs-Gs-Gs-Gs-GsE']) { // geared up ×32 and ×64
+      const { world, pump, wheels } = levelRing(count, chain);
+      assertClickerWindsDown(`clicker ring of ${count} wheels, gears ${chain}`, world, pump, wheels);
+    }
+  }
+  for (const [count, chain, batteries] of [[3, 'Gs-Gs-Gs-Gs-GsE', 2], [5, 'Gs-Gs-Gs-Gs-Gs-GsE', 3]]) {
+    const { world, pump, wheels } = tallLoop(count, chain, batteries);
+    assertClickerWindsDown(`clicker tall loop of ${count} wheels, gears ${chain}`, world, pump, wheels);
   }
 });
 

@@ -242,3 +242,11 @@ Added rule, only for an axle with exactly one spin neighbor on each line: each n
 ## Addendum 2026-10-04 (later): a hub or loose axle beside a shaft's end doesn't cut it either (issue #28 review)
 
 The score above tied at 2–2 when the block beside the end was a hub (winch, generator, motor, stopped crank, water wheel) or a loose axle, and the tie went to `h`: the shaft was still cut (top axle 1 → 0). An axle neighbor that can point back AND has another spin block behind it (a shaft that goes on) now scores 3. Hub against hub (an axle between a crank below and a winch beside) still ties and stays `h`, the pipe rule: there is no shaft there to tell which line is meant.
+
+## Addendum 2026-10-04 (later): a generator feels this tick's wiring (issue #17 review, clicker loophole)
+
+Systems run water → gears → lift → electric, and `generatorDrag` read the electric record from the END of the last tick. While a clicker (or switch) was open the generator had no drag and free-wheeled at its source's top speed; on the tick the clicker closed, the circuit was solved with that free-wheel speed, so one tick of full-voltage current flowed that no torque had been charged for. Lamps got up to 63× the crank's work, and a level pump/wheel ring geared ×32 ran forever on 20 A pulses with no battery.
+
+- `gearsSystem` (and `refreshSpin`) now call `refreshElectric` first. It only re-solves when the circuit key changed (blocks, clicker beat, pushes), so on the closing tick the generator's drag comes from the closed circuit, the group slows at once, and `electricSystem` then solves with the loaded speed.
+- Result: lamp ÷ crank work is the same with and without a clicker (0.49–0.75); the ×32 and ×64 clicker rings and tall loops stop without their batteries.
+- Still true: the pump and motors read the electricity of the tick before (water runs first). That lag is the same on the closing and the opening tick, and the current they read was paid for.

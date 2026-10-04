@@ -19,6 +19,7 @@ import { solveSpin, MIN_SPEED } from '../spin.js';
 import { swapBlock } from '../world.js';
 import { PUSH_STEP, REFERENCE_CURRENT, plusSide, roundPush } from '../circuit.js';
 import { DROP_POWER } from '../fluids.js';
+import { refreshElectric } from './electric.js';
 
 /**
  * How fast a crank turns, in turns per second.
@@ -155,10 +156,11 @@ export function generatorPush(world, x, y) {
  * harder to turn, and one whose ends are joined by plain wire (a short
  * circuit) is very hard to turn, for as long as the wire is there.
  *
- * Nothing is remembered from before: everything comes from the last
- * tick's electricity (world.signals.electric), which is worked out again
- * whenever the wiring changes. So fixing the wiring always fixes the
- * generator.
+ * Nothing is remembered from before: everything comes from the
+ * electricity (world.signals.electric), which gearsSystem works out again
+ * at the start of every tick if the wiring changed (a block, a switch, a
+ * clicker's beat). So fixing the wiring always fixes the generator, and
+ * closing a switch loads the generator on that very tick.
  *
  *   • While it turns, we use the REAL current through it (which the
  *     circuit worked out from its push): current ÷ push × volts per turn.
@@ -181,7 +183,7 @@ export function generatorDrag(world, x, y) {
   const speed = world.signals.spin?.cells?.get(index)?.speed ?? 0;
   // The current coming out of its + end (negative = going in there).
   const current = electric.arms[plusSide(electric.axis)] ?? 0;
-  // Last tick's push, rounded the same way the circuit rounds it (partPush).
+  // The push it was last worked out with, rounded the same way the circuit rounds it (partPush).
   const push = Math.abs(roundPush(speed * GENERATOR_GAIN));
   if (push > 0) {
     const perVolt = Math.max(0, current * Math.sign(speed)) / push;
@@ -258,6 +260,7 @@ export function wheelSource(world, x, y) {
 export function refreshSpin(world, blockInfo) {
   const blocks = world.cells.join(',');
   if (world.signals.spin?.blocks === blocks) return;
+  refreshElectric(world, blockInfo); // the generators must feel the wiring as it is NOW (see gearsSystem)
   const wheelFlow = world.signals.spin?.wheelFlow ?? new Map();
   const wheelWork = world.signals.spin?.wheelWork ?? new Map();
   const solved = keepAngles(solveSpin(world, blockInfo), world.signals.spin?.cells, false);
@@ -309,6 +312,12 @@ export function gearsSystem(world, blockInfo) {
     const lastWork = workBefore.get(index) ?? 0;
     wheelWork.set(index, lastWork + ((waterWork.get(index) ?? 0) - lastWork) / WHEEL_SMOOTHING);
   });
+  // Generators and motors must feel the circuit as it is on THIS tick: a
+  // clicker that has just closed, a switch just flipped. So we work the
+  // electricity out again first if its wiring changed. (Otherwise a
+  // generator would spin free while its clicker is open, and then give
+  // one tick of full-speed electricity that nothing had to push for.)
+  refreshElectric(world, blockInfo);
   // The wheels read these two maps while solveSpin works out the turning.
   const cellsBefore = world.signals.spin?.cells;
   world.signals.spin = { ...world.signals.spin, wheelFlow, wheelWork };
