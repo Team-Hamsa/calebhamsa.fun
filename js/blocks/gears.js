@@ -95,9 +95,9 @@ const MIN_SOURCE = 0.05;
 
 /**
  * A motor takes up a change in its current over a few ticks: each tick
- * it moves 1 ÷ FEED_SMOOTHING of the way (half). See generatorFeed.
+ * it moves 1 ÷ FEED_SMOOTHING of the way (a quarter). See generatorFeed.
  */
-const FEED_SMOOTHING = 2;
+const FEED_SMOOTHING = 4;
 
 /** A smoothed generator current smaller than this is dropped (it would halve for ever and never reach 0). */
 const FEED_MIN = 1e-6;
@@ -248,7 +248,7 @@ export function generatorBrake(world, x, y, group) {
  * A motor with a generator in its circuit feels the electricity A
  * LITTLE LATE: it goes by the current that flowed at the speeds the
  * generators turned on the tick before, the current they were pushed
- * back for. And it takes up a change in that current half at a time
+ * back for. And it takes up a change in that current a quarter at a time
  * (see generatorFeed), a bit like a real motor's coil, which can't
  * change its current in an instant.
  *
@@ -264,12 +264,14 @@ export function generatorBrake(world, x, y, group) {
  * The smoothing matters when the motor sits on the same gears as its
  * generators: more current slows the gears, which makes less current,
  * which speeds them up again... Taken up all at once, a tick late, that
- * never settles: the gears flicker faster-slower-faster for ever. Half
- * at a time, it settles.
+ * never settles: the gears flicker faster-slower-faster for ever. A
+ * quarter at a time, it settles.
  *
  * A motor with only a whisper of current (less than MIN_SOURCE) fades
- * out smoothly instead of switching off with a snap (see FADE below),
- * for the same reason: a snap is something to flicker around.
+ * out smoothly instead of switching off with a snap (see fadeIn), for
+ * the same reason: a snap is something to flicker around. That goes for
+ * its push AND for how hard it holds back gears that something else is
+ * turning faster than the motor would go.
  *
  * `echo` tells spin.js that this motor is wired to a generator on its
  * OWN gears. Its push is then partly an echo of the way those gears were
@@ -290,23 +292,32 @@ export function motorSource(world, x, y, members) {
   const out = cell.perVolt ? world.signals.spin?.fed?.get(index) ?? 0 : cell.arms[plusSide(cell.axis)] ?? 0;
   // The real current, not `level` (that stops at MAX_LEVEL, only so lamps
   // don't get too bright): five batteries make a motor five times as strong.
-  const amount = fadeIn(Math.abs(out) / REFERENCE_CURRENT);
+  // Its top speed goes by all of the current. Its STRENGTH fades away
+  // below MIN_SOURCE (see fadeIn). So how hard it holds back gears that
+  // something else turns faster than its top speed (strength ÷ top
+  // speed, see spin.js) fades away too, instead of switching off with a snap.
+  const raw = Math.abs(out) / REFERENCE_CURRENT;
+  const amount = fadeIn(raw);
   if (amount <= 0) return null;
   const echo = Boolean(cell.perVolt && members?.some((other) => Math.abs(cell.perVolt.get(other) ?? 0) > 1e-9));
-  return { speed: Math.sign(out) * amount * MOTOR_SPEED, strength: amount * MOTOR_STRENGTH, echo };
+  return { speed: Math.sign(out) * raw * MOTOR_SPEED, strength: amount * MOTOR_STRENGTH, echo };
 }
 
 /**
- * How much of a motor's current counts. All of it from MIN_SOURCE up.
- * Below that it fades away quickly but smoothly, down to nothing at half
- * of MIN_SOURCE: so a motor with hardly any current still stops, but
- * there is no sudden step for the gears to flicker around.
+ * How much of a motor's current counts toward its STRENGTH. All of it
+ * from MIN_SOURCE up. Below that the strength fades away faster than
+ * the current does (half the current, a quarter of the strength), a bit
+ * like a real motor's friction eating a bigger share of a small push.
+ * It fades smoothly all the way down, so there is no sudden step for
+ * the gears to flicker around. A motor too feeble to turn anything fast
+ * enough to see (MIN_SPEED) has no power at all.
  * @param {number} amount - the current ÷ REFERENCE_CURRENT (0 or more)
  * @returns {number} the amount that counts (0 = no power)
  */
 function fadeIn(amount) {
   if (amount >= MIN_SOURCE) return amount;
-  return Math.max(0, 2 * amount - MIN_SOURCE);
+  if (amount * MOTOR_SPEED < MIN_SPEED) return 0;
+  return (amount * amount) / MIN_SOURCE;
 }
 
 /**

@@ -1268,7 +1268,7 @@ test('a clicker gives a motor no burst of battery current that a generator in th
     const current = Math.max(before, after);
     before = after;
     const speed = Math.abs(spinAt(world, 11, 1));
-    // (Not in the first ticks after the crank starts: the motor takes up the change half at a time.)
+    // (Not in the first ticks after the crank starts: the motor takes up the change a quarter at a time.)
     if (t > 48) assert.ok(speed <= current / REFERENCE_CURRENT + 1e-9, `tick ${t}: the motor turns ${speed} on a current of ${current}`);
     assert.ok(lampHeat <= crankWork + batteryWork + 1e-9, `tick ${t}: lamp heat ${lampHeat} from crank work ${crankWork} and battery work ${batteryWork}`);
   }
@@ -1338,4 +1338,56 @@ test('tapping a crank on and off never gets more out of a battery\'s motor than 
     assert.ok(lampHeat > 0.1, `beat ${beat}: the lamp does light (${lampHeat})`);
     assert.ok(lampHeat <= crankWork + batteryWork, `beat ${beat}: lamp heat ${lampHeat} from crank work ${crankWork} and battery work ${batteryWork}`);
   }
+});
+
+test('a motor with hardly any current hardly holds its gears back: no flicker around the point where it fades out', () => {
+  // A crank, a generator and a motor on one shaft, the generator wired to
+  // the motor through a ring of lamps. More lamps, less current. The
+  // motor's push AND its holding-back both fade away smoothly, so there
+  // is no number of lamps where it switches on and off tick by tick.
+  // (It used to: with 23 lamps the shaft went 0.500 0.984 0.500 0.984...)
+  const systems = allSystems();
+  /**
+   * Run a build for 400 ticks and return its speeds over the next 50.
+   * @param {string[]} rows - the picture
+   * @returns {number[][]} every spinning block's speed, tick by tick
+   */
+  const lastSpeeds = (rows) => {
+    const world = run(rows, 400);
+    const seen = [];
+    for (let i = 0; i < 50; i++) {
+      tick(world, systems, blockInfo);
+      seen.push([...world.signals.spin.cells.values()].map((cell) => cell.speed));
+    }
+    return seen;
+  };
+  /**
+   * The most any block's speed changed from one tick to the next.
+   * @param {number[][]} seen - from lastSpeeds
+   * @returns {number} the biggest change
+   */
+  const wobble = (seen) => Math.max(...seen.slice(1).map((speeds, t) => Math.max(...speeds.map((speed, k) => Math.abs(speed - seen[t][k])))));
+  let before = 0;
+  for (const crank of ['R', 'Q']) {
+    for (let lamps = 0; lamps <= 40; lamps++) {
+      const top = `W${'L'.repeat(Math.min(lamps, 22))}`.padEnd(24, 'W');
+      const bottom = `${`W${'L'.repeat(Math.max(0, lamps - 22))}`.padEnd(21, 'W')}EMW`;
+      const seen = lastSpeeds([top, `W${'.'.repeat(22)}W`, bottom, `${'.'.repeat(21)}${crank}..`]);
+      assert.ok(wobble(seen) < 1e-6, `${crank} with ${lamps} lamps: the shaft wobbles by ${wobble(seen)}`);
+      // From 8 lamps on the motor is fading out: each lamp more, it holds the crank back a little less.
+      const speed = Math.abs(seen[49][0]);
+      if (lamps > 8) assert.ok(speed > before, `${crank} with ${lamps} lamps turns ${speed}, no faster than with one fewer (${before})`);
+      before = speed;
+    }
+  }
+  // And with no lamps or battery at all: two cranked generators feeding a
+  // motor that sits on a third cranked generator's shaft.
+  const seen = lastSpeeds([
+    'WWWWWWWWWWWWW',
+    'E.RE........W',
+    'WWWWW.....WWW',
+    '..REM.....W..',
+    '...WWWWWWWW..',
+  ]);
+  assert.ok(wobble(seen) < 1e-6, `the three-generator build wobbles by ${wobble(seen)}`);
 });
