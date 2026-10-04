@@ -1421,3 +1421,37 @@ test('two rungs exactly alike among four generators in one loop turn exactly ali
   more(world, 1);
   assert.ok(Math.abs(spinAt(world, 12, 3) - first[0]) < 1e-6, `the first tick gave ${first[0]}, the second ${spinAt(world, 12, 3)}`);
 });
+
+test('generators that exactly balance the batteries in their loop send no current: free cranks light no lamp and charge no battery', () => {
+  // Six cranked generators and two batteries in one loop. The pushes add
+  // up to exactly nothing, so no current flows and every crank turns
+  // freely. (The gears settle a hair under full speed, 0.9999999998, and
+  // rounding each push DOWN to a hundredth of a volt then turned that
+  // hair into a phantom 0.004 amps through the lamps and batteries, with
+  // nobody turning anything harder for it.)
+  const world = run([
+    '............WWW.',
+    '..........QGE.W.',
+    '............B.W.',
+    '..........MsE.W.',
+    '............L.W.',
+    '......RGs-GsE.W.',
+    '............L.W.',
+    '.........QsGE.W.',
+    '............W.W.',
+    '..........RsE.W.',
+    '............W.W.',
+    '...RGs-Gs-GsE.W.',
+    '............B.W.',
+    '...........RE.W.',
+    '............W.W.',
+    '............WWW.',
+    '................',
+  ], 60);
+  let crankWork = 0;
+  world.cells.forEach((name, index) => {
+    if (name.startsWith('crank')) crankWork += crankWorkAt(world, index % world.width, Math.floor(index / world.width));
+  });
+  assert.ok(crankWork < 1e-6, `the cranks turn freely (work ${crankWork})`);
+  assert.ok(Math.abs(amps(world, 12, 4)) < 1e-6, `yet ${amps(world, 12, 4)} amps flow through the lamp`);
+});

@@ -260,3 +260,11 @@ Not covered: a battery fighting an opposing pusher that is weaker but not overpo
 - `solveCircuit(world, blockInfo, known)`: when the wiring is unchanged since the last solve (`wiringKey` = blocks + clicker beat, kept in `signals.electric.wiring`), `refreshElectric` passes the old records and `shareOut` keeps their `perVolt` and `load` and only works out `fixed` again. `perVolt` depends on resistances and joins only, never on pushes.
 - `work` (`factorings`, `answers`) counts the heavy steps, for the tests and for timing tools.
 - Result for that world: 1.1 s for 150 ticks, p90 24 ms, 2 ticks over 33 ms (both on a clicker beat). 12 generators, 9 motors and a clicker: worst tick 5.8 ms (was 21). The answers are unchanged.
+
+## Addendum 2026-10-04 (round 2 review): rounding a push forgives the gears' last hair (issue #17 review)
+
+`roundPush` rounds a changing push down to `PUSH_STEP` with a tolerance of 1e-9 of a step, meant for 0.3 being stored as 0.29999.... But spin.js only settles speeds to `SETTLED` (1e-9 turns a second), so a generator whose speed should be 1 can sit at 0.9999999998, push 0.79999999988 volts, and be rounded down a whole step to 0.79. Six cranked generators exactly balancing two batteries in one loop (found by the round 2 convergence sweep, 1 build in 4000) each lost a step that way: 0.004 A showed in the lamps and went backwards through the batteries while every crank turned freely. Nothing paid for it: about 0.001 of energy a tick out of nowhere.
+
+- The tolerance is now 1e-6 of a step (1e-8 volts): far above the solver's hair, far below anything a lamp shows.
+- Still true, and by design: the circuit's currents come from pushes rounded toward zero, the shafts are charged for the unrounded current. A generator's push can be shown up to one `PUSH_STEP` low, never high.
+

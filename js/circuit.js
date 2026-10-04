@@ -173,9 +173,12 @@ function halfResistance(point) {
  * @returns {number} the rounded push: 0.016 → 0.01, −0.016 → −0.01
  */
 export function roundPush(push) {
-  // The tiny 1e-9 stops 0.3 (which computers store as 0.29999...) rounding down to 0.29.
+  // The tiny 1e-6 stops 0.3 (which computers store as 0.29999...) rounding down to
+  // 0.29. It is bigger than the hair by which spin.js may leave a speed short of
+  // where it settles (SETTLED), so a generator turning 0.9999999998 pushes
+  // the same as one turning 1.
   const perVolt = Math.round(1 / PUSH_STEP); // dividing by a whole number keeps 0.57 exactly 0.57
-  return Math.sign(push) * Math.floor(Math.abs(push) * perVolt + 1e-9) / perVolt || 0; // "|| 0" turns −0 into a plain 0
+  return Math.sign(push) * Math.floor(Math.abs(push) * perVolt + 1e-6) / perVolt || 0; // "|| 0" turns −0 into a plain 0
 }
 
 /**
