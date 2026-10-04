@@ -87,6 +87,37 @@ test('both ways? sideways wins; only one wire? face it; nothing? sideways', () =
   assert.equal(partAxis(worldFrom(['.L.']), 1, 0, blockInfo), 'h');
 });
 
+test('wires win over parts: a part with wire above and below faces them, even with parts on both sides', () => {
+  assert.equal(partAxis(worldFrom(['WWW', 'LLL', 'WWW']), 1, 1, blockInfo), 'v');
+  assert.equal(partAxis(worldFrom(['WGW', 'BLB', 'WGW']), 1, 1, blockInfo), 'v'); // gold is wire too
+  assert.equal(partAxis(worldFrom(['WLW', 'LLL', 'WLW']), 1, 1, blockInfo), 'h'); // parts all round: sideways, as before
+  assert.equal(partAxis(worldFrom(['LWL', 'WLW', 'LWL']), 1, 1, blockInfo), 'h'); // wires all round: sideways, as before
+  assert.equal(partAxis(worldFrom(['.L.', 'WLW', '.L.']), 1, 1, blockInfo), 'h');
+  // A row of parts joined end to end (series) still faces along the row.
+  for (let x = 1; x <= 3; x++) assert.equal(partAxis(worldFrom(['WLLLW']), x, 0, blockInfo), 'h');
+});
+
+test('three or more lamps side by side between two rails all light the same (parallel)', () => {
+  for (const count of [3, 8]) {
+    const rows = [`WW${'W'.repeat(count)}`, `B.${'L'.repeat(count)}`, `WW${'W'.repeat(count)}`];
+    const world = worldFrom(rows);
+    const { cells } = solveCircuit(world, blockInfo);
+    const currents = [...rows[1]].map((letter, x) => (letter === 'L' ? cells.get(world.width + x).current : null)).filter((c) => c !== null);
+    for (const current of currents) {
+      assert.ok(current > 0.5, `${count} lamps: one only gets ${current} (${currents.map((c) => c.toFixed(2)).join(' ')})`);
+      assert.ok(Math.abs(current - currents[0]) < 0.1 * currents[0], `${count} lamps aren't alike: ${currents.map((c) => c.toFixed(2)).join(' ')}`);
+    }
+  }
+});
+
+test('three batteries side by side between two rails all share the work (parallel)', () => {
+  const world = worldFrom(['WWWWW', 'BBB.L', 'WWWWW']);
+  const { cells } = solveCircuit(world, blockInfo);
+  const currents = [0, 1, 2].map((x) => cells.get(world.width + x).current);
+  for (const current of currents) assert.ok(current > 0.25 && current < 0.4, `batteries carry ${currents.map((c) => c.toFixed(3)).join(' ')}`);
+  assert.ok(Math.abs(cells.get(world.width + 4).level - 1) < 0.05, 'the lamp is as bright as with one battery (a little brighter)');
+});
+
 test('an open switch still counts, so flipping it never turns its neighbors', () => {
   assert.equal(partAxis(worldFrom(['WLS']), 1, 0, blockInfo), 'h');
 });

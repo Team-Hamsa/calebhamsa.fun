@@ -390,7 +390,7 @@ const guide = {
   rules: [
     'Electricity only flows around a complete LOOP: out of the battery\'s + end, through wires and parts, and back into its other end.',
     'Little yellow dots run along the wires while it flows.',
-    'Parts turn to face their wires: wires on the left and right, or above and below. The gray metal ends show which way.',
+    'Parts turn to face their wires: wires on the left and right, or above and below. The gray metal ends show which way. Lamps side by side between two wires each get their own path, however many there are.',
     'Short circuit! A battery wired straight back to itself sparks and smokes. Never try that with a real battery.',
   ],
   blocks: {

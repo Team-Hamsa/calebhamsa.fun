@@ -227,3 +227,12 @@ Each connection is a resistor:
 ### Generators (issue #11)
 - A changing push (`part.pushNow`) is rounded toward zero to 0.01 V (`PUSH_STEP`), not 0.1.
 - New optional part field `feelsLoad`: such a part's record gets `load`, the current per volt it would push if it alone pushed (`loadOn` in circuit.js). The generator uses it to know how hard its lamps make it to turn before it has started turning. Details in the gears spec addendum.
+
+### Auto-turn: wires first (issue #12)
+Section 2's five rules counted any electric neighbor, so in `['WWWWW','B.LLL','WWWWW']` the middle lamp faced its neighbor lamps (which face the rails and can't join it) and stayed dark; with 8 lamps only the two end ones lit. Same for three batteries. Two rules now come first, counting only conductors (`info.conducts`: wire and gold):
+
+1. conductor on both left and right → **sideways**
+2. else conductor on both up and down → **up-down**
+3. to 7. the old rules 1 to 5, unchanged.
+
+Switches are parts, not conductors, so flipping one still never re-turns its neighbors. A row of parts joined end to end (`WLLLW`) still faces along the row. One layout changes on purpose: a part with wire above and below AND parts on its left and right now faces the wires.

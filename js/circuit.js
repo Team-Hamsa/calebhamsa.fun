@@ -89,12 +89,19 @@ export function activePart(info, world) {
 
 /**
  * Which way a part faces: sideways ('h') or up-down ('v'). It looks at
- * its four neighbors and faces the electric ones:
- *   1. electric on both left and right → sideways
- *   2. electric on both up and down    → up-down
- *   3. electric on the left or right   → sideways
- *   4. electric above or below         → up-down
- *   5. nothing around                  → sideways
+ * its four neighbors. Wires (and gold) come first, because a part can
+ * always join a wire; then anything electric (other parts, switches):
+ *   1. wire on both left and right     → sideways
+ *   2. wire both above and below       → up-down
+ *   3. electric on both left and right → sideways
+ *   4. electric on both up and down    → up-down
+ *   5. electric on the left or right   → sideways
+ *   6. electric above or below         → up-down
+ *   7. nothing around                  → sideways
+ * Rules 1 and 2 are why lamps packed side by side between two wire
+ * rails all face the rails (and all light), instead of the middle ones
+ * turning to face their neighbor lamps. Switches never count as wire,
+ * open or closed, so flipping one never turns its neighbors.
  * @param {object} world - the world
  * @param {number} x - the part's column
  * @param {number} y - the part's row
@@ -103,20 +110,25 @@ export function activePart(info, world) {
  */
 export function partAxis(world, x, y, blockInfo) {
   /**
-   * Is the neighbor dx, dy away electric?
+   * What the neighbor dx, dy away is.
    * @param {number} dx - columns across
    * @param {number} dy - rows down
-   * @returns {boolean} true if it's electric
+   * @returns {{wire: boolean, electric: boolean}} is it wire (or gold)? is it electric at all?
    */
-  const electricAt = (dx, dy) => isElectric(blockInfo(getBlock(world, x + dx, y + dy)));
-  const left = electricAt(-1, 0);
-  const right = electricAt(1, 0);
-  const up = electricAt(0, -1);
-  const down = electricAt(0, 1);
-  if (left && right) return 'h';
-  if (up && down) return 'v';
-  if (left || right) return 'h';
-  if (up || down) return 'v';
+  const look = (dx, dy) => {
+    const info = blockInfo(getBlock(world, x + dx, y + dy));
+    return { wire: Boolean(info?.conducts), electric: isElectric(info) };
+  };
+  const left = look(-1, 0);
+  const right = look(1, 0);
+  const up = look(0, -1);
+  const down = look(0, 1);
+  if (left.wire && right.wire) return 'h';
+  if (up.wire && down.wire) return 'v';
+  if (left.electric && right.electric) return 'h';
+  if (up.electric && down.electric) return 'v';
+  if (left.electric || right.electric) return 'h';
+  if (up.electric || down.electric) return 'v';
   return 'h';
 }
 

@@ -140,6 +140,8 @@ While it flows, little yellow **dots** run along the wires, so you can see it go
 **Parts turn to face their wires.** A lamp, switch, buzzer or battery with
 wires on its left and right connects sideways; with wires above and below, it
 connects up and down. The little gray metal ends show which way it's facing.
+Wires count first: three or more lamps packed side by side between a wire
+above and a wire below all face the wires, and all light.
 
 **Short circuit!** If a battery's + end is wired straight back to its other
 end with nothing in between, it **sparks and smokes** (![Sparking battery](docs/blocks/battery-spark.png)). Real
@@ -232,6 +234,7 @@ one wire away: the lamp goes dark, because the loop is broken.
 
 **Sharing electricity.** Two lamps in a row (left) share the push, so both are
 dimmer. Two lamps side by side (right) each get their own path, so both shine bright.
+Add a third or a fourth beside them: every one still gets its own path.
 
 ![Two lamps in series and two in parallel](docs/machines/series-parallel.png)
 
