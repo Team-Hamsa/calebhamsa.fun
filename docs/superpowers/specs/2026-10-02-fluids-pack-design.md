@@ -246,3 +246,7 @@ Each block's `drawSignals` draws its own look:
 ## Addendum 2026-10-04: shorts and turbines (issue #13)
 
 "Short detection treats any part with push as a battery" is refined: see "Short-circuit sparks (issue #13)" in the electrical spec. An idle turbine now counts as plain wire, so a battery wired straight across one sparks.
+
+## Addendum 2026-10-04: no favorite side (issue #18)
+
+Step 2 of the water rule ("Left, then right") worked out the right-hand flow from what was left after the left-hand flow had gone, so a stream landing on the middle of a ridge split 4 : 3 in favor of the left. Both side flows are now worked out from the **same** amount (what the cell holds after the falling step): `flow = clamp((level − neighbor) / 4, 0, remaining)` for each side. Together they are at most half the cell, so nothing else changes. A symmetric splitter now gives exactly half to each side; steam uses the same loop and is fixed too.

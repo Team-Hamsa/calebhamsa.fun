@@ -255,7 +255,7 @@ function clamp(value, low, high) {
  *
  * Every cell's flow is worked out from the amounts at the START of the
  * step and added up in a fresh copy, so it doesn't matter which cell
- * goes first.
+ * goes first, and left and right are treated just the same.
  *
  * @param {object} world - the world
  * @param {'water'|'steam'} kind - which fluid
@@ -307,10 +307,15 @@ export function flowFluid(world, kind, canFlow, onMove) {
     }
     if (remaining <= 0) continue;
 
+    // Both sides are worked out from the SAME amount (what's here after
+    // the falling), so neither side is the favorite: a stream landing on
+    // the middle of a ridge splits exactly in half. Each side gets at
+    // most a quarter, so together they never take more than is here.
+    const level = remaining;
     for (const side of ['left', 'right']) {
       const beside = canFlow(index, side);
       if (beside < 0 || !roomFor(beside)) continue;
-      const flow = clamp((remaining - before[beside]) / 4, 0, remaining);
+      const flow = clamp((level - before[beside]) / 4, 0, remaining);
       move(index, beside, flow);
       remaining -= flow;
     }

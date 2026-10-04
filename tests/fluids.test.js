@@ -272,3 +272,32 @@ test('water flowing down through a water wheel is counted, going down = +', () =
   for (let i = 0; i < 10; i++) out += stepFluids(world, blockInfo).waterOut.get(1) ?? 0;
   assert.ok(out > 0.5, `only ${out}`);
 });
+
+test('water spreads the same to the left and to the right (no favorite side)', () => {
+  // One step: a full cell with an empty cell on each side gives each the same.
+  const puddle = worldFrom(['.~.', '###']);
+  stepFluids(puddle, blockInfo);
+  assert.ok(
+    Math.abs(getFluid(puddle, 'water', 0, 0) - getFluid(puddle, 'water', 2, 0)) < 1e-12,
+    `left ${getFluid(puddle, 'water', 0, 0)} right ${getFluid(puddle, 'water', 2, 0)}`,
+  );
+  // A faucet over the middle of a ridge: both drains get the same stream.
+  TEST_BLOCKS.waterWheel = { fluid: { sides: 'all' }, wheel: true };
+  LETTERS.O = 'waterWheel';
+  const split = worldFrom(['#F#', 'O.O', 'D#D']);
+  run(split, 300);
+  let left = 0;
+  let right = 0;
+  for (let i = 0; i < 100; i++) {
+    const { waterOut } = stepFluids(split, blockInfo);
+    left += waterOut.get(1 * 3 + 0) ?? 0;
+    right += waterOut.get(1 * 3 + 2) ?? 0;
+  }
+  assert.ok(Math.abs(left - right) < 1e-9, `left wheel ${left} right wheel ${right}`);
+});
+
+test('steam spreads the same to the left and to the right too', () => {
+  const cloud = worldFrom(['###', '.s.']);
+  stepFluids(cloud, blockInfo);
+  assert.ok(Math.abs(getFluid(cloud, 'steam', 0, 1) - getFluid(cloud, 'steam', 2, 1)) < 1e-12);
+});
