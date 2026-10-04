@@ -406,6 +406,8 @@ export function gearsSystem(world, blockInfo) {
 // =============================================================
 // Blocks are drawn on an 8 × 8 grid of little pixels: p = size / 8.
 // A cell's record (from spin.js) says how fast it turns and if it's jammed.
+// How far round to draw it comes from the record's `angle` (see turned), not
+// from the world's clock, so these drawing functions don't take the clock.
 
 /**
  * How far round to DRAW a block, as a number from 0 to 1, from the
@@ -447,10 +449,9 @@ function drawDisc(ctx, cx, cy, radius, step) {
  * @param {number} top - the cell's top edge
  * @param {number} size - the cell's size
  * @param {object|undefined} cell - its spin record
- * @param {number} ticks - the world's clock
  * @returns {void}
  */
-function drawGear(ctx, info, left, top, size, cell, ticks) {
+function drawGear(ctx, info, left, top, size, cell) {
   const p = size / 8;
   const big = info.spin.teeth > 8;
   const cx = left + size / 2;
@@ -502,10 +503,9 @@ function drawJam(ctx, left, top, size) {
  * @param {number} top - the cell's top edge
  * @param {number} size - the cell's size
  * @param {object|undefined} cell - its spin record
- * @param {number} ticks - the world's clock
  * @returns {void}
  */
-function drawAxle(ctx, info, left, top, size, cell, ticks) {
+function drawAxle(ctx, info, left, top, size, cell) {
   const p = size / 8;
   const upright = cell?.axis === 'v';
   ctx.fillStyle = '#9e9e9e';
@@ -527,10 +527,9 @@ function drawAxle(ctx, info, left, top, size, cell, ticks) {
  * @param {number} top - the cell's top edge
  * @param {number} size - the cell's size
  * @param {object|undefined} cell - its spin record
- * @param {number} ticks - the world's clock
  * @returns {void}
  */
-function drawCrank(ctx, info, left, top, size, cell, ticks) {
+function drawCrank(ctx, info, left, top, size, cell) {
   const p = size / 8;
   const quarter = Math.floor(turned(cell) * 4); // 4 positions: up, right, down, left
   const [kx, ky] = [[3.5, 1], [6, 3.5], [3.5, 6], [1, 3.5]][quarter];
@@ -553,10 +552,9 @@ function drawCrank(ctx, info, left, top, size, cell, ticks) {
  * @param {number} top - the cell's top edge
  * @param {number} size - the cell's size
  * @param {object|undefined} cell - its spin record
- * @param {number} ticks - the world's clock
  * @returns {void}
  */
-function drawWheel(ctx, info, left, top, size, cell, ticks) {
+function drawWheel(ctx, info, left, top, size, cell) {
   const p = size / 8;
   const eighth = Math.floor(turned(cell) * 8); // 8 positions: 0 = up, then clockwise
   const tilted = eighth % 2 === 1; // + or × paddles
@@ -604,10 +602,9 @@ function drawEnds(ctx, axis, left, top, size) {
  * @param {number} top - the cell's top edge
  * @param {number} size - the cell's size
  * @param {object|undefined} cell - its spin record
- * @param {number} ticks - the world's clock
  * @returns {void}
  */
-function drawMotor(ctx, info, left, top, size, cell, ticks) {
+function drawMotor(ctx, info, left, top, size, cell) {
   const p = size / 8;
   ctx.fillStyle = '#263238';
   ctx.fillRect(left + 2 * p, top + 2 * p, 4 * p, 4 * p);
