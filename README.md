@@ -291,6 +291,13 @@ both are turned at once, only the first (the higher one, or the one further
 left) carries the load, and the other spins with nothing on it. The load goes
 at the speed of the rope, never twice as fast.
 
+**Nothing floats.** This is one place the game is simpler than the real world.
+A crate or an iron weight let down into water sinks just as it does in air,
+pulling with its whole weight, and the water simply moves up out of its way
+(sand sinks the same way). Real water pushes back: a wooden crate would float
+and its rope would go slack, an iron weight would feel lighter, and lifting
+the water would cost the push that here comes for free.
+
 **Cut the rope** (⛏️ dig it) and whatever hangs on it falls.
 
 ### 🛠️ Machines to build

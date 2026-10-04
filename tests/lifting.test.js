@@ -425,3 +425,10 @@ test('two winches with hanging weights, each one\'s generator driving the other\
   assert.equal(spinAt(world, 13, 3), 0);
   assert.equal(world.signals.electric.flowing, false); // and both lamps are dark
 });
+
+test('the guide and the README say plainly that nothing floats here', async () => {
+  const { readFileSync } = await import('node:fs');
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, /Nothing floats/);
+  assert.ok(lifting.guide.rules.some((rule) => /float/.test(rule)));
+});

@@ -43,6 +43,10 @@ export const ROPE_PER_TURN = 2;
  * use as a counterweight. But it still has to be lifted, so it pulls
  * back as soon as the winch tries to wind it in.
  *
+ * (No floating: a load in water still pulls with its whole weight. In
+ * this game the water just swaps places with a sinking block for free.
+ * Real water would push back, and a wooden crate would float.)
+ *
  * And a load going DOWN helps turn the winch, but only up to the speed
  * it would fall with no rope at all (one cell a tick, like sand). Rope
  * can only pull, never push: if the winch lets rope out faster than
@@ -271,11 +275,11 @@ function drawHook(ctx, info, left, top, size, cell) {
  * @param {number} left - the cell's left edge
  * @param {number} top - the cell's top edge
  * @param {number} size - the cell's size
- * @param {object|undefined} cell - its spin record (from spin.js)
- * @param {number} ticks - the world's clock
+ * @param {object|undefined} cell - its spin record (from spin.js): how far it
+ *   has turned comes from the record's `angle`, not from the clock
  * @returns {void}
  */
-function drawWinch(ctx, info, left, top, size, cell, ticks) {
+function drawWinch(ctx, info, left, top, size, cell) {
   const p = size / 8;
   ctx.fillStyle = '#5d4037'; // the stand
   ctx.fillRect(left + p, top + p, p, 6 * p);
@@ -340,6 +344,7 @@ const guide = {
     'Slower is stronger! A small gear driving a big gear makes the winch slower, so it can lift more. Gearing UP makes it weaker.',
     'Or add strength: two cranks, more batteries for a motor, or more water (or a longer fall) onto a water wheel.',
     'Going down, a hanging load helps turn the winch, but it never goes down faster than it would fall. A load lying on the ground helps nothing: its rope is slack. It only pulls when you lift it.',
+    'Nothing floats here: a crate or weight let down into water sinks, and the water just moves up out of its way. (A real wooden crate would float!)',
     'Dig the rope and whatever hangs on it falls.',
   ],
   blocks: {
