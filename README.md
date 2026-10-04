@@ -274,9 +274,11 @@ won't haul up a lighter one without a crank to start it. (A real winch with
 its catch lifted off would do both.)
 
 **One rope end, one winch.** If two winches' ropes meet at a pulley and share
-the same hanging end, only the first winch (the higher one, or the one further
-left) winds it and feels its weight. The other just spins. The load goes at
-the speed of the rope, never twice as fast.
+the same hanging end, the winch that is being **turned** winds it and feels its
+weight: crank either one and the load comes up. The other just holds still. If
+both are turned at once, only the first (the higher one, or the one further
+left) carries the load, and the other spins with nothing on it. The load goes
+at the speed of the rope, never twice as fast.
 
 **Cut the rope** (⛏️ dig it) and whatever hangs on it falls.
 

@@ -237,3 +237,20 @@ test('a winch with its own rope owns it, however many other winches there are', 
   assert.equal(ownsRopeEnd(world, 0, 0, traceRope(world, 0, 0, blockInfo), blockInfo), true);
   assert.equal(ownsRopeEnd(world, 2, 0, traceRope(world, 2, 0, blockInfo), blockInfo), true);
 });
+
+test('a shared rope end goes to the winch that is being turned, if only one is', () => {
+  const world = make(['..w.', '..|.', 'w|P.', '..|.', '..c.', '..#.']);
+  const top = traceRope(world, 2, 0, blockInfo);
+  const side = traceRope(world, 0, 2, blockInfo);
+  /**
+   * Only the side winch (cell 8) has something turning it.
+   * @param {number} index - a winch's cell index
+   * @returns {boolean} true for the side winch
+   */
+  const onlySide = (index) => index === 8;
+  assert.equal(ownsRopeEnd(world, 0, 2, side, blockInfo, onlySide), true);
+  assert.equal(ownsRopeEnd(world, 2, 0, top, blockInfo, onlySide), false);
+  // Both turned (or neither): the first one, reading the world like a book.
+  assert.equal(ownsRopeEnd(world, 2, 0, top, blockInfo, () => true), true);
+  assert.equal(ownsRopeEnd(world, 0, 2, side, blockInfo, () => true), false);
+});

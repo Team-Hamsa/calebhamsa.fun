@@ -329,3 +329,24 @@ test('two winches on one crank and one rope end: the load counts once', () => {
   const rope = spinAt(world, 1, 0);
   assert.equal(rope, 0.5); // weight 1 against strength 2. Counted twice it would stall.
 });
+
+test('two winches on one rope end: whichever ONE is cranked lifts the crate, and feels its weight', () => {
+  for (const rows of [
+    ['..w.', '..|.', 'w|P.', 'R.|.', '..|.', '..|.', '..|.', '..c.', '..#.'], // only the side winch is cranked
+    ['.w..', '.|..', '.P|w', '.|.R', '.|..', '.|..', '.|..', '.c..', '.#..'], // the same, mirrored
+    ['..wR', '..|.', 'w|P.', '..|.', '..|.', '..|.', '..|.', '..c.', '..#.'], // only the top winch is cranked
+  ]) {
+    const world = run(make(rows), 24);
+    const column = rows[7].indexOf('c');
+    assert.equal(rowOf(world, column, 'crate'), 4, rows.join('/')); // 3 cells up: 0.5 turn a second for 3 seconds
+    const cranked = rows[3].includes('R') ? [rows[2].indexOf('w'), 2] : [rows[0].indexOf('w'), 0];
+    assert.equal(spinAt(world, cranked[0], cranked[1]), 0.5, rows.join('/')); // the crate's weight slows it
+  }
+});
+
+test('two winches on one rope end: the one that is cranked stalls on an iron weight, it doesn\'t spin free', () => {
+  const world = run(make(['..w.', '..|.', 'w|P.', 'R.|.', '..|.', '..|.', '..|.', '..I.', '..#.']), 24);
+  assert.equal(rowOf(world, 2, 'ironWeight'), 7);
+  assert.equal(spinAt(world, 0, 2), 0);
+  assert.equal(world.signals.spin.cells.get(2 * 4 + 0).stalled, true);
+});

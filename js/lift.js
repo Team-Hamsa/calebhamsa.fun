@@ -13,8 +13,9 @@
  * leaves the winch), just like real rope: so two ropes side by side
  * never get muddled up.
  *
- * A rope end belongs to ONE winch. If two winches' ropes meet at a pulley
- * and share an end, only the first one winds it (see ownsRopeEnd).
+ * A rope end belongs to ONE winch at a time. If two winches' ropes meet
+ * at a pulley and share an end, the one being turned winds it (see
+ * ownsRopeEnd).
  *
  * Only ONE block hangs on the end (or a pulley hook with one block under
  * it). Anything under that is just resting, so it isn't lifted, and it
@@ -93,27 +94,36 @@ export function traceRope(world, x, y, blockInfo) {
 
 /**
  * Does this winch OWN the end of its rope? Two winches' ropes can meet
- * at a pulley and share one hanging end. A rope end can only be wound by
- * one drum at a time, so the first winch (reading the world like a book:
- * top row first, left to right) owns it. The others feel no weight and
- * move nothing: otherwise the load would be counted twice and lifted
- * twice as fast as the rope moves.
+ * at a pulley and share one hanging end. The load must be weighed once
+ * and moved once, so one winch owns the end: it feels the weight and
+ * winds the rope. The other feels nothing and moves nothing (otherwise
+ * the load would be counted twice and lifted twice as fast as the rope).
+ *
+ * Who owns it? The winch that is being TURNED (by a crank, a motor or a
+ * water wheel on its gears): pull on either rope and the load comes up,
+ * and you feel its weight. If both are being turned, or neither, it's
+ * the first one (reading the world like a book: top row first, left to
+ * right).
  * @param {object} world - the world
  * @param {number} x - the winch's column
  * @param {number} y - the winch's row
  * @param {{end: object|null}} rope - this winch's rope, from traceRope
  * @param {Function} blockInfo - looks up what a block name means
- * @returns {boolean} true if no earlier winch's rope has the same end
+ * @param {Function} [isDriven] - (cell index) => true if something is
+ *   turning that winch. Left out, nobody counts as being turned.
+ * @returns {boolean} true if this winch owns its rope's end
  */
-export function ownsRopeEnd(world, x, y, rope, blockInfo) {
+export function ownsRopeEnd(world, x, y, rope, blockInfo, isDriven = () => false) {
   if (!rope.end) return true;
   const mine = y * world.width + x;
-  for (let index = 0; index < mine; index++) {
-    if (!blockInfo(world.cells[index])?.winch) continue;
-    const other = traceRope(world, index % world.width, Math.floor(index / world.width), blockInfo);
-    if (other.end && other.end.x === rope.end.x && other.end.y === rope.end.y) return false;
-  }
-  return true;
+  const sharing = []; // every winch whose rope has this same end, in book order
+  world.cells.forEach((name, index) => {
+    if (!blockInfo(name)?.winch) return;
+    const other = index === mine ? rope : traceRope(world, index % world.width, Math.floor(index / world.width), blockInfo);
+    if (other.end && other.end.x === rope.end.x && other.end.y === rope.end.y) sharing.push(index);
+  });
+  const turned = sharing.filter((index) => isDriven(index));
+  return (turned.length > 0 ? turned : sharing)[0] === mine;
 }
 
 /**

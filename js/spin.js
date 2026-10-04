@@ -44,7 +44,7 @@
  * anticlockwise ↺. Strengths are in "crank-pushes" (see CRANK_STRENGTH).
  * This file only reads the fields blocks have: `spin`, `spinSource`
  * (which is also told the indexes of the blocks in its group), `spinLoad`
- * and `spinDrag`.
+ * (which is also told which blocks have a source turning them) and `spinDrag`.
  */
 import { getBlock, inBounds } from './world.js';
 import { partAxis } from './circuit.js';
@@ -234,6 +234,8 @@ function balance(ahead, slowing, loads) {
  *   speed     turns per second (+ = ↻ clockwise, − = ↺ anticlockwise)
  *   jammed    true if its group can't turn (two paths disagree)
  *   stalled   true if its group's sources are too weak for its load
+ *   driven    true if its group has a source trying to turn it (even a
+ *             stalled or jammed one)
  *   axis      for axles: the way it faces
  *   partAxis  for blocks that are also electric parts (motors,
  *             generators): the way they face in a circuit
@@ -284,8 +286,11 @@ export function solveSpin(world, blockInfo) {
     }
   }
 
-  const cells = new Map();
-  let turning = false;
+  // First, find every group and add up its sources. (We need to know
+  // which groups have something turning them BEFORE weighing the loads:
+  // a rope end shared by two winches is carried by the one being turned.)
+  const groups = [];
+  const drivenCells = new Set();
   const done = new Set();
   for (const start of points.keys()) {
     if (done.has(start)) continue;
@@ -315,10 +320,9 @@ export function solveSpin(world, blockInfo) {
     // `slowing` says how fast their push fades as the group speeds up.
     let ahead = 0;
     let slowing = 0;
-    const loads = []; // loads (a hanging weight), at the first block
-    let drag = 0; // push-back that grows with speed (generators)
     const members = [...ratio.keys()];
     for (const [index, r] of ratio) {
+      done.add(index);
       const point = points.get(index);
       const source = point.info.spinSource?.(world, point.x, point.y, members) ?? null;
       if (source && source.speed && source.strength > 0) {
@@ -327,7 +331,26 @@ export function solveSpin(world, blockInfo) {
         ahead += Math.sign(top) * strength;
         slowing += strength / Math.abs(top);
       }
-      const load = loadOf(point.info.spinLoad?.(world, point.x, point.y, blockInfo));
+    }
+    if (slowing > 0) for (const index of members) drivenCells.add(index);
+    groups.push({ ratio, jammed, ahead, slowing });
+  }
+  /**
+   * Does this block's group have a source (a crank, a powered motor, a
+   * wheel with water) trying to turn it right now?
+   * @param {number} index - a spinning block's cell index
+   * @returns {boolean} true if it has
+   */
+  const isDriven = (index) => drivenCells.has(index);
+
+  const cells = new Map();
+  let turning = false;
+  for (const { ratio, jammed, ahead, slowing } of groups) {
+    const loads = []; // loads (a hanging weight), at the first block
+    let drag = 0; // push-back that grows with speed (generators)
+    for (const [index, r] of ratio) {
+      const point = points.get(index);
+      const load = loadOf(point.info.spinLoad?.(world, point.x, point.y, blockInfo, isDriven));
       if (load.pull !== 0) loads.push({ pull: load.pull * r, limit: load.limit / Math.abs(r) });
       drag += (point.info.spinDrag?.(world, point.x, point.y) ?? 0) * r * r;
     }
@@ -353,7 +376,6 @@ export function solveSpin(world, blockInfo) {
     const stopped = jammed || stalled;
 
     for (const [index, r] of ratio) {
-      done.add(index);
       const point = points.get(index);
       const turns = stopped ? 0 : speed * r;
       const own = Math.abs(turns) < MIN_SPEED ? 0 : turns; // also turns −0 into a plain 0
@@ -362,6 +384,7 @@ export function solveSpin(world, blockInfo) {
         speed: own,
         jammed,
         stalled,
+        driven: slowing > 0,
         axis: point.axis,
         partAxis: point.info.part ? partAxis(world, point.x, point.y, blockInfo) : null,
       });

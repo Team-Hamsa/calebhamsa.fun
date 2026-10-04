@@ -210,3 +210,11 @@ A pulley in the middle of a rope column let a second winch's rope join the same 
 - Scan order is arbitrary (it favors the higher, then the left winch), so a mirrored build can swap which crank carries the load. The load's own speed and weight are the same either way.
 - The edge-case row "Two winches in one group: their loads add up" still holds for winches with their own rope ends.
 
+## Addendum 2026-10-04 (later): the turned winch owns a shared rope end (issue #27 review)
+
+The scan-order owner had a hole: with only the NON-owner cranked, it had no load, spun free at 1 and lifted nothing (even over an iron weight), while the idle owner held the load.
+
+- `solveSpin` now finds every group's sources first, then weighs the loads. `spinLoad` gets a fifth argument `isDriven(index)`: does that block's group have a working source? Every spin record carries `driven`.
+- `ownsRopeEnd(..., isDriven)`: among the winches sharing an end, those being turned come first; scan order only breaks ties (both turned, or neither).
+- So either crank alone lifts the crate at 0.5 and stalls on iron, mirrored builds included.
+- Still a simplification: with BOTH winches turned (on separate gears), only the first carries the load and the second spins free. A real pair of ropes would have the faster drum take the load.

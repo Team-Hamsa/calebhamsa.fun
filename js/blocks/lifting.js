@@ -51,14 +51,16 @@ export const ROPE_PER_TURN = 2;
  * @param {number} x - the winch's column
  * @param {number} y - the winch's row
  * @param {Function} blockInfo - looks up what a block name means
+ * @param {Function} [isDriven] - (cell index) => true if something is turning
+ *   that block (from spin.js): a shared rope end is carried by the winch being turned
  * @returns {{pull: number, resting: boolean, topSpeed: number}} the pull
  *   (0 if nothing hangs on it), whether the load is resting on
  *   something, and the fastest the load can turn the winch
  */
-export function winchLoad(world, x, y, blockInfo) {
+export function winchLoad(world, x, y, blockInfo, isDriven) {
   const rope = traceRope(world, x, y, blockInfo);
-  // A rope end shared with an earlier winch is that winch's to carry: no load here.
-  if (!ownsRopeEnd(world, x, y, rope, blockInfo)) return { pull: 0, resting: false, topSpeed: Infinity };
+  // A rope end shared with another winch that owns it is that winch's to carry: no load here.
+  if (!ownsRopeEnd(world, x, y, rope, blockInfo, isDriven)) return { pull: 0, resting: false, topSpeed: Infinity };
   const load = loadBelow(world, rope, blockInfo);
   // Falling speed is 1 cell a tick. With a pulley hook, each cell takes 2 cells of rope.
   const topSpeed = (TICKS_PER_SECOND * (load.hook ? 2 : 1)) / ROPE_PER_TURN;
@@ -102,13 +104,19 @@ export function liftSystem(world, blockInfo) {
   world.cells.forEach((name, index) => {
     if (blockInfo(name)?.winch) winches.push(index);
   });
+  /**
+   * Is something turning this winch (this tick, from spin.js)?
+   * @param {number} index - the winch's cell index
+   * @returns {boolean} true if its gears have a source
+   */
+  const isDriven = (index) => Boolean(world.signals.spin?.cells?.get(index)?.driven);
   for (const index of winches) {
     const speed = world.signals.spin?.cells?.get(index)?.speed ?? 0;
     if (Math.abs(speed) < MIN_SPEED) continue; // stopped (or stalled): forget any half-wound rope
     const x = index % world.width;
     const y = Math.floor(index / world.width);
     // Two winches sharing one rope end: only its owner winds it (the other just spins).
-    if (!ownsRopeEnd(world, x, y, traceRope(world, x, y, blockInfo), blockInfo)) continue;
+    if (!ownsRopeEnd(world, x, y, traceRope(world, x, y, blockInfo), blockInfo, isDriven)) continue;
     let amount = (before.get(index) ?? 0) + (speed * ROPE_PER_TURN) / TICKS_PER_SECOND;
     /**
      * How much rope moves the load one cell: 2 with a pulley hook.
