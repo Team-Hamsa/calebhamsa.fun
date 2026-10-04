@@ -12,7 +12,7 @@ import { DROP_POWER, PUMP_HEAD, PUMP_RATE } from '../js/fluids.js';
 import gears, {
   CRANK_SPEED, CRANK_STRENGTH, GENERATOR_GAIN, GENERATOR_TORQUE, WHEEL_SPEED, WHEEL_STRENGTH, spinAt, turned, wheelSource,
 } from '../js/blocks/gears.js';
-import { REFERENCE_CURRENT } from '../js/circuit.js';
+import { REFERENCE_CURRENT, plusSide } from '../js/circuit.js';
 
 /** What each letter in a test picture means. */
 const LETTERS = {
@@ -737,12 +737,13 @@ test('a crank turning a generator that powers a motor pushing back does not flic
   ['.R.', 'WEW', 'WMW'].forEach((row, y) => [...row].forEach((letter, x) => setBlock(world, x, y, LETTERS[letter])));
   const systems = allSystems();
   const seen = [];
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 70; i++) {
     tick(world, systems, blockInfo);
-    if (i >= 20) seen.push(`${spinAt(world, 1, 1).toFixed(6)}/${world.signals.spin.cells.get(4).jammed}`);
+    if (i >= 60) seen.push(`${spinAt(world, 1, 1).toFixed(6)}/${world.signals.spin.cells.get(4).jammed}`);
   }
-  // (To six places: the motor takes up its current half at a time, so the
-  // speed creeps the last millionths of the way instead of landing at once.)
+  // (To six places, after 60 ticks: the motor takes up more current a
+  // quarter of the way at a time, so the speed creeps the last millionths
+  // of the way instead of landing at once.)
   assert.equal(new Set(seen).size, 1, `it flickers: ${seen.join(' ')}`);
 });
 
@@ -1228,5 +1229,113 @@ test('two cranks alike, each geared up into a generator, the two generators join
       assert.ok(Math.abs(top) > 0.005, `×${2 ** count} ${middle}: the top generator only turns ${top}`);
       assert.ok(Math.abs(Math.abs(top) - Math.abs(bottom)) < 1e-6, `×${2 ** count} ${middle}: top ${top}, bottom ${bottom}`);
     }
+  }
+});
+
+test('a clicker gives a motor no burst of battery current that a generator in the loop is holding back', () => {
+  // The crank turns a generator ×4 (3.2 volts) AGAINST three batteries
+  // (3 volts): hardly any current flows, and it flows backwards through
+  // the batteries. The motor in that loop turns a second generator with
+  // a lamp. Every time the clicker closed, the motor used to get a burst
+  // as if the batteries had the loop to themselves: current that never
+  // flowed and that nobody paid for.
+  const world = build([
+    '......WKBBBW.WW',
+    'QGs-GsE....M-EL',
+    '......WWWWWW.WW',
+    '...............',
+  ]);
+  const motor = world.width + 11;
+  let crankWork = 0;
+  let batteryWork = 0;
+  let lampHeat = 0;
+  let before = 0; // the current through the motor as the tick starts...
+  const batteryBefore = {};
+  setBlock(world, 0, 1, 'crankStop'); // nobody is turning the crank yet: the batteries run the motor, and pay for it
+  for (let t = 0; t < 3200; t++) {
+    if (t === 16) setBlock(world, 0, 1, 'crankCCW');
+    more(world, 1);
+    crankWork += crankWorkAt(world, 0, 1);
+    for (const x of [8, 9, 10]) {
+      // What a battery gives out in a tick: the most it sent the right way, as the tick started or ended.
+      const cell = world.signals.electric.cells.get(x);
+      const out = cell.arms.right ?? -(cell.arms.left ?? 0);
+      batteryWork += Math.max(0, out, batteryBefore[x] ?? 0) / 8;
+      batteryBefore[x] = out;
+    }
+    lampHeat += amps(world, 14, 1) ** 2 / 8;
+    const after = Math.abs(world.signals.electric.cells.get(motor)?.current ?? 0); // ...and as it ends
+    const current = Math.max(before, after);
+    before = after;
+    const speed = Math.abs(spinAt(world, 11, 1));
+    // (Not in the first ticks after the crank starts: the motor takes up the change half at a time.)
+    if (t > 48) assert.ok(speed <= current / REFERENCE_CURRENT + 1e-9, `tick ${t}: the motor turns ${speed} on a current of ${current}`);
+    assert.ok(lampHeat <= crankWork + batteryWork + 1e-9, `tick ${t}: lamp heat ${lampHeat} from crank work ${crankWork} and battery work ${batteryWork}`);
+  }
+  assert.ok(crankWork > 1, `the crank does turn (${crankWork})`);
+});
+
+test('a motor never turns against the current that really flows through it when a clicker closes', () => {
+  // One battery, and a cranked generator that out-pushes it: the current
+  // goes the generator's way. On each beat the motor used to start off
+  // the battery's way, backwards.
+  const world = build([
+    '....WKBW.',
+    'RGs-E..M.',
+    '....WWWW.',
+    '.........',
+  ]);
+  more(world, 40);
+  /**
+   * The current out of the motor's right end right now.
+   * @returns {number} the current (+ turns the motor ↻)
+   */
+  const flowing = () => {
+    const cell = world.signals.electric.cells.get(world.width + 7);
+    return cell?.arms[plusSide(cell.axis)] ?? 0;
+  };
+  let before = flowing(); // the current as the tick starts...
+  for (let t = 0; t < 160; t++) {
+    more(world, 1);
+    const after = flowing(); // ...and as it ends
+    const speed = spinAt(world, 7, 1);
+    assert.ok(speed * before >= 0 || speed * after >= 0, `tick ${t}: the motor turns ${speed} with a current of ${before}, then ${after}`);
+    // (0.02 to spare: the circuit rounds a generator's push down a little, the motor uses it exactly.)
+    assert.ok(Math.abs(speed) <= Math.max(Math.abs(before), Math.abs(after)) / REFERENCE_CURRENT + 0.02, `tick ${t}: the motor turns ${speed} on a current of ${before}, then ${after}`);
+    before = after;
+  }
+});
+
+test('tapping a crank on and off never gets more out of a battery\'s motor than the battery and the crank put in', () => {
+  // The same loop on plain wire: three batteries, a generator that
+  // out-pushes them when the crank turns, and a motor turning a second
+  // generator with a lamp. A hand starts and stops the crank again and
+  // again. The motor takes up each change a bit late, but what it has too
+  // much of after a start it has too little of after a stop.
+  for (const beat of [1, 2, 3, 5, 8]) {
+    const world = build([
+      '......WWBBBW.WW',
+      'QGs-GsE....M-EL',
+      '......WWWWWW.WW',
+      '...............',
+    ]);
+    let crankWork = 0;
+    let batteryWork = 0;
+    let lampHeat = 0;
+    const batteryBefore = {};
+    for (let t = 0; t < 1600; t++) {
+      setBlock(world, 0, 1, Math.floor(t / beat) % 2 === 0 ? 'crankStop' : 'crankCCW');
+      more(world, 1);
+      crankWork += crankWorkAt(world, 0, 1);
+      for (const x of [8, 9, 10]) {
+        const cell = world.signals.electric.cells.get(x);
+        const out = cell.arms.right ?? -(cell.arms.left ?? 0);
+        batteryWork += Math.max(0, out, batteryBefore[x] ?? 0) / 8;
+        batteryBefore[x] = out;
+      }
+      lampHeat += amps(world, 14, 1) ** 2 / 8;
+    }
+    assert.ok(lampHeat > 0.1, `beat ${beat}: the lamp does light (${lampHeat})`);
+    assert.ok(lampHeat <= crankWork + batteryWork, `beat ${beat}: lamp heat ${lampHeat} from crank work ${crankWork} and battery work ${batteryWork}`);
   }
 });

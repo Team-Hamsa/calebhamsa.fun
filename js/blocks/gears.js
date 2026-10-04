@@ -94,8 +94,8 @@ export const GENERATOR_TORQUE = 1;
 const MIN_SOURCE = 0.05;
 
 /**
- * A motor takes up a change in its generators' current over a few ticks:
- * each tick it moves 1 ÷ FEED_SMOOTHING of the way (half).
+ * A motor takes up a change in its current over a few ticks: each tick
+ * it moves 1 ÷ FEED_SMOOTHING of the way (half). See generatorFeed.
  */
 const FEED_SMOOTHING = 2;
 
@@ -245,24 +245,27 @@ export function generatorBrake(world, x, y, group) {
  * going: the generator only gives back 8 tenths of the work, so each time
  * round there's less, and it winds down. No special rule needed!)
  *
- * A motor feels a generator's electricity A LITTLE LATE: it uses the
- * current the generators made (and were pushed back for) on the ticks
- * before. So every bit of current a motor uses was paid for by somebody
- * turning a generator. On the tick its wiring changes (a clicker closes,
- * a switch is flipped, a wire is added) there is no such current yet for
- * the new wiring: the generator may have been spinning freely with
- * nothing to push against. So for that one tick the motor only gets what
- * batteries and turbines send it, and the generators' share starts on
- * the next tick. (Without this, a clicker would hand a motor one tick of
- * free full-speed electricity on every beat.)
+ * A motor with a generator in its circuit feels the electricity A
+ * LITTLE LATE: it goes by the current that flowed at the speeds the
+ * generators turned on the tick before, the current they were pushed
+ * back for. And it takes up a change in that current half at a time
+ * (see generatorFeed), a bit like a real motor's coil, which can't
+ * change its current in an instant.
  *
- * The generators' share is also SMOOTHED: the motor takes up a change in
- * it half at a time (see generatorFeed), a bit like a real motor's coil,
- * which can't change its current in an instant. That matters when the
- * motor sits on the same gears as its generators: more current slows
- * the gears, which makes less current, which speeds them up again...
- * Taken up all at once, a tick late, that never settles: the gears
- * flicker faster-slower-faster for ever. Half at a time, it settles.
+ * On the tick its wiring changes (a clicker closes, a switch is
+ * flipped, a wire is added) the generators can't ADD anything yet: they
+ * may have been spinning freely with nothing to push against. The motor
+ * gets what batteries and turbines send it, less whatever the
+ * generators HOLD BACK of that (a generator pushing against a battery).
+ * (Without the first rule, a clicker would hand a motor a tick of free
+ * electricity on every beat. Without the second, it would hand it a
+ * burst of battery current that never flows.)
+ *
+ * The smoothing matters when the motor sits on the same gears as its
+ * generators: more current slows the gears, which makes less current,
+ * which speeds them up again... Taken up all at once, a tick late, that
+ * never settles: the gears flicker faster-slower-faster for ever. Half
+ * at a time, it settles.
  *
  * A motor with only a whisper of current (less than MIN_SOURCE) fades
  * out smoothly instead of switching off with a snap (see FADE below),
@@ -282,9 +285,9 @@ export function motorSource(world, x, y, members) {
   const index = y * world.width + x;
   const cell = world.signals.electric?.cells?.get(index);
   if (!cell) return null;
-  const rewired = world.signals.spin?.rewired?.has(index);
-  const steady = cell.perVolt ? cell.fixed ?? 0 : cell.arms[plusSide(cell.axis)] ?? 0; // from batteries and turbines
-  const out = steady + (rewired ? 0 : world.signals.spin?.fed?.get(index) ?? 0);
+  // With a generator in its circuit, it uses the current generatorFeed
+  // allows it. With only batteries and turbines: all that flows.
+  const out = cell.perVolt ? world.signals.spin?.fed?.get(index) ?? 0 : cell.arms[plusSide(cell.axis)] ?? 0;
   // The real current, not `level` (that stops at MAX_LEVEL, only so lamps
   // don't get too bright): five batteries make a motor five times as strong.
   const amount = fadeIn(Math.abs(out) / REFERENCE_CURRENT);
@@ -372,8 +375,9 @@ export function refreshSpin(world, blockInfo) {
   const wheelFlow = world.signals.spin?.wheelFlow ?? new Map();
   const wheelWork = world.signals.spin?.wheelWork ?? new Map();
   const felt = world.signals.spin?.felt;
-  const fed = world.signals.spin?.fed;
-  world.signals.spin = { ...world.signals.spin, rewired: rewiredParts(world, felt) };
+  const rewired = rewiredParts(world, felt);
+  const fed = generatorFeed(world, world.signals.spin?.fed, rewired, false);
+  world.signals.spin = { ...world.signals.spin, rewired, fed };
   const solved = keepAngles(solveSpin(world, blockInfo), world.signals.spin?.cells, false);
   world.signals.spin = { ...solved, wheels, wheelFlow, wheelWork, blocks, felt, fed };
 }
@@ -395,33 +399,53 @@ function generatorWiring(world) {
 }
 
 /**
- * The generators' share of every part's current, smoothed: each tick a
- * part takes up HALF of the change (see motorSource for why). The share
- * is what the generators sent out of the part's + end at the speeds they
- * turned on the last tick: the very current their shafts were pushed
- * back for (see generatorBrake). We work it out from those speeds
- * exactly, not from the circuit's rounded pushes (see roundPush in
- * circuit.js): rounding goes in little steps, and a motor on its
+ * The current every part in a circuit with a generator gets to USE (a
+ * motor turns by it: see motorSource).
+ *
+ * The current that really flows out of the part's + end is what the
+ * batteries and turbines send (`fixed`) plus what the generators sent at
+ * the speeds they turned on the last tick: the very current their shafts
+ * were pushed back for (see generatorBrake). We work that out from those
+ * speeds exactly, not from the circuit's rounded pushes (see roundPush
+ * in circuit.js): rounding goes in little steps, and a motor on its
  * generators' own gears would hop between two steps for ever.
  *
- * A part that has just been rewired starts again from nothing: the
- * current through its new wiring hasn't been paid for yet.
+ * The part follows that current like this:
  *
- * Averaging never gives a motor more than was paid for: over time it
- * hands on exactly the current the generators made, only spread out.
+ *   • Each tick it takes up a share of the change (1 ÷ FEED_SMOOTHING),
+ *     up or down. Averaging like that never makes current: over time it
+ *     hands on exactly the current that flowed, only spread out.
+ *   • On the tick its wiring changes (a clicker closes) it starts again:
+ *     it gets what the batteries and turbines send, LESS whatever the
+ *     generators hold back of that (a generator pushing against a
+ *     battery), down to nothing and no further. Current the generators
+ *     would ADD starts from the next tick: it hasn't been paid for yet.
+ *
+ * So on a rewired tick a part never gets more current than is flowing,
+ * and all of it was paid for by a battery or a turbine.
  * @param {object} world - the world
- * @param {Map<number, number>|undefined} before - the smoothed shares on the last tick
+ * @param {Map<number, number>|undefined} before - the current each part used on the last tick
  * @param {Set<number>} rewired - the parts whose wiring changed this tick (from rewiredParts)
- * @returns {Map<number, number>} part's cell index → smoothed current out of its + end from generators
+ * @param {boolean} [advance] - true on a tick; false on a redraw (parts
+ *   keep the current they had, unless they have just been rewired)
+ * @returns {Map<number, number>} part's cell index → the current out of its + end that it may use
  */
-function generatorFeed(world, before, rewired) {
+function generatorFeed(world, before, rewired, advance = true) {
   const fed = new Map();
   for (const [index, cell] of world.signals.electric?.cells ?? []) {
-    if (!cell.perVolt || rewired.has(index)) continue;
-    let now = 0;
-    for (const [maker, share] of cell.perVolt) now += share * generatorPush(world, maker % world.width, Math.floor(maker / world.width));
-    const smooth = ((before?.get(index) ?? 0) + now) / FEED_SMOOTHING;
-    if (Math.abs(smooth) > FEED_MIN) fed.set(index, smooth);
+    if (!cell.perVolt) continue;
+    let made = 0; // what the generators send through it
+    for (const [maker, share] of cell.perVolt) made += share * generatorPush(world, maker % world.width, Math.floor(maker / world.width));
+    const steady = cell.fixed ?? 0;
+    const flowing = steady + made;
+    let use = before?.get(index) ?? 0;
+    if (rewired.has(index)) {
+      // The steady current, held back by the generators as far as nothing and no further.
+      use = steady * flowing > 0 ? Math.sign(steady) * Math.min(Math.abs(steady), Math.abs(flowing)) : 0;
+    } else if (advance) {
+      use += (flowing - use) / FEED_SMOOTHING;
+    }
+    if (Math.abs(use) > FEED_MIN) fed.set(index, use);
   }
   return fed;
 }

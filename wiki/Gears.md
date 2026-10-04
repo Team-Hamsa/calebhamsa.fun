@@ -61,9 +61,10 @@ three on one crank are much harder to turn than one, and never give out more
 than the crank puts in. A motor feels a generator's electricity a little late,
 and takes up a change in it half at a time (like a real motor's coil, which
 can't change its current in an instant): so a motor on the same gears as the
-generators that feed it settles to one steady speed instead of flickering. It
-skips a tick when its wiring changes (a clicker closing, a switch flipped):
-so a clicker can't hand it a burst of electricity nobody pushed for. A motor
+generators that feed it settles to one steady speed instead of flickering.
+When its wiring changes (a clicker closing, a switch flipped) the generators
+can't add anything for one tick, only hold a battery back: so a clicker can't
+hand a motor a burst of electricity nobody pushed for. A motor
 with only a whisper of current fades out smoothly, then stops.
 
 **Nothing runs forever.** A generator turns at most 8 tenths of the work you
