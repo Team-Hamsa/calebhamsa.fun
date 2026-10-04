@@ -104,9 +104,14 @@ export const TICKS_PER_SECOND = 8;
  * one tooth every tick, and every picture would look the same: it would
  * look stopped! Slowed down 4 times, its teeth creep round a quarter of
  * a tooth each tick, which you can see.
+ * (Faster gears can still fool your eye that way. That's what the one
+ * yellow tooth is for: see drawGear.)
  * 🧪 Try this! 1, and watch the gears seem to stand still.
  */
 const DRAW_SLOWDOWN = 4;
+
+/** The color of the one marked tooth on a gear, and the one marked paddle on a water wheel. */
+const MARK = '#ffd54f';
 
 /** The order a crank goes through when you tap it with ✋. */
 const CRANK_TURNS = { crankStop: 'crankCW', crankCW: 'crankCCW', crankCCW: 'crankStop' };
@@ -255,13 +260,37 @@ export function refreshSpin(world, blockInfo) {
   if (world.signals.spin?.blocks === blocks) return;
   const wheelFlow = world.signals.spin?.wheelFlow ?? new Map();
   const wheelWork = world.signals.spin?.wheelWork ?? new Map();
-  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, wheelWork, blocks };
+  const solved = keepAngles(solveSpin(world, blockInfo), world.signals.spin?.cells, false);
+  world.signals.spin = { ...solved, wheelFlow, wheelWork, blocks };
+}
+
+/**
+ * Give every spinning block its `angle`: how far round it has turned so
+ * far (in turns). We ADD UP the turning tick by tick, a little each
+ * tick, like a real gear: so when a gear speeds up or slows down it
+ * carries on from where it was. (Working the angle out fresh from the
+ * clock × the speed made every gear jump to a new place whenever its
+ * speed changed.) A stopped gear keeps its angle: it stays where it
+ * stopped.
+ * @param {{cells: Map<number, object>}} solved - the new records, from solveSpin
+ * @param {Map<number, object>|undefined} before - the records from last time
+ * @param {boolean} advance - true on a tick (turn everything on a bit), false on a redraw
+ * @returns {{cells: Map<number, object>}} the same records, with `angle` filled in
+ */
+function keepAngles(solved, before, advance) {
+  for (const [index, cell] of solved.cells) {
+    const angle = (before?.get(index)?.angle ?? 0) + (advance ? cell.speed / TICKS_PER_SECOND : 0);
+    // The drawing repeats every DRAW_SLOWDOWN turns, so keep the number small.
+    cell.angle = ((angle % DRAW_SLOWDOWN) + DRAW_SLOWDOWN) % DRAW_SLOWDOWN;
+  }
+  return solved;
 }
 
 /**
  * The gears rule that runs every tick: follow the water flowing through
  * the water wheels (from the 💧 pack, which ran just before), work out
- * the turning, and ask for a redraw while anything turns.
+ * the turning, turn every block on a little (see keepAngles), and ask
+ * for a redraw while anything turns.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {boolean} always false: no blocks moved
@@ -281,8 +310,10 @@ export function gearsSystem(world, blockInfo) {
     wheelWork.set(index, lastWork + ((waterWork.get(index) ?? 0) - lastWork) / WHEEL_SMOOTHING);
   });
   // The wheels read these two maps while solveSpin works out the turning.
+  const cellsBefore = world.signals.spin?.cells;
   world.signals.spin = { ...world.signals.spin, wheelFlow, wheelWork };
-  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, wheelWork, blocks: world.cells.join(',') };
+  const solved = keepAngles(solveSpin(world, blockInfo), cellsBefore, true);
+  world.signals.spin = { ...solved, wheelFlow, wheelWork, blocks: world.cells.join(',') };
   if (world.signals.spin.turning) world.animating = true;
   return false;
 }
@@ -294,15 +325,14 @@ export function gearsSystem(world, blockInfo) {
 // A cell's record (from spin.js) says how fast it turns and if it's jammed.
 
 /**
- * How far round a block has turned, as a number from 0 to 1, from the
- * clock and its speed.
+ * How far round to DRAW a block, as a number from 0 to 1, from the
+ * angle it has turned so far (added up tick by tick: see keepAngles).
+ * Drawn DRAW_SLOWDOWN times slower than it really turns.
  * @param {object|undefined} cell - its spin record (none in the palette)
- * @param {number} ticks - the world's clock
  * @returns {number} 0 = not turned, 0.5 = half a turn, ...
  */
-export function turned(cell, ticks) {
-  if (!cell || Math.abs(cell.speed) < MIN_SPEED) return 0;
-  const turns = (ticks * cell.speed) / (TICKS_PER_SECOND * DRAW_SLOWDOWN);
+export function turned(cell) {
+  const turns = (cell?.angle ?? 0) / DRAW_SLOWDOWN;
   return turns - Math.floor(turns);
 }
 
@@ -325,8 +355,9 @@ function drawDisc(ctx, cx, cy, radius, step) {
 }
 
 /**
- * Draw a gear: a disc, a ring of teeth, and a hole in the middle. The
- * teeth go round as it turns. Jammed gears get a red ❌.
+ * Draw a gear: a disc, a ring of teeth (one of them yellow, so you can
+ * follow it round), and a hole in the middle. The teeth go round as it
+ * turns. Jammed gears get a red ❌.
  * @param {CanvasRenderingContext2D} ctx - the canvas paintbrush
  * @param {object} info - the block's definition (info.spin.teeth)
  * @param {number} left - the cell's left edge
@@ -345,12 +376,19 @@ function drawGear(ctx, info, left, top, size, cell, ticks) {
   drawDisc(ctx, cx, cy, (big ? 3 : 2.25) * p, p / 2);
   const teeth = info.spin.teeth;
   const reach = (big ? 3.5 : 2.75) * p;
-  const angle = turned(cell, ticks) * Math.PI * 2;
+  const angle = turned(cell) * Math.PI * 2;
   ctx.fillStyle = big ? '#6d4c41' : '#757575';
-  for (let k = 0; k < teeth; k++) {
+  for (let k = 1; k < teeth; k++) {
     const a = angle + (k / teeth) * Math.PI * 2;
     ctx.fillRect(cx + Math.cos(a) * reach - p / 2, cy + Math.sin(a) * reach - p / 2, p, p);
   }
+  // One tooth is painted yellow, with a dot on the way in to the middle.
+  // All the other teeth look the same, so on a fast gear they can seem to
+  // stand still or creep backwards (like wagon wheels in a film). The
+  // yellow one shows which way the gear REALLY turns, and how fast.
+  ctx.fillStyle = MARK;
+  ctx.fillRect(cx + Math.cos(angle) * reach - p / 2, cy + Math.sin(angle) * reach - p / 2, p, p);
+  ctx.fillRect(cx + Math.cos(angle) * reach * 0.5 - p / 4, cy + Math.sin(angle) * reach * 0.5 - p / 4, p / 2, p / 2);
   ctx.fillStyle = '#424242';
   ctx.fillRect(cx - p / 2, cy - p / 2, p, p); // the hole for the shaft
   if (cell?.jammed) drawJam(ctx, left, top, size);
@@ -391,7 +429,7 @@ function drawAxle(ctx, info, left, top, size, cell, ticks) {
   if (upright) ctx.fillRect(left + 3 * p, top, 2 * p, size);
   else ctx.fillRect(left, top + 3 * p, size, 2 * p);
   ctx.fillStyle = '#616161';
-  const along = Math.floor(turned(cell, ticks) * 8) * p; // the stripe moves one little pixel at a time
+  const along = Math.floor(turned(cell) * 8) * p; // the stripe moves one little pixel at a time
   if (upright) ctx.fillRect(left + 3 * p, top + along, 2 * p, p);
   else ctx.fillRect(left + along, top + 3 * p, p, 2 * p);
   if (cell?.jammed) drawJam(ctx, left, top, size);
@@ -411,7 +449,7 @@ function drawAxle(ctx, info, left, top, size, cell, ticks) {
  */
 function drawCrank(ctx, info, left, top, size, cell, ticks) {
   const p = size / 8;
-  const quarter = Math.floor(turned(cell, ticks) * 4); // 4 positions: up, right, down, left
+  const quarter = Math.floor(turned(cell) * 4); // 4 positions: up, right, down, left
   const [kx, ky] = [[3.5, 1], [6, 3.5], [3.5, 6], [1, 3.5]][quarter];
   ctx.fillStyle = '#5d4037'; // the arm
   const [ax, ay, aw, ah] = [[3.5, 1.5, 1, 2], [4, 3.5, 2, 1], [3.5, 4, 1, 2], [1.5, 3.5, 2, 1]][quarter];
@@ -424,7 +462,8 @@ function drawCrank(ctx, info, left, top, size, cell, ticks) {
 }
 
 /**
- * Draw a water wheel: a hub with four paddles that turn.
+ * Draw a water wheel: a hub with four paddles that turn. One paddle has
+ * a yellow tip.
  * @param {CanvasRenderingContext2D} ctx - the canvas paintbrush
  * @param {object} info - the block's definition
  * @param {number} left - the cell's left edge
@@ -436,12 +475,17 @@ function drawCrank(ctx, info, left, top, size, cell, ticks) {
  */
 function drawWheel(ctx, info, left, top, size, cell, ticks) {
   const p = size / 8;
-  const tilted = Math.floor(turned(cell, ticks) * 8) % 2 === 1; // + or × paddles
+  const eighth = Math.floor(turned(cell) * 8); // 8 positions: 0 = up, then clockwise
+  const tilted = eighth % 2 === 1; // + or × paddles
   ctx.fillStyle = '#8d6e63';
   const paddles = tilted
     ? [[1, 1], [6, 1], [1, 6], [6, 6], [2, 2], [5, 2], [2, 5], [5, 5]]
     : [[3.5, 0], [3.5, 1], [3.5, 6], [3.5, 7], [0, 3.5], [1, 3.5], [6, 3.5], [7, 3.5]];
   for (const [x, y] of paddles) ctx.fillRect(left + x * p, top + y * p, p, p);
+  // One paddle has a yellow tip, so you can see which way the wheel turns.
+  const [tipX, tipY] = [[3.5, 0], [6, 1], [7, 3.5], [6, 6], [3.5, 7], [1, 6], [0, 3.5], [1, 1]][eighth];
+  ctx.fillStyle = MARK;
+  ctx.fillRect(left + tipX * p, top + tipY * p, p, p);
   ctx.fillStyle = '#5d4037';
   ctx.fillRect(left + 3 * p, top + 3 * p, 2 * p, 2 * p);
   if (cell?.jammed) drawJam(ctx, left, top, size);
@@ -484,7 +528,7 @@ function drawMotor(ctx, info, left, top, size, cell, ticks) {
   const p = size / 8;
   ctx.fillStyle = '#263238';
   ctx.fillRect(left + 2 * p, top + 2 * p, 4 * p, 4 * p);
-  const quarter = Math.floor(turned(cell, ticks) * 4);
+  const quarter = Math.floor(turned(cell) * 4);
   const [x, y] = [[3.5, 2.5], [4.5, 3.5], [3.5, 4.5], [2.5, 3.5]][quarter];
   ctx.fillStyle = '#ffca28';
   ctx.fillRect(left + x * p, top + y * p, p, p);
@@ -593,7 +637,7 @@ const guide = {
     'Nothing runs forever. A motor powered by its own generator slows down and stops, like a real one. So does a pump that lifts water for the water wheels that power it: lifting the water costs more than its fall gives back.',
   ],
   blocks: {
-    gearSmall: { does: '8 teeth. Turns the gears next to it the other way.' },
+    gearSmall: { does: '8 teeth. Turns the gears next to it the other way. Follow its yellow tooth to see which way it turns, and how fast.' },
     gearBig: { does: '16 teeth: half as fast as a small gear it touches. Big gears also touch corner to corner.' },
     axle: { does: 'A rod. Carries turning in a straight line, the same way round. It joins things at its two ends only: put a gear on the end of a shaft, not beside it.' },
     crankStop: { does: 'Hand power, strength 2! Red knob = stopped, green knob = turning.', use: 'stop → ↻ → ↺ → stop' },

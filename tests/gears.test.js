@@ -10,7 +10,7 @@ import { allSystems, blockInfo, blocksInPack, isKnownBlock, refreshSignals } fro
 import { drawWorld } from '../js/block-art.js';
 import { DROP_POWER, PUMP_HEAD, PUMP_RATE } from '../js/fluids.js';
 import gears, {
-  CRANK_SPEED, CRANK_STRENGTH, GENERATOR_GAIN, GENERATOR_TORQUE, WHEEL_GAIN, WHEEL_STRENGTH, spinAt, wheelSource,
+  CRANK_SPEED, CRANK_STRENGTH, GENERATOR_GAIN, GENERATOR_TORQUE, WHEEL_GAIN, WHEEL_STRENGTH, spinAt, turned, wheelSource,
 } from '../js/blocks/gears.js';
 import { REFERENCE_CURRENT } from '../js/circuit.js';
 
@@ -561,4 +561,138 @@ test('redrawing does not move the gears on: refreshing twice changes nothing', (
   refreshSignals(world);
   assert.equal(JSON.stringify([...world.signals.spin.cells]), before);
   assert.equal(world.signals.electric.solves, solves);
+});
+
+// ---- How the turning is DRAWN (issue #22) ----
+
+/** Gears are drawn turning 4 times slower than they turn, 8 ticks a second: 1 turn/s = 1/32 of a turn a tick. */
+const DRAWN_PER_TICK = 1 / 32;
+
+/**
+ * The spin record of the block at x, y.
+ * @param {object} world - the world
+ * @param {number} x - column
+ * @param {number} y - row
+ * @returns {object} its record
+ */
+const spinCell = (world, x, y) => world.signals.spin.cells.get(y * world.width + x);
+
+/**
+ * How far a drawing moved round between two looks, as a part of a turn
+ * from −0.5 to 0.5 (+ is clockwise).
+ * @param {number} before - `turned` before
+ * @param {number} after - `turned` after
+ * @returns {number} the step
+ */
+const stepRound = (before, after) => ((after - before + 1.5) % 1) - 0.5;
+
+/**
+ * Run one tick.
+ * @param {object} world - the world
+ * @returns {void}
+ */
+const oneTick = (world) => tick(world, allSystems(), blockInfo);
+
+test('a gear slowing down keeps turning smoothly the same way: its picture never jumps', () => {
+  // A faucet drives a water wheel and a gear. Then the faucet is dug away and the wheel runs down.
+  const world = run(['.F.....', '.......', '.Os....', '.......', '.D.....', '#######'], 200);
+  assert.ok(spinAt(world, 2, 2) > 0.9, 'the gear should be turning');
+  setBlock(world, 1, 0, 'air');
+  let before = turned(spinCell(world, 2, 2));
+  for (let i = 0; i < 40; i++) {
+    oneTick(world);
+    const cell = spinCell(world, 2, 2);
+    const step = stepRound(before, turned(cell));
+    // Each tick the picture moves exactly as far as the gear really turned in that tick.
+    assert.ok(Math.abs(step - cell.speed * DRAWN_PER_TICK) < 1e-9, `tick ${i}: moved ${step} at speed ${cell.speed}`);
+    before = turned(cell);
+  }
+});
+
+test('a gear that stops stays where it stopped, and starts again from there', () => {
+  const world = run(['Rs'], 5);
+  const moving = turned(spinCell(world, 1, 0));
+  assert.ok(Math.abs(moving - 5 * DRAWN_PER_TICK) < 1e-9);
+  setBlock(world, 0, 0, 'crankStop');
+  for (let i = 0; i < 3; i++) oneTick(world);
+  assert.equal(turned(spinCell(world, 1, 0)), moving); // it doesn't snap back to the start
+  setBlock(world, 0, 0, 'crankCCW');
+  oneTick(world);
+  assert.ok(Math.abs(stepRound(moving, turned(spinCell(world, 1, 0))) + DRAWN_PER_TICK) < 1e-9); // one step back the other way
+});
+
+test('redrawing after a block changes never moves the gears on: only ticks do', () => {
+  const world = run(['Rs.'], 5);
+  const before = turned(spinCell(world, 1, 0));
+  setBlock(world, 2, 0, 'gearSmall');
+  refreshSignals(world);
+  refreshSignals(world);
+  assert.equal(turned(spinCell(world, 1, 0)), before);
+  assert.equal(turned(spinCell(world, 2, 0)), 0); // the new gear starts from its own beginning
+});
+
+/** The color of the one marked tooth every gear has. */
+const MARK = '#ffd54f';
+
+/**
+ * Draw the block at x, y and find where its marked tooth (or paddle) is.
+ * @param {object} world - the world
+ * @param {number} x - column
+ * @param {number} y - row
+ * @returns {number} the mark's angle round the middle of the block, as a part of a turn (0 = right, 0.25 = down)
+ */
+function markAngle(world, x, y) {
+  const marks = [];
+  const ctx = { fillStyle: '', fillRect(left, top, width, height) { if (ctx.fillStyle === MARK) marks.push([left + width / 2, top + height / 2]); } };
+  const info = blockInfo(getBlock(world, x, y));
+  info.drawSignals(ctx, info, 0, 0, 64, spinCell(world, x, y), world.ticks);
+  assert.ok(marks.length > 0, 'no marked tooth was drawn');
+  // The mark furthest from the middle is the tooth itself.
+  const [mx, my] = marks.sort((a, b) => Math.hypot(b[0] - 32, b[1] - 32) - Math.hypot(a[0] - 32, a[1] - 32))[0];
+  return Math.atan2(my - 32, mx - 32) / (2 * Math.PI);
+}
+
+test('fast gears show which way they turn: one marked tooth goes round, faster for faster gears', () => {
+  // crank 1 → big 1 → small −2 → axle −2 → big −2 → small 4
+  const world = run(['RGs-Gs'], 3);
+  /** Where each gear is, and how fast it should turn. */
+  const gearsToWatch = [[1, 1], [2, -2], [4, -2], [5, 4]];
+  for (const [x, speed] of gearsToWatch) assert.equal(spinAt(world, x, 0), speed);
+  let before = gearsToWatch.map(([x]) => markAngle(world, x, 0));
+  for (let i = 0; i < 6; i++) {
+    oneTick(world);
+    const after = gearsToWatch.map(([x]) => markAngle(world, x, 0));
+    gearsToWatch.forEach(([x, speed], k) => {
+      const step = stepRound(before[k], after[k]);
+      // The right way round, and the right amount: never stopped, never backwards.
+      assert.ok(Math.abs(step - speed * DRAWN_PER_TICK) < 1e-6, `gear at ${x} (speed ${speed}) moved ${step}`);
+    });
+    before = after;
+  }
+});
+
+test('a motor with more batteries turns its gear visibly faster, never backwards', () => {
+  for (const batteries of [1, 2, 3, 4, 5]) {
+    const loop = `W${'B'.repeat(batteries)}${'W'.repeat(5 - batteries)}MW`;
+    const world = run(['......s.', loop, 'W......W', 'WWWWWWWW'], 12);
+    const speed = spinAt(world, 6, 0);
+    assert.ok(Math.abs(speed) > 0.5, `${batteries} batteries: speed ${speed}`);
+    const before = markAngle(world, 6, 0);
+    oneTick(world);
+    const step = stepRound(before, markAngle(world, 6, 0));
+    assert.ok(Math.abs(step - spinAt(world, 6, 0) * DRAWN_PER_TICK) < 1e-6, `${batteries} batteries: moved ${step}, speed ${speed}`);
+  }
+});
+
+test('a water wheel has one marked paddle, so you can see which way it turns', () => {
+  const world = run(['Q-O'], 1);
+  const seen = [];
+  for (let i = 0; i < 16; i++) {
+    seen.push(markAngle(world, 2, 0));
+    oneTick(world);
+  }
+  // Turning ↺: the marked paddle only ever steps anticlockwise, an eighth of a turn at a time.
+  const steps = seen.slice(1).map((angle, k) => stepRound(seen[k], angle));
+  assert.ok(steps.every((step) => step <= 1e-9 && step > -0.2), `steps: ${steps}`);
+  assert.ok(steps.some((step) => step < -0.1), 'the marked paddle never moved');
 });

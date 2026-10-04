@@ -176,13 +176,20 @@ or a crank, wheel, motor or generator touching a gear) turn the **same** way.
 
 | | Block | What it does | ✋ USE |
 |---|---|---|---|
-| ![Small gear](docs/blocks/gearSmall.png) | **Small gear** | 8 teeth. Turns the gears next to it the other way. | — |
+| ![Small gear](docs/blocks/gearSmall.png) | **Small gear** | 8 teeth. Turns the gears next to it the other way. One tooth is **yellow**: follow it to see which way the gear turns and how fast. | — |
 | ![Big gear](docs/blocks/gearBig.png) | **Big gear** | 16 teeth, so it turns **half as fast** as a small gear it's touching (and a small gear driven by it turns **twice as fast**). Big gears also touch corner to corner. | — |
 | ![Axle](docs/blocks/axle.png) | **Axle** | A rod: carries turning in a straight line, the same way round. It only joins things at its two **ends**: a gear beside a shaft doesn't touch it (and doesn't break it). | — |
 | ![Crank](docs/blocks/crankStop.png) | **Crank** | Hand power! Red knob = stopped, green knob = turning. ![Turning crank](docs/blocks/crankCW.png) | stop → ↻ → ↺ → stop |
 | ![Water wheel](docs/blocks/waterWheel.png) | **Water wheel** | Turns when 💧 water flows through it. More water = **faster**. A longer fall = **stronger**: put it where the water drops. | — |
 | ![Motor](docs/blocks/motor.png) | **Motor** | Turns ⚡ electricity into turning. Put it in a loop with a battery (wires on its sides). Move the battery to the other side of the loop and it turns the other way. | — |
 | ![Generator](docs/blocks/generator.png) | **Generator** | Turns turning into ⚡ electricity: wire it up like a battery. Its **+** end swaps when it turns the other way. | — |
+
+**Follow the yellow tooth.** Every gear has one yellow tooth, and every water
+wheel one yellow paddle tip. On a fast gear the plain teeth all look alike, so
+they can seem to stand still or even creep backwards (like wagon wheels in a
+film). The yellow tooth never fools you: it goes round the way the gear really
+turns, faster on a faster gear. A gear that slows down slows down smoothly, and
+one that stops stays where it stopped.
 
 **Jammed!** Three big gears all touching each other (in an L) can't turn: each
 one would have to turn both ways at once. The whole group stops and shows a

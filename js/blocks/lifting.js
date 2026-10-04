@@ -262,7 +262,7 @@ function drawWinch(ctx, info, left, top, size, cell, ticks) {
   ctx.fillStyle = '#8d6e63'; // the drum
   ctx.fillRect(left + 2 * p, top + 2 * p, 4 * p, 4 * p);
   ctx.fillStyle = ROPE; // rope wound round it, rolling as it turns
-  const roll = Math.floor(turned(cell, ticks) * 4); // 0..3
+  const roll = Math.floor(turned(cell) * 4); // 0..3
   for (let row = 0; row < 4; row += 2) ctx.fillRect(left + 2 * p, top + (2 + ((row + roll) % 4)) * p, 4 * p, p);
   ctx.fillStyle = CATCH; // the catch (ratchet): a little metal finger leaning on the drum
   ctx.fillRect(left + 5 * p, top + p, p, p);
