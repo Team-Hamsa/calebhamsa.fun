@@ -490,3 +490,24 @@ test('in lots of random worlds, wheels never get more energy than the water has 
     assert.ok(Math.abs(total(world, 'water') - water) < 1e-9, `world ${trial}: water ${water} → ${total(world, 'water')}`);
   }
 });
+
+test('a chiller beside a drain is the same on either side: the water it makes in the drain goes down the drain', () => {
+  LETTERS.C = 'chiller';
+  LETTERS.D = 'drain';
+  const left = worldFrom(['#CD.#', '#####']);
+  const right = worldFrom(['#.DC#', '#####']);
+  setFluid(left, 'steam', 2, 0, 1);
+  setFluid(right, 'steam', 2, 0, 1);
+  for (let i = 0; i < 20; i++) {
+    stepFluids(left, blockInfo);
+    stepFluids(right, blockInfo);
+    for (let x = 0; x < 5; x++) {
+      for (const kind of ['water', 'steam']) {
+        const a = getFluid(left, kind, x, 0);
+        const b = getFluid(right, kind, 4 - x, 0);
+        assert.ok(Math.abs(a - b) < 1e-12, `tick ${i}, ${kind} in column ${x}: ${a} with the chiller on the left, ${b} on the right`);
+      }
+    }
+  }
+  assert.equal(getFluid(right, 'water', 1, 0), 0); // none leaks past the drain
+});

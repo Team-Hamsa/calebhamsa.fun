@@ -635,9 +635,16 @@ export function pumpAmount(level, behind, ahead, rise) {
 const BOIL_STEAM_CAP = FULL + SQUISH;
 
 /**
- * Let the special blocks do their jobs: faucets add water, drains take
- * it away, burners boil water into steam, chillers turn steam back
- * into water, and powered pumps push water from behind them to in front.
+ * Let the special blocks do their jobs: faucets add water, burners boil
+ * water into steam, chillers turn steam back into water, powered pumps
+ * push water from behind them to in front, and drains take water away.
+ *
+ * They go in three rounds, so that it never matters which block comes
+ * first in the world (a machine built the other way round, mirrored,
+ * works just the same):
+ *   1. faucets, burners and chillers
+ *   2. pumps (each one looks at the water as it was when the round began)
+ *   3. drains, last of all: whatever ended up in a drain this tick is gone
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @param {string[][]} sides - open sides by cell index
@@ -657,9 +664,14 @@ export function runSpecials(world, blockInfo, sides) {
     const y = Math.floor(index / world.width) + STEP[side][1];
     return inBounds(world, x, y) ? y * world.width + x : -1;
   };
+  const pumps = [];
+  const drains = [];
+  // Round 1: faucets, burners and chillers.
   for (let index = 0; index < world.cells.length; index++) {
     const info = blockInfo(world.cells[index]);
     if (!info) continue;
+    if (info.fluid?.pump) pumps.push(index);
+    if (info.drains) drains.push(index);
     if (info.faucet) {
       const below = beside(index, 'down');
       if (below >= 0 && sides[below].includes('up')) {
@@ -667,10 +679,6 @@ export function runSpecials(world, blockInfo, sides) {
         water[below] += add;
         changed += add;
       }
-    }
-    if (info.drains && water[index] > 0) {
-      changed += water[index];
-      water[index] = 0;
     }
     if (info.burns) {
       const above = beside(index, 'up');
@@ -691,23 +699,32 @@ export function runSpecials(world, blockInfo, sides) {
         changed += cool;
       }
     }
-    const front = info.fluid?.pump;
-    if (front) {
-      // The real current (not `level`, which stops at 2 so lamps don't get
-      // too bright): more batteries really do pump faster and higher.
-      const level = (world.signals.electric?.cells?.get(index)?.current ?? 0) / REFERENCE_CURRENT;
-      if (level < PUMP_ON_LEVEL) continue;
-      const back = beside(index, OPPOSITE[front]);
-      const ahead = beside(index, front);
-      if (back < 0 || ahead < 0 || !sides[back].includes(front) || !sides[ahead].includes(OPPOSITE[front])) continue;
-      // Lifting costs flow: see pumpAmount. STEP's y counts down, so up is a rise of +2
-      // (from the cell under the pump to the cell above it).
-      const rise = -2 * STEP[front][1];
-      const push = pumpAmount(level, water[back], water[ahead], rise);
-      water[back] -= push;
-      water[ahead] += push;
-      changed += push;
-    }
+  }
+  // Round 2: pumps. Each works out its push from the water as it is now,
+  // before any pump has moved any.
+  const start = Float64Array.from(water);
+  for (const index of pumps) {
+    const front = blockInfo(world.cells[index]).fluid.pump;
+    // The real current (not `level`, which stops at 2 so lamps don't get
+    // too bright): more batteries really do pump faster and higher.
+    const level = (world.signals.electric?.cells?.get(index)?.current ?? 0) / REFERENCE_CURRENT;
+    if (level < PUMP_ON_LEVEL) continue;
+    const back = beside(index, OPPOSITE[front]);
+    const ahead = beside(index, front);
+    if (back < 0 || ahead < 0 || !sides[back].includes(front) || !sides[ahead].includes(OPPOSITE[front])) continue;
+    // Lifting costs flow: see pumpAmount. STEP's y counts down, so up is a rise of +2
+    // (from the cell under the pump to the cell above it).
+    const rise = -2 * STEP[front][1];
+    const push = Math.min(pumpAmount(level, start[back], start[ahead], rise), water[back]);
+    water[back] -= push;
+    water[ahead] += push;
+    changed += push;
+  }
+  // Round 3: drains.
+  for (const index of drains) {
+    if (water[index] <= 0) continue;
+    changed += water[index];
+    water[index] = 0;
   }
   return changed;
 }
