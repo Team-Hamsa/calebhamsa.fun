@@ -323,8 +323,9 @@ function fadeIn(amount) {
  *   • Water falling dead straight through (nothing sideways) could turn
  *     the wheel either way. Such a wheel is marked `eitherWay`: it turns
  *     the way the rest of its gears are being pushed (so two wheels on
- *     one shaft never fight, and a mirrored build works the same). All
- *     by itself, it turns ↻.
+ *     one shaft never fight, and a mirrored build works the same), and
+ *     once it is turning it keeps going that way (see solveSpin in
+ *     spin.js). All by itself, it turns ↻.
  *
  * "How far it falls" is the energy the water gave up at the wheel ÷ the
  * water that went through. So the most work the wheel can do (half its

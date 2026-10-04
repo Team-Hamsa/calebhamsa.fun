@@ -320,3 +320,11 @@ A motor on the same train as the generators that feed it is a feedback loop with
 - With a loop slope φ′ (about −0.5 before, never above +0.8), the smoothed loop's slope is (1 + φ′) ÷ 2: it converges for any φ′ between −3 and 1.
 - Energy: averaging hands on exactly the current the generators made, spread out; a motor's best work grows with the square of its current, so spreading can only lower it. The clicker and winding-down tests are unchanged and pass.
 - Result: the four builds in the review settle (−0.4527 for the one above); 0 of 2640 same-train builds and 0 of 1000 ladder builds flicker. A motor now reaches its speed over about 20 ticks to six places (half the gap each tick) instead of 1 tick.
+
+## Addendum 2026-10-04 (round 1 review): an either-way wheel keeps the way it is turning (issue #18 review)
+
+An `eitherWay` wheel took the sign of the group's other sources. In `..F / .#OEM / ..D` with the generator wired to the motor, the only other source is the motor, whose current comes from the wheel's own turning a tick earlier and (in that wiring) pushes against it: the wheel, generator and motor swapped direction on every tick for ever (±0.886).
+
+- A source may be marked `echo`: its push comes from the turning of its own group. `motorSource` sets it when the motor's `perVolt` names a generator among the group's `members`.
+- `solveSpin` points an `eitherWay` source, in order: by the push of the sources that are neither `eitherWay` nor `echo` (as before: wheels on one shaft agree, mirrored builds mirror); else the way that wheel turned on the last tick; else (standing still) by any push there is; else its own default (↻).
+- Result: that build turns steadily at +0.444 (+0.544 with a taller fall), the motor acting as a brake; with a lamp in place of the motor +1.022 as before.

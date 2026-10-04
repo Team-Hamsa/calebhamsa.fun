@@ -1193,3 +1193,24 @@ test('a motor on the same gears as the generators that feed it settles to one st
     assert.equal(new Set(seen).size, 1, `${rows.join(' / ')} flickers:\n${[...new Set(seen)].join('\n')}`);
   }
 });
+
+test('a water wheel with water falling straight through keeps turning ONE way when its generator feeds a motor on the same shaft', () => {
+  // The motor is wired so that it pushes against the turning. A real
+  // wheel would just be slowed down by it. (It used to turn round and go
+  // the other way on every single tick, for ever.)
+  for (const rows of [
+    ['..F.....', '...WW...', '.#OEM...', '..DWW...', '########'],
+    ['..F.....', '..F.....', '........', '...WW...', '.#OEM...', '..DWW...', '########'],
+  ]) {
+    const world = run(rows, 150);
+    const systems = allSystems();
+    const at = world.cells.indexOf('waterWheel');
+    const seen = [];
+    for (let i = 0; i < 50; i++) {
+      tick(world, systems, blockInfo);
+      seen.push(spinAt(world, at % world.width, Math.floor(at / world.width)));
+    }
+    assert.ok(seen.every((speed) => speed > 0.1), `${rows.join('/')}: the wheel went ${seen.slice(0, 8).join(' ')}`);
+    assert.ok(Math.max(...seen) - Math.min(...seen) < 1e-6, `${rows.join('/')}: the wheel's speed wobbles between ${Math.min(...seen)} and ${Math.max(...seen)}`);
+  }
+});

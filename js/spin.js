@@ -26,7 +26,8 @@
  * Sources on the same gears ADD their strength together. Gears trade one
  * for the other: a gear turning half as fast pushes twice as hard.
  * A source can say it will turn `eitherWay`: then it helps whichever way
- * the other sources on its gears are pushing.
+ * the other sources on its gears are pushing, or the way it was already
+ * turning. A source can also say it is an `echo` (see solveSpin).
  *
  * Things that push back:
  *   spinLoad   a steady pull, like a weight hanging on a winch's rope.
@@ -418,6 +419,7 @@ export function solveSpin(world, blockInfo) {
     // `slowing` says how fast their push fades as the group speeds up.
     let ahead = 0;
     let slowing = 0;
+    let pointing = 0; // the push of the sources that get a say in which way an `eitherWay` source turns
     const members = [...ratio.keys()];
     const eitherWay = []; // sources that don't mind which way they turn
     for (const [index, r] of ratio) {
@@ -428,20 +430,40 @@ export function solveSpin(world, blockInfo) {
         const top = source.speed / r;                // its top speed, at the first block
         const strength = source.strength * Math.abs(r);
         if (source.eitherWay) {
-          eitherWay.push({ top, strength });
+          // Which way was it turning a moment ago (seen from the first block)?
+          const before = (world.signals?.spin?.cells?.get(index)?.speed ?? 0) / r;
+          eitherWay.push({ top, strength, before: Math.abs(before * r) > MIN_SPEED ? Math.sign(before) : 0 });
           continue;
         }
         ahead += Math.sign(top) * strength;
         slowing += strength / Math.abs(top);
+        if (!source.echo) pointing += Math.sign(top) * strength;
       }
     }
     // A source marked `eitherWay` (a water wheel with water falling dead
-    // straight through it) joins in the way the others are pushing. If
-    // nothing else is pushing, the first one goes the way it says (↻ for
-    // a wheel) and the rest follow it.
-    for (const { top, strength } of eitherWay) {
-      const way = Math.abs(ahead) > BALANCED ? Math.sign(ahead) : Math.sign(top);
+    // straight through it) helps whichever way its gears go. Which way is
+    // that? We ask, in this order:
+    //   1. the other sources with a mind of their own (a crank, a wheel
+    //      with water coming off one side, a battery's motor): it joins
+    //      in the way they push. So two wheels on one shaft never fight,
+    //      and a mirrored build works the same.
+    //   2. the way it was already turning: a turning wheel keeps going.
+    //      A source marked `echo` (a motor fed by a generator on these
+    //      same gears) gets no say in step 1, because its push is only
+    //      an echo of that turning. (If it did, a motor wired to push
+    //      back would turn the wheel round, which turns the generator's
+    //      current round, which turns the motor round... the wheel would
+    //      swap ways on every tick. A real wheel is just slowed down.)
+    //   3. standing still, with nobody from step 1: any push there is.
+    //   4. nothing at all: the first one goes the way it says (↻ for a
+    //      wheel) and the rest follow it.
+    for (const { top, strength, before } of eitherWay) {
+      let way = Math.sign(top);
+      if (Math.abs(pointing) > BALANCED) way = Math.sign(pointing);
+      else if (before !== 0) way = before;
+      else if (Math.abs(ahead) > BALANCED) way = Math.sign(ahead);
       ahead += way * strength;
+      pointing += way * strength;
       slowing += strength / Math.abs(top);
     }
     if (slowing > 0) for (const index of members) drivenCells.add(index);
