@@ -332,3 +332,14 @@ Results (all tested): N cells in a 1-wide shaft are drawn N tall for N = 1..13 (
 - While water is rushing through a U-tube, the extra shut under the lid has no level surface yet and up to ~0.5 cell is left out of the picture for a few seconds; it never draws water that isn't there (beyond the old "cell under a stream is drawn full" look).
 - Steam is drawn as before (it squishes too, upside down).
 
+
+## Addendum 2026-10-04 (round 1 review): water is drawn on steps and ledges too (issue #20 review)
+
+Rule 2 of the drawing ("room only where the whole sideways stretch is wet or is room") treated every other dry cell as a hole, also one standing on a solid floor: the top of a step in a tank, a ledge, the closed top of a horizontal pipe. So when the drawn level reached a step whose top the real (squished) water had not reached, the whole row lost its room and the picture stopped rising. A 10-wide open tank with a 7-high step drew 63 cells for every pour from 63 to 81 (18 cells, 22%, not drawn); 51 of 300 random settled stone-and-pipe tanks were under-drawn by more than half a cell (129 cells in all).
+
+- A dry open cell with a closed floor (`joined(index, 'down') < 0`) is a **shelf**. It no longer breaks containment, provided its stretch holds a surface cell or a room cell, and is **calm**: no wet cell in the stretch has water on top of it (so no film is drawn on the floor beside a falling tower). A dry cell that is open downward onto a dry, roomless cell is still a hole.
+- A shelf starts a column of its own with no real water (`shelf: true`, surface = its floor, `from` = the top cell of the nearest real column in its stretch). Dry cells above it get room from it in the usual way. Shelves take no part in the sharing of step 3.
+- New step 4b: every contained stretch with a shelf column in it is a **pool**. Pools are handled bottom row first: the drawn water above `max(row floor, real surface)` of each column in the stretch is added up and poured back level (`levelFor`: lowest room first, each column between its base and its lid). Only drawn extra moves; no column is drawn below its real water; the drawn total is unchanged.
+- `source` of water drawn on a shelf is `from`, so DIG there takes the scoop from the real water beside it.
+- Result: the stepped tanks are drawn exactly (drawn = real at every pour, level across the step); the 300 random tanks: 1 under-drawn by more than half a cell (a pocket under a lid, as documented), 1.1 cells missing in all, none over-drawn.
+- Side effect: a brim-full shaft whose rim is level ground between walls now shows its squished-in extra as a thin film on that ground, instead of not at all. A rim with open air beside it is unchanged (nothing drawn above it).

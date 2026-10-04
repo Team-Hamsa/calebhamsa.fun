@@ -344,7 +344,10 @@ const NEAR = 1;
  *      together.
  *   3. Extra is only ever drawn where water could really stand: straight
  *      up from a real water surface, with a wall or more water on both
- *      sides, and never through a lid. Under a lid (a sealed full tank,
+ *      sides, and never through a lid. A step or ledge beside calm water
+ *      counts too: once the drawn level reaches it, water is drawn
+ *      standing on it, level with the rest (it is taken from the columns
+ *      beside it, so the total stays right). Under a lid (a sealed full tank,
  *      or a full shaft) there is nowhere to draw it, so it isn't drawn:
  *      the tank just looks full. That is the one place where the picture
  *      still shows less water than there is.
@@ -446,14 +449,26 @@ export function waterPicture(world, blockInfo, sides = allOpenSides(world, block
   // a surface (or above a cell with room), and every cell beside it in
   // its row, as far as the walls, is wet or has room too. Otherwise the
   // water drawn there would have to spill sideways, so none is drawn.
+  //
+  // A dry cell with a FLOOR under it (a step in a tank, a ledge, the
+  // closed top of a pipe) is no hole: water can stand on it. It counts as
+  // room too, as long as the water beside it is calm (no wet cell in its
+  // row has more water falling on top of it). Such a cell starts a column
+  // of its own with no real water in it (a "shelf"); the water drawn
+  // beside it is levelled out over it further down (see 4b).
   const roomOf = new Int32Array(size).fill(-1); // which column may be drawn up into each dry cell
+  const pools = []; // the stretches where drawn water has to be levelled out over a shelf, bottom row first
   for (let y = height - 1; y >= 0; y--) {
     const maybe = new Int32Array(width).fill(-1);
+    const floored = new Array(width).fill(false); // dry, open, and standing on a floor
     for (let x = 0; x < width; x++) {
       const index = y * width + x;
       if (wet(index)) continue;
       const below = joined(index, 'down');
-      if (below < 0) continue;
+      if (below < 0) {
+        floored[x] = sides[index].length > 0;
+        continue;
+      }
       // Above a surface: only once that surface cell itself can be drawn full.
       if (wet(below) && columns[columnOf[below]].top === below) {
         if (columns[columnOf[below]].lid >= floorOf(below) + 1) maybe[x] = columnOf[below];
@@ -465,23 +480,52 @@ export function waterPicture(world, blockInfo, sides = allOpenSides(world, block
     while (x < width) {
       let end = x;
       let contained = true;
+      let shelves = 0;    // dry cells standing on a floor
+      let calm = true;    // no wet cell here has more water on top of it
+      let standing = false; // is there a surface, or room above one, in this stretch?
       for (;;) {
         const index = y * width + end;
-        if (!wet(index) && maybe[end] < 0 && sides[index].length > 0) contained = false;
+        if (wet(index)) {
+          if (columns[columnOf[index]].top === index) standing = true;
+          else calm = false;
+        } else if (maybe[end] >= 0) standing = true;
+        else if (floored[end]) shelves += 1;
+        else if (sides[index].length > 0) contained = false;
         if (joined(index, 'right') < 0) break;
         end += 1;
       }
-      for (let at = x; at <= end; at++) {
+      if (shelves > 0 && !(calm && standing)) contained = false;
+      const members = []; // the columns with their surface, or room, in this stretch: {id, at}
+      let pooled = false; // does any of them stand on a shelf?
+      for (let at = x; at <= end && contained; at++) {
         const index = y * width + at;
-        if (!contained) continue;
         if (maybe[at] >= 0) {
           roomOf[index] = maybe[at];
           columns[maybe[at]].room.push(index);
           columns[maybe[at]].lid = floorOf(index) + 1;
+          members.push({ id: maybe[at], at });
+          if (columns[maybe[at]].shelf) pooled = true;
         } else if (wet(index) && columns[columnOf[index]].top === index) {
           // A surface cell with walls or water on both sides can be drawn up to full.
           columns[columnOf[index]].lid = Math.max(columns[columnOf[index]].lid, floorOf(index) + 1);
+          members.push({ id: columnOf[index], at });
         }
+      }
+      for (let at = x; at <= end && contained && shelves > 0; at++) {
+        if (!floored[at]) continue;
+        // A shelf: a column that starts here, on the floor, with no real water.
+        // `from` is the real water it will be drawn from: the nearest column's.
+        const index = y * width + at;
+        const near = members.reduce((best, member) => (Math.abs(member.at - at) < Math.abs(best.at - at) ? member : best));
+        const from = columns[near.id].shelf ? columns[near.id].from : columns[near.id].top;
+        roomOf[index] = columns.length;
+        columns.push({ top: -1, shelf: true, from, body: -1, surface: floorOf(index), lid: floorOf(index) + 1, room: [index] });
+        pooled = true;
+      }
+      if (pooled) {
+        const ids = new Set(members.map((member) => member.id));
+        for (let at = x; at <= end; at++) if (floored[at]) ids.add(roomOf[y * width + at]);
+        pools.push({ floor: floorOf(y * width), ids: [...ids] });
       }
       x = end + 1;
     }
@@ -497,7 +541,7 @@ export function waterPicture(world, blockInfo, sides = allOpenSides(world, block
   const byBody = new Map(); // body → the columns with room to be drawn higher
   columns.forEach((column, id) => {
     column.id = id;
-    if (column.lid <= column.surface) return;
+    if (column.shelf || column.lid <= column.surface) return; // (a shelf gets its water in 4b)
     if (!byBody.has(column.body)) byBody.set(column.body, []);
     byBody.get(column.body).push(column);
   });
@@ -547,8 +591,32 @@ export function waterPicture(world, blockInfo, sides = allOpenSides(world, block
     columns.forEach((column, id) => { column.surface = before[id]; });
   }
 
+  // --- 4b. Level the drawn water out over the shelves. In every stretch
+  // with a shelf in it (bottom row first), the water drawn ABOVE that
+  // row's floor is shared out again so it stands level: over the shelf
+  // too, and lowest places first. Only drawn extra is moved: no column is
+  // ever drawn lower than its real water.
+  for (const pool of pools) {
+    const members = pool.ids.map((id) => {
+      const column = columns[id];
+      const base = Math.min(column.surface, Math.max(pool.floor, real[id]));
+      return { column, base };
+    });
+    const amount = members.reduce((sum, { column, base }) => sum + column.surface - base, 0);
+    if (amount <= 1e-12) continue;
+    const level = levelFor(members.map(({ column, base }) => ({ base, lid: column.lid })), amount);
+    for (const { column, base } of members) column.surface = clamp(level, base, column.lid);
+  }
+
   // --- 5. Draw each column up to its new surface.
   for (const column of columns) {
+    if (column.shelf) {
+      for (const index of column.room) {
+        shown[index] = clamp(column.surface - floorOf(index), 0, FULL);
+        if (shown[index] > 0) source[index] = column.from;
+      }
+      continue;
+    }
     const raised = clamp(column.surface - floorOf(column.top), shown[column.top], FULL);
     if (raised > shown[column.top]) source[column.top] = column.top;
     shown[column.top] = raised;
@@ -558,6 +626,28 @@ export function waterPicture(world, blockInfo, sides = allOpenSides(world, block
     }
   }
   return { shown, source };
+}
+
+/**
+ * How high does some water stand when it is poured into a row of tubes
+ * that are joined together? Each tube has a `base` (where its own room
+ * starts) and a `lid` (where it ends). The water fills the lowest tubes
+ * first and ends up level.
+ * @param {Array<{base: number, lid: number}>} tubes - the tubes
+ * @param {number} amount - how much water (1 = one cell of one tube)
+ * @returns {number} the height of the level surface
+ */
+function levelFor(tubes, amount) {
+  const marks = [...new Set(tubes.flatMap((tube) => [tube.base, tube.lid]))].sort((a, b) => a - b);
+  let left = amount;
+  for (let k = 0; k + 1 < marks.length; k++) {
+    const low = marks[k];
+    const high = marks[k + 1];
+    const wide = tubes.filter((tube) => tube.base <= low && tube.lid >= high).length; // how many tubes are open at this height
+    if (left <= wide * (high - low)) return wide > 0 ? low + left / wide : low;
+    left -= wide * (high - low);
+  }
+  return marks[marks.length - 1] ?? 0; // more water than room: full to the top
 }
 
 /**

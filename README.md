@@ -117,7 +117,8 @@ stands 10 cells tall. One tap of DIG takes **one scoop**: a full cell at the
 most. You can't pour into a cell that already looks full, so pour just above
 the water. (Inside the game, deep water is really *squished* into fewer cells:
 that squish is how the game makes water push up a U-tube. The picture puts the
-squished-in water back on top, so what you see is how much there is. One thing
+squished-in water back on top, so what you see is how much there is: on a step
+or ledge inside the tank too, once the level gets that high. One thing
 still isn't right: a tank that **looks** brim-full can swallow a bit more water
 before it spills over, and a pipe that ends only just below the drawn surface
 may stay dry. That needs a new water engine: issue #30.)
