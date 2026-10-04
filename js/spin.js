@@ -34,8 +34,10 @@
  *              A weight lying on the ground is different: its rope is
  *              slack, so it can't pull the winch round. It only pulls
  *              back when the winch tries to lift it (see `balance`).
- *   spinDrag   a push back that grows with speed, like a generator
- *              making electricity (more lamps = harder to turn)
+ *   spinDrag   a plain push back that grows with speed, whichever way
+ *              the block turns (like stirring honey). No block in the
+ *              game uses it right now: the generator used to, and now
+ *              has a spinBrake instead. It is kept for new blocks.
  *   spinBrake  a push back that only ever works AGAINST the turning (it
  *              can stop a group, never drive it), like a generator making
  *              electricity (more lamps = harder to turn; see `balance`).
