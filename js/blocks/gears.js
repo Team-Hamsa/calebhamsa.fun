@@ -18,7 +18,7 @@
 import { solveSpin, MIN_SPEED } from '../spin.js';
 import { swapBlock } from '../world.js';
 import { REFERENCE_CURRENT, plusSide } from '../circuit.js';
-import { DROP_POWER, wheelTurn } from '../fluids.js';
+import { DROP_POWER, wheelLeans, wheelTurn } from '../fluids.js';
 import { refreshElectric } from './electric.js';
 
 /**
@@ -278,6 +278,11 @@ export function motorSource(world, x, y) {
  *   • Water that spills off both sides pushes both ways, and that
  *     cancels: only the share of the water that turns the wheel one way
  *     counts.
+ *   • Water falling dead straight through (nothing sideways) could turn
+ *     the wheel either way. Such a wheel is marked `eitherWay`: it turns
+ *     the way the rest of its gears are being pushed (so two wheels on
+ *     one shaft never fight, and a mirrored build works the same). All
+ *     by itself, it turns ↻.
  *
  * "How far it falls" is the energy the water gave up at the wheel ÷ the
  * water that went through. So the most work the wheel can do (half its
@@ -287,7 +292,9 @@ export function motorSource(world, x, y) {
  * @param {object} world - the world
  * @param {number} x - the wheel's column
  * @param {number} y - the wheel's row
- * @returns {{speed: number, strength: number}|null} its top speed and strength, or null if hardly any water flows
+ * @returns {{speed: number, strength: number, eitherWay: boolean}|null} its
+ *   top speed and strength (and whether it will turn either way), or null
+ *   if hardly any water flows
  */
 export function wheelSource(world, x, y) {
   const wheel = world.signals.spin?.wheels?.get(y * world.width + x);
@@ -298,7 +305,7 @@ export function wheelSource(world, x, y) {
   const water = Math.min(wheel.gross, Math.abs(turn));      // less than all of it when it leaves both ways
   const speed = WHEEL_SPEED * Math.sqrt(fall);
   if (speed < MIN_SOURCE) return null;
-  return { speed: Math.sign(turn) * speed, strength: WHEEL_STRENGTH * water * Math.sqrt(fall) };
+  return { speed: Math.sign(turn) * speed, strength: WHEEL_STRENGTH * water * Math.sqrt(fall), eitherWay: !wheelLeans(wheel) };
 }
 
 // =============================================================

@@ -293,3 +293,11 @@ Two holes were left by the `forced` rule above.
 - Motors still feel generators one tick late (the current of the last tick, which the generators were braked for). `gearsSystem` keeps each part's `perVolt` from the last tick (`signals.spin.felt`); a part whose `perVolt` changed is in `signals.spin.rewired`, and for that one tick `motorSource` uses only `fixed` (batteries, turbines). The generators' share starts the tick after.
 - Result: the ×8 clicker crane lifts 0 cells (as on plain wire); cranes that do lift never lift more than the crank's work (worst seen 0.26).
 - Cost: a motor fed by a generator pauses for one tick whenever its circuit is rewired.
+
+## Addendum 2026-10-04 (final review): a wheel with water falling straight through turns either way (issue #18 review)
+
+"Straight down counts as ↻" was fixed per wheel, so it did not flip in a mirrored build while a neighbor on the same shaft with a real lean did: `#F#../#O#../#OD../###..` turned 0.586, its mirror image 0.380 (the two wheels fought), in open air 0.233 against 0.064.
+
+- `wheelLeans(wheel)` (fluids.js) says whether any water goes sideways. `wheelSource` marks a wheel that doesn't as `eitherWay: true`.
+- `solveSpin` adds `eitherWay` sources after the others, pointing the way the group's other sources push. If there are none, the first goes the way it says (↻ for a wheel) and the rest follow.
+- Result: both builds above turn ±0.586 and ±0.233. A lone wheel under a faucet still turns ↻ in both builds (its mirror image is itself). A winch on the shaft still winds in ↻ only, so a mirrored crane lets out instead of lifting: that is the winch's rule, not the wheel's.

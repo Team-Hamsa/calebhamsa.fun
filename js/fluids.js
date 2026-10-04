@@ -570,7 +570,7 @@ export const PUMP_HEAD = 6;
  * cell of water falling one cell can do this much work on a water wheel,
  * and a pump must spend at least this much electricity to lift it back.
  * 10 makes one faucet falling one cell through a wheel as good as one
- * crank (see WHEEL_GAIN in gears.js). Both the wheel and the pump use
+ * crank (see WHEEL_STRENGTH in gears.js). Both the wheel and the pump use
  * this same number: that's what keeps the energy books honest.
  */
 export const DROP_POWER = 10;
@@ -730,6 +730,17 @@ export function runSpecials(world, blockInfo, sides) {
 }
 
 /**
+ * Does the water going through a wheel lean to one side? If no water
+ * goes sideways at all (it falls dead straight through the middle), the
+ * water has no way round of its own to turn the wheel.
+ * @param {{lean: number}} wheel - the water's sideways lean (+ to the right)
+ * @returns {boolean} true if it leans left or right
+ */
+export function wheelLeans(wheel) {
+  return Math.abs(wheel.lean) > 1e-9;
+}
+
+/**
  * Which way, and how much, the water going through a wheel turns it.
  *
  *   • Water leaving to the right turns it ↻ (+), to the left ↺ (−). Water
@@ -737,7 +748,9 @@ export function runSpecials(world, blockInfo, sides) {
  *   • Water leaving downward turns it the way the water LEANS: the way
  *     the sideways water goes (coming in or going out). So a mirrored
  *     machine turns the other way, just as fast. With no sideways water
- *     at all (straight down through the middle), down counts as ↻.
+ *     at all (straight down through the middle), down counts as ↻: but
+ *     only if nothing else on its gears has a way of its own (see
+ *     wheelLeans, and wheelSource in gears.js).
  * @param {{lean: number, sideOut: number, down: number}} wheel - the water's
  *   sideways lean (in and out, + to the right), the water that left
  *   sideways (+ right, − left) and the water that left down (+) or up (−)
@@ -745,7 +758,7 @@ export function runSpecials(world, blockInfo, sides) {
  */
 export function wheelTurn(wheel) {
   const amount = Math.abs(wheel.sideOut) + Math.abs(wheel.down);
-  const way = Math.abs(wheel.lean) > 1e-9 ? Math.sign(wheel.lean) : Math.sign(wheel.down);
+  const way = wheelLeans(wheel) ? Math.sign(wheel.lean) : Math.sign(wheel.down);
   return way * amount || 0; // "|| 0" turns −0 into a plain 0
 }
 

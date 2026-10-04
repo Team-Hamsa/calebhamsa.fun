@@ -1123,3 +1123,24 @@ test('a clicker (or a tapped switch) between a generator and a motor gives the m
     }
   }
 });
+
+test('two water wheels on one shaft work the same in a mirrored build: a wheel with water falling straight through turns the way its neighbor does', () => {
+  const pictures = [
+    ['#F#..', '#O#..', '#OD..', '###..'],                    // a drain beside the lower wheel
+    ['..F....', '..O....', '..O....', '####..D'],            // open air: the lower wheel's water runs off one way
+  ];
+  for (const rows of pictures) {
+    const mirrored = rows.map((row) => [...row].reverse().join(''));
+    const a = run(rows, 400);
+    const b = run(mirrored, 400);
+    const at = a.cells.indexOf('waterWheel');
+    const x = at % a.width;
+    const y = Math.floor(at / a.width);
+    const speed = spinAt(a, x, y);
+    assert.ok(Math.abs(speed) > 0.1, `${rows.join('/')}: only turns ${speed}`);
+    assert.ok(Math.abs(speed + spinAt(b, a.width - 1 - x, y)) < 1e-9, `${rows.join('/')}: ${speed} as drawn, ${spinAt(b, a.width - 1 - x, y)} mirrored`);
+    // Both wheels push the same way, so the shaft does better than the top wheel alone would.
+    const below = wheelSource(b, a.width - 1 - x, y + 1);
+    assert.ok(below.speed < 0, `${rows.join('/')}: mirrored, the lower wheel wants ${below.speed}`);
+  }
+});

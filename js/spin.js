@@ -25,6 +25,8 @@
  * strength, it turns at half speed; pushing all of it, it stops.
  * Sources on the same gears ADD their strength together. Gears trade one
  * for the other: a gear turning half as fast pushes twice as hard.
+ * A source can say it will turn `eitherWay`: then it helps whichever way
+ * the other sources on its gears are pushing.
  *
  * Things that push back:
  *   spinLoad   a steady pull, like a weight hanging on a winch's rope.
@@ -354,6 +356,7 @@ export function solveSpin(world, blockInfo) {
     let ahead = 0;
     let slowing = 0;
     const members = [...ratio.keys()];
+    const eitherWay = []; // sources that don't mind which way they turn
     for (const [index, r] of ratio) {
       done.add(index);
       const point = points.get(index);
@@ -361,9 +364,22 @@ export function solveSpin(world, blockInfo) {
       if (source && source.speed && source.strength > 0) {
         const top = source.speed / r;                // its top speed, at the first block
         const strength = source.strength * Math.abs(r);
+        if (source.eitherWay) {
+          eitherWay.push({ top, strength });
+          continue;
+        }
         ahead += Math.sign(top) * strength;
         slowing += strength / Math.abs(top);
       }
+    }
+    // A source marked `eitherWay` (a water wheel with water falling dead
+    // straight through it) joins in the way the others are pushing. If
+    // nothing else is pushing, the first one goes the way it says (↻ for
+    // a wheel) and the rest follow it.
+    for (const { top, strength } of eitherWay) {
+      const way = Math.abs(ahead) > BALANCED ? Math.sign(ahead) : Math.sign(top);
+      ahead += way * strength;
+      slowing += strength / Math.abs(top);
     }
     if (slowing > 0) for (const index of members) drivenCells.add(index);
     groups.push({ ratio, jammed, ahead, slowing });
