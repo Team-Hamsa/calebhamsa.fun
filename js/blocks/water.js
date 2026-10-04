@@ -13,7 +13,7 @@
  *    ☁️ steam rises → ⚙️ turbine spins → ⚡ lamp lights
  *    🔥 burner boils water          ❄️ chiller turns steam back to water
  */
-import { FULL, MIN_AMOUNT, PUMP_ON_LEVEL, drawingSides, stepFluids } from '../fluids.js';
+import { FULL, MIN_AMOUNT, PUMP_ON_LEVEL, drawingSides, showsWaterLevel, stepFluids, waterPicture } from '../fluids.js';
 import { swapBlock } from '../world.js';
 
 /**
@@ -101,7 +101,12 @@ function fluidCells(world, blockInfo, turbineFlow) {
  */
 export function refreshWater(world, blockInfo) {
   const turbineFlow = world.signals.water?.turbineFlow ?? new Map();
-  world.signals.water = { cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow };
+  // Work out afresh how much water to draw in each cell (see waterPicture).
+  world.signals.water = {
+    cells: fluidCells(world, blockInfo, turbineFlow),
+    turbineFlow,
+    shown: waterPicture(world, blockInfo).shown,
+  };
 }
 
 /**
@@ -115,7 +120,7 @@ export function refreshWater(world, blockInfo) {
  * @returns {boolean} always false: no blocks moved
  */
 export function waterSystem(world, blockInfo) {
-  const { moved, steamOut, waterOut, waterWork, wheels } = stepFluids(world, blockInfo);
+  const { moved, steamOut, waterOut, waterWork, wheels, sides } = stepFluids(world, blockInfo);
   const before = world.signals.water?.turbineFlow ?? new Map();
   const turbineFlow = new Map();
   world.cells.forEach((name, index) => {
@@ -125,7 +130,10 @@ export function waterSystem(world, blockInfo) {
   });
   // `wheels` is kept for the ⚙️ pack: water flowing through a water wheel
   // turns it, and the energy the water gives up there is its strength.
-  world.signals.water = { cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow, waterOut, waterWork, wheels };
+  world.signals.water = {
+    cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow, waterOut, waterWork, wheels,
+    shown: waterPicture(world, blockInfo, sides).shown,
+  };
   if (moved > MOVE_EPSILON) world.fluidChanged = true;
   const spinning = [...turbineFlow.values()].some((flow) => flow > MIN_AMOUNT);
   if (moved > MOVE_EPSILON || spinning || world.cells.includes('burnerOn')) world.animating = true;
@@ -328,9 +336,13 @@ function drawChiller(ctx, info, left, top, size) {
 
 /**
  * Draw all the water and steam, on top of the blocks. In open air,
- * water fills a cell from the bottom (a cell with water above it is
- * drawn full), and steam fills from the top. Inside pipes, valves,
- * pumps and turbines it fills the channel, darker when fuller.
+ * water fills a cell from the bottom, and steam fills from the top.
+ * Inside pipes, valves, pumps and turbines it fills the channel, darker
+ * when fuller.
+ *
+ * Water is drawn BY DEPTH: as tall as the amount there really is, even
+ * though deep water is squished into fewer cells (see waterPicture in
+ * fluids.js, which works out how much to draw in each cell).
  * @param {CanvasRenderingContext2D} ctx - the canvas paintbrush
  * @param {object} world - the world
  * @param {number} size - how big each cell is, in pixels
@@ -339,15 +351,18 @@ function drawChiller(ctx, info, left, top, size) {
 export function drawWaterLayer(ctx, world, size) {
   const { water, steam } = world.fluid;
   const records = world.signals.water?.cells ?? new Map();
+  const shown = world.signals.water?.shown;
   for (let index = 0; index < world.cells.length; index++) {
-    const wet = water[index] >= MIN_AMOUNT;
+    // How much water to draw here (before the first tick: just what's in the cell).
+    const level = shown ? shown[index] : Math.min(water[index], FULL);
+    const wet = level >= MIN_AMOUNT;
     const steamy = steam[index] >= MIN_AMOUNT;
     if (!wet && !steamy) continue;
     const left = (index % world.width) * size;
     const top = Math.floor(index / world.width) * size;
     const record = records.get(index);
     if (record) {
-      ctx.globalAlpha = 0.3 + 0.7 * Math.min(1, water[index] + steam[index]);
+      ctx.globalAlpha = 0.3 + 0.7 * Math.min(1, level + steam[index]);
       ctx.fillStyle = wet ? WATER_COLOR : STEAM_COLOR;
       drawArms(ctx, left, top, size, record.sides, 4);
       ctx.globalAlpha = 1;
@@ -355,14 +370,12 @@ export function drawWaterLayer(ctx, world, size) {
     }
     // Solid blocks never show fluid. Rope is thin, so water around it
     // shows just like in an empty cell.
-    if (world.cells[index] !== 'air' && world.cells[index] !== 'rope') continue;
+    if (!showsWaterLevel(world.cells[index])) continue;
     if (wet) {
-      const above = index - world.width;
-      const full = above >= 0 && water[above] >= MIN_AMOUNT;
-      const height = full ? size : size * Math.min(water[index], FULL);
+      const height = size * Math.min(level, FULL);
       ctx.fillStyle = WATER_COLOR;
       ctx.fillRect(left, top + size - height, size, height);
-      if (!full && height < size) {
+      if (height < size) {
         ctx.fillStyle = WATER_TOP;
         ctx.fillRect(left, top + size - height, size, Math.max(1, size / 16));
       }
@@ -452,7 +465,8 @@ const blocks = {
 const guide = {
   rules: [
     'Water and steam are real amounts: a cell can be full, half full or nearly empty. Water never appears or disappears by itself. Build a block in water and the water is pushed out of the way: the level goes UP. Only DIG and drains take water away.',
-    'Water falls and spreads out. Deep water gets squished, so it pushes UP through pipes and U-tubes.',
+    'Water falls and spreads out. Deep water pushes UP through pipes and U-tubes.',
+    'Water is drawn as tall as there is water: pour 10 cells into a shaft and it stands 10 cells tall. One tap of DIG takes one scoop, a full cell at the most. You can\'t pour into a cell that already looks full: pour just above the water.',
     'Steam is the opposite: it rises and spreads out under ceilings.',
     'Water has to FALL to give its push. High water can turn a wheel on its way down. Water lying level has no push left.',
     'Lifting water uses up a pump\'s push. The higher the water has to go, the slower the pump lifts it, and at some height it is too heavy and stops. More batteries lift higher AND faster: one battery lifts about 5 blocks.',

@@ -310,3 +310,25 @@ Each turbine's push was `steam flow × TURBINE_GAIN`, so three turbines stacked 
 - Changed from the tube rule: the push is no longer split evenly. The turbines further along get nothing and are drawn still.
 - Steam becomes fresh again only by being condensed and boiled again. `used` is not saved: after a reload all steam counts as fresh once (a one-off, at most one pass of the steam then in the pipes).
 - Still not an energy ledger for heat (issue #21, open): a burner is an endless source.
+
+## Addendum 2026-10-04: water is drawn by depth; DIG and pour take one cell (issue #20, option 1)
+
+With `SQUISH = 0.1` a deep cell holds up to ~1.65, so 10 cells of water settled into ~7.5 cells and LOOKED 7.5 tall, and one DIG at the bottom of a 12-deep column removed 1.77 cells. The decision on #20 was two steps: fix what a child sees and touches now (this addendum), and make water truly incompressible in the solver later (#30). **The solver is unchanged**: `stableBelow`, `flowFluid`, the energy ledger, pumps and wheels all still work on the real, squished amounts.
+
+**DIG** (`scoop` in fluids.js, used by `applyTool`): takes `min(amount, FULL)` of water and of steam from the cell; the rest stays. DIG uses `swapBlock`, not `setBlock`, so digging a pipe out of deep water also leaves the rest. If the cell holds no water but water is DRAWN there (see below), the scoop takes the drawn amount from the real water underneath, top cell first. **Pour** still tops a cell up to `FULL` (never more than one cell per tap), but refuses a cell at the top of deep water that already looks full.
+
+**Drawing** (`waterPicture(world, blockInfo)` in fluids.js, pure, tested in tests/water-picture.test.js; the water pack stores its `shown` array in `world.signals.water.shown` every tick and every refresh, and `drawWaterLayer` draws from it). It overrides "Water in an open cell" under "Drawing":
+
+1. Every wet cell is drawn with `min(amount, 1)`; a cell with water standing on it is drawn full (as before).
+2. A **column** is a vertical run of wet cells joined top to bottom; its top cell has the surface. Its **room** is the dry cells straight above, as far as the first lid, and only where the whole sideways stretch of open cells in that row is wet or is room too (so nothing is ever drawn standing above a rim, beside open air, or over a pipe mouth it would run into).
+3. Each over-full cell's extra (`amount − 1`) is shared between the columns of its own body of water (cells joined through open sides; pumps separate bodies): its own column gets a full share, and any other column a share of `1 − |H − s|` (never below 0), where `H = floor + headOf(amount)` is the surface height that squishes the cell and `s` is that column's real surface height. Shares are divided by their sum, or by 1 if the sum is smaller, so a surface that only just qualifies gets only a little and nothing jumps. What does not fit under a column's lid is offered to the columns level with it.
+
+Results (all tested): N cells in a 1-wide shaft are drawn N tall for N = 1..13 (within 0.01 settled, 0.1 at every tick while settling; before: 10 → 7.53); a tank with a deep end and a U-tube with unequal arms are drawn level and their drawn total equals their amount; a pipe arm is drawn (as shade) level with its tower; the picture is mirror-symmetric, the same every tick once settled, and each U-tube arm moves one way only while settling.
+
+**What the picture cannot do (left for #30):**
+
+- **Under a lid** (a sealed tank, or a shaft drawn to its brim) the extra has nowhere to be drawn, so it isn't: the tank looks full while the solver can still squeeze in up to ~45% more. A faucet into a brim-full-looking tank therefore keeps running for a while before it overflows.
+- **Machines feel the real water, not the drawn water.** The top of a deep column is drawn in cells that hold none (2.5 cells for a 10-deep column). Pipes, wheels, pumps and sand in those cells do not react to it: a pipe mouth between the real surface and the drawn one stays dry. DIG is the one tool made to agree with the picture. We chose to draw into those cells anyway (rather than only filling the real top cell fuller) because the amount a child sees is then right in every open tank, and showing the top cell fuller can hide at most one cell of the missing 2.5.
+- While water is rushing through a U-tube, the extra shut under the lid has no level surface yet and up to ~0.5 cell is left out of the picture for a few seconds; it never draws water that isn't there (beyond the old "cell under a stream is drawn full" look).
+- Steam is drawn as before (it squishes too, upside down).
+

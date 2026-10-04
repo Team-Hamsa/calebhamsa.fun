@@ -112,6 +112,16 @@ into a tank and the water is pushed out of the way, so the level goes **up**,
 like dropping a stone in a full glass. (Pipes, valves, wheels, pumps and rope
 just keep the water that was there.) Only DIG and drains take water away.
 
+**Water looks as tall as it is.** Pour 10 cells of water into a shaft and it
+stands 10 cells tall. One tap of DIG takes **one scoop**: a full cell at the
+most. You can't pour into a cell that already looks full, so pour just above
+the water. (Inside the game, deep water is really *squished* into fewer cells:
+that squish is how the game makes water push up a U-tube. The picture puts the
+squished-in water back on top, so what you see is how much there is. One thing
+still isn't right: a tank that **looks** brim-full can swallow a bit more water
+before it spills over, and a pipe that ends only just below the drawn surface
+may stay dry. That needs a new water engine: issue #30.)
+
 **Water has to fall to give its push.** Water up high holds energy, like a
 ball at the top of a slide. It gives that push away on the way down (to a
 water wheel, if one is there). Water lying level has no push left.

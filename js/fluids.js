@@ -237,7 +237,12 @@ export function drawingSides(world, x, y, blockInfo) {
 /**
  * Pour a full cell of water (or steam) into a cell, if it can hold
  * fluid and isn't full already. This is what BUILD does with the 💧
- * and ☁️ palette items.
+ * and ☁️ palette items. One tap never adds more than one full cell.
+ *
+ * A cell at the top of deep water that already LOOKS full takes no
+ * more, even though the water drawn there really sits squished in the
+ * cells below (see waterPicture): you can't pour into a full glass.
+ * Pour just above the water instead.
  * @param {object} world - the world
  * @param {'water'|'steam'} kind - which fluid
  * @param {number} x - column
@@ -249,8 +254,310 @@ export function pour(world, kind, x, y, blockInfo) {
   if (openSides(world, x, y, blockInfo).length === 0) return false;
   const index = y * world.width + x;
   if (world.fluid[kind][index] >= FULL) return false;
+  if (kind === 'water') {
+    const picture = waterPicture(world, blockInfo);
+    if (picture.source[index] >= 0 && picture.shown[index] >= FULL - MIN_AMOUNT) return false;
+  }
   world.fluid[kind][index] = FULL;
   return true;
+}
+
+/**
+ * DIG one scoop of water and steam out of a cell: at most ONE full cell
+ * of each. Deep water is squished, so a deep cell holds a bit more than
+ * one cell's worth; the extra stays behind (a bucket only holds a
+ * bucketful).
+ *
+ * If the cell only LOOKS wet (its water is really squished into the
+ * cells below: see waterPicture), the scoop takes what is drawn there
+ * from the top of that water instead. So digging at water you can see
+ * always takes water away.
+ * @param {object} world - the world
+ * @param {number} x - column
+ * @param {number} y - row
+ * @param {Function} blockInfo - looks up what a block name means
+ * @returns {boolean} true if any fluid was taken
+ */
+export function scoop(world, x, y, blockInfo) {
+  if (!inBounds(world, x, y)) return false;
+  const index = y * world.width + x;
+  const { water, steam } = world.fluid;
+  let took = false;
+  if (steam[index] > 0) {
+    steam[index] = Math.max(0, steam[index] - FULL);
+    took = true;
+  }
+  if (water[index] > 0) {
+    water[index] = Math.max(0, water[index] - FULL);
+    return true;
+  }
+  // No water really here. Is some DRAWN here? Then take that much from
+  // the water underneath, starting at its top cell and working down.
+  const picture = waterPicture(world, blockInfo);
+  let want = picture.shown[index];
+  let from = picture.source[index];
+  while (want > 0 && from >= 0 && from < water.length && water[from] > 0) {
+    const take = Math.min(want, water[from]);
+    water[from] -= take;
+    want -= take;
+    took = true;
+    from += world.width; // the next cell down
+    if (from < water.length && !openSides(world, from % world.width, Math.floor(from / world.width), blockInfo).includes('up')) break;
+  }
+  return took;
+}
+
+/**
+ * Is this a cell where water is drawn by its HEIGHT (a rectangle that
+ * fills up from the bottom)? That's air, and rope (rope is thin). In
+ * pipes and other blocks, water is drawn as a shade instead.
+ * @param {string} name - the block in the cell
+ * @returns {boolean} true for air and rope
+ */
+export function showsWaterLevel(name) {
+  return name === AIR || name === 'rope';
+}
+
+/**
+ * How near (in cells of height) a water surface must stand to the
+ * height that is squishing an over-full cell, to be drawn with a share
+ * of that cell's extra (see waterPicture). A surface right at that
+ * height gets a full share, one this far away gets none.
+ */
+const NEAR = 1;
+
+/**
+ * Work out how much water to DRAW in every cell, so that water LOOKS
+ * as tall as the amount there really is.
+ *
+ * Why this is needed: in this game deep water is squished (see SQUISH),
+ * so ten cells' worth of water in a shaft really sits in about seven
+ * and a half cells. Real water doesn't squish: ten buckets stand ten
+ * buckets tall. So the picture puts the squished-in extra back on top:
+ *
+ *   1. Every wet cell is drawn with what it holds, up to full.
+ *   2. The EXTRA in an over-full cell is drawn on top of the water that
+ *      is squishing it: on its own column, and on the other surfaces of
+ *      the same connected water that stand at the height that squishes
+ *      it. Still water is level, so every surface of it rises by the
+ *      same amount: a tank stays level, and both arms of a U-tube rise
+ *      together.
+ *   3. Extra is only ever drawn where water could really stand: straight
+ *      up from a real water surface, with a wall or more water on both
+ *      sides, and never through a lid. Under a lid (a sealed full tank,
+ *      or a full shaft) there is nowhere to draw it, so it isn't drawn:
+ *      the tank just looks full. That is the one place where the picture
+ *      still shows less water than there is.
+ *
+ * The machines (pipes, wheels, pumps, sand) still only feel the REAL
+ * water. `source` says, for a cell that is drawn with more water than
+ * it really holds, which real cell that water sits on top of (the top
+ * cell of the real water below; DIG and pour use it: see scoop).
+ *
+ * This only reads the world. It never changes it.
+ * @param {object} world - the world
+ * @param {Function} blockInfo - looks up what a block name means
+ * @param {string[][]} [sides] - open sides by cell index (from allOpenSides), if already worked out
+ * @returns {{shown: Float64Array, source: Int32Array}} `shown`: how much
+ *   water to draw in each cell (0 to 1). `source`: for cells drawn with
+ *   squished-in extra, the index of the real top cell it sits on; else −1
+ */
+export function waterPicture(world, blockInfo, sides = allOpenSides(world, blockInfo)) {
+  const { width, height } = world;
+  const water = world.fluid.water;
+  const size = water.length;
+  const shown = new Float64Array(size);
+  const source = new Int32Array(size).fill(-1);
+  const pump = world.cells.map((name) => Boolean(blockInfo(name)?.fluid?.pump));
+
+  /**
+   * Does this cell hold enough water to count as wet?
+   * @param {number} index - the cell
+   * @returns {boolean} true if it does
+   */
+  const wet = (index) => water[index] >= MIN_AMOUNT;
+  /**
+   * The neighbor on one side, if water could stand in both cells as one
+   * body: both open on the touching sides, and neither is a pump (a
+   * pump holds water back, so the water on its two sides isn't level).
+   * @param {number} index - the cell
+   * @param {string} side - which side
+   * @returns {number} the neighbor's index, or −1
+   */
+  const joined = (index, side) => {
+    const x = index % width + STEP[side][0];
+    const y = Math.floor(index / width) + STEP[side][1];
+    if (x < 0 || y < 0 || x >= width || y >= height) return -1;
+    const next = y * width + x;
+    if (pump[index] || pump[next]) return -1;
+    return sides[index].includes(side) && sides[next].includes(OPPOSITE[side]) ? next : -1;
+  };
+  /**
+   * How high a cell's floor is, counted in cells from the bottom of the world.
+   * @param {number} index - the cell
+   * @returns {number} the height of its floor
+   */
+  const floorOf = (index) => height - 1 - Math.floor(index / width);
+
+  // --- 1. Columns. A column is a stack of wet cells; its TOP cell has the surface.
+  const columnOf = new Int32Array(size).fill(-1); // which column each wet cell is in
+  const columns = [];
+  let anyExtra = false;
+  for (let index = 0; index < size; index++) {
+    if (!wet(index)) continue;
+    if (water[index] > FULL) anyExtra = true;
+    shown[index] = Math.min(water[index], FULL);
+    const above = joined(index, 'up');
+    if (above >= 0 && wet(above)) {
+      columnOf[index] = columnOf[above]; // rows go top to bottom, so the cell above is done
+      // A cell with water standing on it is drawn full, so a column reads as solid.
+      if (showsWaterLevel(world.cells[index])) shown[index] = FULL;
+      continue;
+    }
+    columnOf[index] = columns.length;
+    columns.push({ top: index, body: -1, surface: floorOf(index) + shown[index], lid: floorOf(index) + shown[index], room: [] });
+  }
+  // Nothing is squished (a puddle, a stream, a shallow pond): the plain picture is right.
+  if (!anyExtra) return { shown, source };
+
+  // --- 2. Bodies. Wet cells that touch are one body of water.
+  const bodyOf = new Int32Array(size).fill(-1);
+  let bodies = 0;
+  for (let start = 0; start < size; start++) {
+    if (!wet(start) || bodyOf[start] >= 0) continue;
+    bodyOf[start] = bodies;
+    const todo = [start];
+    while (todo.length > 0) {
+      const index = todo.pop();
+      for (const side of SIDES) {
+        const next = joined(index, side);
+        if (next >= 0 && wet(next) && bodyOf[next] < 0) {
+          bodyOf[next] = bodies;
+          todo.push(next);
+        }
+      }
+    }
+    bodies += 1;
+  }
+  for (const column of columns) column.body = bodyOf[column.top];
+
+  // --- 3. Room. Where could each column's surface be drawn higher? Row
+  // by row from the bottom: a dry cell has room if it is straight above
+  // a surface (or above a cell with room), and every cell beside it in
+  // its row, as far as the walls, is wet or has room too. Otherwise the
+  // water drawn there would have to spill sideways, so none is drawn.
+  const roomOf = new Int32Array(size).fill(-1); // which column may be drawn up into each dry cell
+  for (let y = height - 1; y >= 0; y--) {
+    const maybe = new Int32Array(width).fill(-1);
+    for (let x = 0; x < width; x++) {
+      const index = y * width + x;
+      if (wet(index)) continue;
+      const below = joined(index, 'down');
+      if (below < 0) continue;
+      // Above a surface: only once that surface cell itself can be drawn full.
+      if (wet(below) && columns[columnOf[below]].top === below) {
+        if (columns[columnOf[below]].lid >= floorOf(below) + 1) maybe[x] = columnOf[below];
+      }
+      else if (roomOf[below] >= 0) maybe[x] = roomOf[below];
+    }
+    // Walk along each stretch of cells that are open to each other sideways.
+    let x = 0;
+    while (x < width) {
+      let end = x;
+      let contained = true;
+      for (;;) {
+        const index = y * width + end;
+        if (!wet(index) && maybe[end] < 0 && sides[index].length > 0) contained = false;
+        if (joined(index, 'right') < 0) break;
+        end += 1;
+      }
+      for (let at = x; at <= end; at++) {
+        const index = y * width + at;
+        if (!contained) continue;
+        if (maybe[at] >= 0) {
+          roomOf[index] = maybe[at];
+          columns[maybe[at]].room.push(index);
+          columns[maybe[at]].lid = floorOf(index) + 1;
+        } else if (wet(index) && columns[columnOf[index]].top === index) {
+          // A surface cell with walls or water on both sides can be drawn up to full.
+          columns[columnOf[index]].lid = Math.max(columns[columnOf[index]].lid, floorOf(index) + 1);
+        }
+      }
+      x = end + 1;
+    }
+  }
+
+  // --- 4. Put the extra back on top. An over-full cell is squished by the
+  // water standing over it, and how squished it is says how high that
+  // water stands (headOf). Its extra is drawn on its own column, and on
+  // every other surface of the same body that stands at about that
+  // height: the nearer, the bigger its share. So a puddle far below a
+  // tower's surface gets none of the tower's extra.
+  const add = new Float64Array(columns.length);
+  const byBody = new Map(); // body → the columns with room to be drawn higher
+  columns.forEach((column, id) => {
+    column.id = id;
+    if (column.lid <= column.surface) return;
+    if (!byBody.has(column.body)) byBody.set(column.body, []);
+    byBody.get(column.body).push(column);
+  });
+  /**
+   * Share some water between the columns of one body that have room.
+   * @param {number} body - which body of water
+   * @param {number} amount - how much to share out
+   * @param {number} level - the surface height this water belongs at
+   * @param {number} own - the column it comes from (always gets a full share), or −1
+   * @returns {void}
+   */
+  const share = (body, amount, level, own) => {
+    const takers = byBody.get(body) ?? [];
+    let weights = 0;
+    const weight = takers.map((column) => {
+      const part = column.id === own ? 1 : clamp(1 - Math.abs(level - column.surface) / NEAR, 0, 1);
+      weights += part;
+      return part;
+    });
+    // With no surface near (water shut in under a lid, or still rushing to
+    // find its level) there is nowhere to draw it. A surface that is only
+    // just near enough gets only a little, so nothing ever jumps.
+    weights = Math.max(weights, 1);
+    takers.forEach((column, at) => { add[column.id] += amount * weight[at] / weights; });
+  };
+  for (let index = 0; index < size; index++) {
+    if (wet(index) && water[index] > FULL) {
+      share(bodyOf[index], water[index] - FULL, floorOf(index) + headOf(water[index]), columnOf[index]);
+    }
+  }
+  // A column can't be drawn past its lid. What doesn't fit is offered to
+  // the other columns standing level with it (a few rounds are plenty).
+  const real = columns.map((column) => column.surface);
+  for (let round = 0; round < 4; round++) {
+    const spill = [];
+    columns.forEach((column, id) => {
+      const fits = Math.min(add[id], column.lid - column.surface);
+      column.surface += fits;
+      if (add[id] - fits > 1e-12) spill.push([id, add[id] - fits]);
+      add[id] = 0;
+    });
+    if (spill.length === 0) break;
+    for (const [body, takers] of byBody) byBody.set(body, takers.filter((column) => column.lid > column.surface));
+    const before = columns.map((column) => column.surface);
+    columns.forEach((column, id) => { column.surface = real[id]; }); // share by the REAL surfaces
+    for (const [id, amount] of spill) share(columns[id].body, amount, real[id], -1);
+    columns.forEach((column, id) => { column.surface = before[id]; });
+  }
+
+  // --- 5. Draw each column up to its new surface.
+  for (const column of columns) {
+    const raised = clamp(column.surface - floorOf(column.top), shown[column.top], FULL);
+    if (raised > shown[column.top]) source[column.top] = column.top;
+    shown[column.top] = raised;
+    for (const index of column.room) {
+      shown[index] = clamp(column.surface - floorOf(index), 0, FULL);
+      if (shown[index] > 0) source[index] = column.top;
+    }
+  }
+  return { shown, source };
 }
 
 /**

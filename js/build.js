@@ -12,11 +12,11 @@
  * anything moved. It also keeps three worlds saved (see saves.js), and
  * makes the 📷 picture. build.html calls initBuild() once.
  */
-import { AIR, WORLD_HEIGHT, WORLD_WIDTH, clearFluid, defaultWorld, getBlock, setBlock, tick } from './world.js';
+import { AIR, WORLD_HEIGHT, WORLD_WIDTH, defaultWorld, getBlock, swapBlock, tick } from './world.js';
 import {
   AIR_INFO, PACKS, allSystems, blockInfo, blocksInPack, drawLayers, isKnownBlock, refreshSignals,
 } from './blocks/registry.js';
-import { placeBlock, pour } from './fluids.js';
+import { placeBlock, pour, scoop } from './fluids.js';
 import { blockCanvas, drawWorld } from './block-art.js';
 import { initGuide } from './guide.js';
 import { WORLD_COUNT, loadCurrent, loadThumbnail, loadWorld, saveCurrent, saveWorld, worldKey } from './saves.js';
@@ -147,7 +147,7 @@ export function fitCellSize(boxWidth, boxHeight, columns, rows) {
 
 /**
  * Do what BUILD or DIG does to one cell: build (or pour), or dig (which
- * also scoops out water). Building into water pushes the water out of
+ * also scoops out water, one full cell at the most: see scoop in fluids.js). Building into water pushes the water out of
  * the way (see placeBlock in fluids.js); only DIG takes water away. (USE is handled by useBlockAt,
  * because it makes sounds instead of changing the world.)
  * @param {{width: number, height: number, cells: string[]}} world - the world
@@ -165,8 +165,10 @@ export function applyTool(world, tool, x, y, selected) {
     return placeBlock(world, x, y, selected, blockInfo);
   }
   if (tool === 'dig') {
-    const dried = clearFluid(world, x, y); // digging scoops out water too
-    return setBlock(world, x, y, AIR) || dried;
+    // Digging takes the block, and ONE scoop of water: at most a full cell.
+    // (swapBlock, not setBlock: any water left over stays where it is.)
+    const scooped = scoop(world, x, y, blockInfo);
+    return swapBlock(world, x, y, AIR) || scooped;
   }
   return false;
 }
