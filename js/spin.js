@@ -33,6 +33,10 @@
  *              back when the winch tries to lift it (see `balance`).
  *   spinDrag   a push back that grows with speed, like a generator
  *              making electricity (more lamps = harder to turn)
+ *   spinBrake  a push back that only ever works AGAINST the turning (it
+ *              can stop a group, never drive it), like the extra work a
+ *              generator takes when a battery in its loop adds to the
+ *              current it makes (see `balance`)
  *
  * A winch has a RATCHET (a little catch), like a real one: a load
  * hanging on its rope can never pull the gears round by itself. With
@@ -44,7 +48,8 @@
  * anticlockwise ↺. Strengths are in "crank-pushes" (see CRANK_STRENGTH).
  * This file only reads the fields blocks have: `spin`, `spinSource`
  * (which is also told the indexes of the blocks in its group), `spinLoad`
- * (which is also told which blocks have a source turning them) and `spinDrag`.
+ * (which is also told which blocks have a source turning them), `spinDrag`
+ * and `spinBrake`.
  */
 import { getBlock, inBounds } from './world.js';
 import { partAxis } from './circuit.js';
@@ -185,7 +190,7 @@ function loadOf(load) {
 /**
  * Find the speed where all the pushing and pulling on a group balance:
  *
- *   ahead − slowing × speed + (every load that's pulling right now) = 0
+ *   ahead − slowing × speed + (every load and brake that's working right now) = 0
  *
  * A plain load always pulls. A load with a `limit` only pulls while the
  * group turns slower than that limit the way the load pulls:
@@ -199,33 +204,46 @@ function loadOf(load) {
  *     the limit). If the sources go even faster by themselves, the rope
  *     is slack and the weight doesn't push at all.
  *
- * Each load switches off as the speed goes up past its limit, so we try
- * the stretches between the limits one at a time, slowest first.
+ * A brake pushes back with  pull + perTurn × speed,  but only while that
+ * push-back works AGAINST the turning. So it has two edges: speed 0, and
+ * the speed where its push-back is nothing.
+ *
+ * Loads and brakes switch on or off at their edges, and the push always
+ * gets smaller (never bigger) as the speed goes up. So we try the
+ * stretches between the edges one at a time, slowest first.
  * @param {number} ahead - the sources' strengths added up (+ or −)
  * @param {number} slowing - how fast the push fades as the group speeds up (more than 0)
  * @param {Array<{pull: number, limit: number}>} loads - the loads, at the first block
+ * @param {Array<{pull: number, perTurn: number}>} [brakes] - the brakes, at the first block
  * @returns {number} the group's speed, at the first block
  */
-function balance(ahead, slowing, loads) {
+function balance(ahead, slowing, loads, brakes = []) {
   /**
    * The speed (with + or −) where a load stops pulling.
    * @param {{pull: number, limit: number}} load - a load
    * @returns {number} that speed
    */
   const edge = (load) => Math.sign(load.pull) * load.limit;
-  const edges = [...new Set(loads.map(edge).filter(Number.isFinite))].sort((a, b) => a - b);
+  const brakeEdges = brakes.flatMap((brake) => (brake.perTurn > 0 ? [0, -brake.pull / brake.perTurn] : [0]));
+  const edges = [...new Set([...loads.map(edge), ...brakeEdges].filter(Number.isFinite).map((value) => value || 0))].sort((a, b) => a - b);
   for (let k = 0; k <= edges.length; k++) {
     const low = k === 0 ? -Infinity : edges[k - 1];
     const high = k === edges.length ? Infinity : edges[k];
-    // Any speed inside this stretch tells us which loads are pulling in it.
+    // Any speed inside this stretch tells us which loads and brakes are working in it.
     const inside = k === 0 ? (edges.length > 0 ? high - 1 : 0) : (k === edges.length ? low + 1 : (low + high) / 2);
     let pull = 0;
+    let fading = slowing;
     for (const load of loads) {
       if (inside * Math.sign(load.pull) < load.limit) pull += load.pull;
     }
-    const speed = (ahead + pull) / slowing;
+    for (const brake of brakes) {
+      if ((brake.pull + brake.perTurn * inside) * inside <= 0) continue; // it would help the turning: a brake never does
+      pull -= brake.pull;
+      fading += brake.perTurn;
+    }
+    const speed = (ahead + pull) / fading;
     if (speed > high) continue;     // faster than this stretch: try the next one
-    if (speed < low) return low;    // a load switches off (or on) right at this edge and holds it there
+    if (speed < low) return low;    // a load or brake switches off (or on) right at this edge and holds it there
     return speed;
   }
   return 0; // (never reached: the last stretch has no top)
@@ -352,16 +370,19 @@ export function solveSpin(world, blockInfo) {
   for (const { ratio, jammed, ahead, slowing } of groups) {
     const loads = []; // loads (a hanging weight), at the first block
     let drag = 0; // push-back that grows with speed (generators)
+    const brakes = []; // push-back that only works against the turning
     for (const [index, r] of ratio) {
       const point = points.get(index);
       const load = loadOf(point.info.spinLoad?.(world, point.x, point.y, blockInfo, isDriven));
       if (load.pull !== 0) loads.push({ pull: load.pull * r, limit: load.limit / Math.abs(r) });
       drag += (point.info.spinDrag?.(world, point.x, point.y) ?? 0) * r * r;
+      const brake = point.info.spinBrake?.(world, point.x, point.y) ?? null;
+      if (brake) brakes.push({ pull: brake.pull * r, perTurn: brake.perTurn * r * r });
     }
 
     // The speed where the pushing and the pushing back balance:
-    //   ahead − slowing × speed + pull − drag × speed = 0
-    let speed = slowing > 0 ? balance(ahead, slowing + drag, loads) : 0;
+    //   ahead − slowing × speed + pull − drag × speed − brakes = 0
+    let speed = slowing > 0 ? balance(ahead, slowing + drag, loads, brakes) : 0;
     // A winch has a ratchet (a little catch): a hanging load can never
     // pull the winch round by itself. It only comes down when the
     // sources really turn the winch the let-out way. So:

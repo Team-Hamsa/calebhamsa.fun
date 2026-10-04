@@ -33,6 +33,10 @@ const TEST_BLOCKS = {
   grounded: { spin: { kind: 'hub' }, spinLoad: () => ({ pull: -3, resting: true }) },
   // Like a generator: pushes back 2 for every turn per second.
   dynamo: { spin: { kind: 'hub' }, spinDrag: () => 2 },
+  // Like a generator with a battery in its loop: it pushes back 3 standing still and
+  // 2 more for every turn per second, but only while that works against the turning.
+  brake: { spin: { kind: 'hub' }, spinBrake: () => ({ pull: 3, perTurn: 2 }) },
+  lightBrake: { spin: { kind: 'hub' }, spinBrake: () => ({ pull: 1, perTurn: 2 }) },
   stone: {},
 };
 
@@ -46,7 +50,7 @@ const blockInfo = (name) => TEST_BLOCKS[name];
 /** What each letter means. */
 const LETTERS = {
   '.': 'air', s: 'gearSmall', G: 'gearBig', '-': 'axle', H: 'hub', R: 'crankCW', Q: 'crankCCW',
-  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light', g: 'grounded', f: 'falling', Z: 'racer', Y: 'strongCCW', D: 'dynamo',
+  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light', g: 'grounded', f: 'falling', Z: 'racer', Y: 'strongCCW', D: 'dynamo', b: 'brake', l: 'lightBrake',
 };
 
 /**
@@ -328,4 +332,19 @@ test('a winch, generator, crank or loose axle beside the end of a shaft doesn\'t
       assert.equal(at(x, 1 - y).speed, 0, rows.join('/'));
     }
   }
+});
+
+test('a brake only works against the turning: it can hold a group still, but never drives it', () => {
+  // The crank (strength 2) pushes ↻ into a brake that pushes back 3 standing still: held at exactly 0.
+  assert.equal(spin(['Rb'])(0, 0).speed, 0);
+  // A lighter brake (1 standing still, 2 more per turn): 2 − 2×speed = 1 + 2×speed, so a quarter turn a second.
+  assert.equal(spin(['Rl'])(0, 0).speed, 0.25);
+  // Turned the other way, the brake would HELP: so it does nothing, right up to the speed
+  // where its push-back is used up (−1.5 for the heavy one). The crank just turns at its own speed.
+  assert.equal(spin(['Qb'])(0, 0).speed, -1);
+  // Faster than that it pushes back again: a ↺ crank of top speed 6 is slowed to where
+  // 2 × (1 − speed ÷ 6) = 2 × (speed − 1.5), which is 15 ÷ 7.
+  assert.ok(Math.abs(spin(['Zb'])(0, 0).speed + 15 / 7) < 1e-9, `turns ${spin(['Zb'])(0, 0).speed}`);
+  // With no source, a brake turns nothing.
+  assert.equal(spin(['sb'])(0, 0).speed, 0);
 });

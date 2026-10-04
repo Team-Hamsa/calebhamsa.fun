@@ -219,7 +219,10 @@ generator lights, the harder it is to turn. With nothing wired to it, it spins
 freely. Join its two ends with plain wire (a short circuit) and it gets very
 hard to turn, because a big current flows: watch the dots race. Take the wire
 away and it's easy again. Turn it slowly and it still makes a little
-electricity: a dim lamp, not a dark one.
+electricity: a dim lamp, not a dark one. A battery wired into a generator's
+loop does not spin it (a real generator would run as a motor; ours doesn't, so
+use the motor block for that). It only makes the generator very hard to turn
+the way that adds to the battery's current, and leaves it free the other way.
 
 **Nothing runs forever.** A generator turns at most 8 tenths of the work you
 put in into electricity (the rest becomes heat, like in a real one), so a motor

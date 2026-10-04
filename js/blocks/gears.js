@@ -17,7 +17,7 @@
  */
 import { solveSpin, MIN_SPEED } from '../spin.js';
 import { swapBlock } from '../world.js';
-import { PUSH_STEP, REFERENCE_CURRENT, plusSide, roundPush } from '../circuit.js';
+import { REFERENCE_CURRENT, plusSide, roundPush } from '../circuit.js';
 import { DROP_POWER } from '../fluids.js';
 import { refreshElectric } from './electric.js';
 
@@ -147,7 +147,46 @@ export function generatorPush(world, x, y) {
 }
 
 /**
- * How hard a generator pushes back on its shaft for each turn per second.
+ * What a generator's wiring means for its shaft, from the electricity
+ * (world.signals.electric, which gearsSystem works out again at the start
+ * of every tick if the wiring changed: a block, a switch, a clicker's
+ * beat). Nothing is remembered from before, so fixing the wiring always
+ * fixes the generator.
+ *
+ * The current through a generator has two parts:
+ *
+ *   current = forced + load × its own push
+ *
+ *   load     the current that flows for each volt IT pushes (see loadOn in
+ *            circuit.js): lots of lamps side by side = a big load, nothing
+ *            wired up = none, plain wire across its ends = a huge one
+ *   forced   the current OTHER things (a battery, another generator) push
+ *            through it, even when it stands still. We find it by taking
+ *            the generator's own part away from the real current.
+ *
+ * Both are counted coming out of its + end (the end it pushes current out
+ * of when it turns ↻).
+ * @param {object} world - the world
+ * @param {number} x - the generator's column
+ * @param {number} y - the generator's row
+ * @returns {{load: number, forced: number}} current per volt, and current
+ */
+function generatorWiring(world, x, y) {
+  const index = y * world.width + x;
+  const electric = world.signals.electric?.cells?.get(index);
+  if (!electric) return { load: 0, forced: 0 };
+  const speed = world.signals.spin?.cells?.get(index)?.speed ?? 0;
+  const load = electric.load ?? 0;
+  // The current coming out of its + end (negative = going in there).
+  const current = electric.arms[plusSide(electric.axis)] ?? 0;
+  // The push the electricity was worked out with, rounded the same way the circuit rounds it (partPush).
+  const forced = current - load * roundPush(speed * GENERATOR_GAIN);
+  return { load, forced: load > 0 && Math.abs(forced) > 1e-9 ? forced : 0 };
+}
+
+/**
+ * How hard a generator pushes back on its shaft for each turn per second,
+ * when nothing else pushes current through it.
  *
  * Its push makes current flow: how much depends on what it's wired to
  * (more lamps side by side = more current). The current pushes back on
@@ -156,41 +195,53 @@ export function generatorPush(world, x, y) {
  * harder to turn, and one whose ends are joined by plain wire (a short
  * circuit) is very hard to turn, for as long as the wire is there.
  *
- * Nothing is remembered from before: everything comes from the
- * electricity (world.signals.electric), which gearsSystem works out again
- * at the start of every tick if the wiring changed (a block, a switch, a
- * clicker's beat). So fixing the wiring always fixes the generator, and
- * closing a switch loads the generator on that very tick.
- *
- *   • While it turns, we use the REAL current through it (which the
- *     circuit worked out from its push): current ÷ push × volts per turn.
- *     Only current going the way the generator pushes counts. (Current
- *     forced through it backwards, by a battery, would help turn a real
- *     generator like a motor. We don't give that help away for free.)
- *   • While it's stopped (or so slow that it pushes less than PUSH_STEP),
- *     we use its "load": the current that WOULD flow for each volt (see
- *     loadOn in circuit.js). And if something else, like a battery, is
- *     forcing current through it, that holds it still either way.
+ * (With a battery or another generator in its loop, generatorBrake does
+ * this job instead.)
  * @param {object} world - the world
  * @param {number} x - the generator's column
  * @param {number} y - the generator's row
  * @returns {number} push-back (strength) per turn per second
  */
 export function generatorDrag(world, x, y) {
-  const index = y * world.width + x;
-  const electric = world.signals.electric?.cells?.get(index);
-  if (!electric) return 0;
-  const speed = world.signals.spin?.cells?.get(index)?.speed ?? 0;
-  // The current coming out of its + end (negative = going in there).
-  const current = electric.arms[plusSide(electric.axis)] ?? 0;
-  // The push it was last worked out with, rounded the same way the circuit rounds it (partPush).
-  const push = Math.abs(roundPush(speed * GENERATOR_GAIN));
-  if (push > 0) {
-    const perVolt = Math.max(0, current * Math.sign(speed)) / push;
-    return GENERATOR_TORQUE * perVolt * GENERATOR_GAIN; // push-back per current × current per volt × volts per turn
-  }
-  const slowest = PUSH_STEP / GENERATOR_GAIN; // slower than this, it pushes nothing
-  return GENERATOR_TORQUE * ((electric.load ?? 0) * GENERATOR_GAIN + Math.abs(current) / slowest);
+  const { load, forced } = generatorWiring(world, x, y);
+  if (forced !== 0) return 0;
+  return GENERATOR_TORQUE * load * GENERATOR_GAIN; // push-back per current × current per volt × volts per turn
+}
+
+/**
+ * How a generator pushes back when a battery (or another generator) is
+ * pushing current through it as well. The current through it is then
+ *
+ *   forced + load × volts per turn × its speed
+ *
+ * and it pushes back GENERATOR_TORQUE for each unit of that, but ONLY
+ * while the current goes the way the generator itself is pushing: then
+ * it is really generating, and that takes work. So:
+ *
+ *   • Turned the way that ADDS to the battery's current, it is very hard
+ *     to turn, even from standing still. A crank too weak for it doesn't
+ *     move at all.
+ *   • Turned the other way, AGAINST the battery, it turns freely, right
+ *     up to the speed where its own push beats the battery's. Faster
+ *     than that it is generating again, and pushes back.
+ *
+ * In that free stretch a real generator would be a MOTOR: the battery's
+ * current would help turn it. Ours gives no help (a generator is not a
+ * motor in this game: use the motor block), so it never makes turning
+ * out of nothing. spin.js only uses a brake while it works against the
+ * turning, which is exactly the rule above. Whichever was there first,
+ * the battery or the turning, the answer is the same.
+ * @param {object} world - the world
+ * @param {number} x - the generator's column
+ * @param {number} y - the generator's row
+ * @returns {{pull: number, perTurn: number}|null} the push-back standing
+ *   still (+ pushes back against ↻), and how much it grows per turn per
+ *   second; null if nothing else pushes current through it
+ */
+export function generatorBrake(world, x, y) {
+  const { load, forced } = generatorWiring(world, x, y);
+  if (forced === 0) return null;
+  return { pull: GENERATOR_TORQUE * forced, perTurn: GENERATOR_TORQUE * load * GENERATOR_GAIN };
 }
 
 /**
@@ -602,6 +653,7 @@ function crank(speed, name) {
  *   spin         how it joins the spinning: a gear (with teeth), an axle, or a hub (a shaft)
  *   spinSource   its top speed and strength right now (null = not driving)
  *   spinDrag     how hard it pushes back for each turn per second (generator)
+ *   spinBrake    a push-back that only works against the turning (generator with a battery in its loop)
  *   wheel        the 💧 pack counts water flowing through it
  *   part         it's also an ⚡ circuit part (motor, generator)
  *   hidden       not in the palette (you get it with ✋)
@@ -625,7 +677,8 @@ const blocks = {
   },
   generator: {
     title: 'Generator', color: '#546e7a',
-    spin: { kind: 'hub' }, part: { resistance: 0.05, pushNow: generatorPush, feelsLoad: true }, spinDrag: generatorDrag, drawSignals: drawGenerator,
+    spin: { kind: 'hub' }, part: { resistance: 0.05, pushNow: generatorPush, feelsLoad: true },
+    spinDrag: generatorDrag, spinBrake: generatorBrake, drawSignals: drawGenerator,
   },
   crankCW: crank(CRANK_SPEED, 'crankCW'),
   crankCCW: crank(-CRANK_SPEED, 'crankCCW'),
@@ -652,7 +705,7 @@ const guide = {
     crankStop: { does: 'Hand power, strength 2! Red knob = stopped, green knob = turning.', use: 'stop → ↻ → ↺ → stop' },
     waterWheel: { does: 'Turns when water flows through it. More water = faster. A longer fall = stronger: put it where the water drops, like under a faucet. For a tall waterfall, stack wheels one under the other. In a level stream it turns, but too feebly to do much work.' },
     motor: { does: 'Turns electricity into turning: more electricity = faster and stronger. Put it in a loop with a battery. Move the battery to the other side of the loop and it turns the other way.' },
-    generator: { does: 'Turns turning into electricity: wire it up like a battery. Its + end swaps when it turns the other way.' },
+    generator: { does: 'Turns turning into electricity: wire it up like a battery. Its + end swaps when it turns the other way. It is not a motor: a battery wired to it won\'t spin it, it only makes it very hard to turn one way.' },
   },
 };
 

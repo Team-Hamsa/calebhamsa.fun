@@ -250,3 +250,14 @@ Systems run water → gears → lift → electric, and `generatorDrag` read the 
 - `gearsSystem` (and `refreshSpin`) now call `refreshElectric` first. It only re-solves when the circuit key changed (blocks, clicker beat, pushes), so on the closing tick the generator's drag comes from the closed circuit, the group slows at once, and `electricSystem` then solves with the loaded speed.
 - Result: lamp ÷ crank work is the same with and without a clicker (0.49–0.75); the ×32 and ×64 clicker rings and tall loops stop without their batteries.
 - Still true: the pump and motors read the electricity of the tick before (water runs first). That lag is the same on the closing and the opening tick, and the current they read was paid for.
+
+## Addendum 2026-10-04 (later): a generator with a battery in its loop has ONE answer (issue #11 review; part of #14)
+
+`generatorDrag` had two branches (turning: real current ÷ push; stopped: load plus `|current| ÷ slowest`). With a battery straight across the generator they disagreed: a crank present from the start ran free at 1.0 (1.887 A), the same crank started later was clamped at 0.003 (9.434 A, sparking) for ever.
+
+The law is now written once, without branches. The current through a generator is `forced + load × GENERATOR_GAIN × speed`, where `load` is `loadOn` (current per volt of its own push) and `forced` is what the other pushers put through it (real current minus `load ×` the rounded push the circuit was solved with). It pushes back `GENERATOR_TORQUE × current`, but only while that works against the turning (while it is really generating).
+
+- `forced` = 0 (the usual case): a plain `spinDrag` of `GENERATOR_TORQUE × load × GENERATOR_GAIN`, as before.
+- `forced` ≠ 0: a new block field `spinBrake` → `{pull, perTurn}`. `balance` in `spin.js` takes brakes alongside loads: a brake pushes back `pull + perTurn × speed` only while `(pull + perTurn × speed) × speed > 0`; its edges are 0 and `−pull ÷ perTurn`. The total push is still non-increasing in speed, so the stretch-by-stretch search still finds the one root. A group held at 0 by a brake is `stalled`.
+- Result: `.R./WEW/W.W/WBW` is 1.000 turn/s, 1.887 A, no spark, and `.Q.` is 0 turn/s, 9.434 A, spark, in every build order.
+- **Not done (issue #14): motoring.** In the free stretch a real machine is a motor (torque with the turning). Trying it (`spinSource` of strength `GAIN² ÷ TORQUE × |forced|`, top speed `−forced ÷ (load × GAIN)`, with the brake carrying the rest) worked and was order-independent, but a free generator in series with a battery then spins up until no current flows, which starves the pump in every battery-in-series loop the perpetual-motion tests use, and needs its own energy audit of generator-to-generator rings. Left for #14; the guide and README now say a generator is not a motor here.

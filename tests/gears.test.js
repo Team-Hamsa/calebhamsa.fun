@@ -203,6 +203,39 @@ test('a generator that had a battery wired straight across it spins freely again
   assert.equal(spinAt(world, 1, 0), -CRANK_SPEED);
 });
 
+test('a battery straight across a generator: one answer, whichever was there first, the battery or the crank', () => {
+  // [crank, what happens]: turned AGAINST the battery it spins freely (a real one would be helped along);
+  // turned the way that ADDS to the battery's current, a crank is too weak to move it at all.
+  for (const [crank, speed, current, spark] of [['crankCW', 1, 1.887, false], ['crankCCW', 0, 9.434, true]]) {
+    const ends = [];
+    for (const order of ['crank first', 'battery first', 'crank changed']) {
+      const world = run(['...', 'WEW', 'W.W', 'WWW'], 0);
+      const systems = allSystems();
+      if (order !== 'battery first') setBlock(world, 1, 0, order === 'crank first' ? crank : (crank === 'crankCW' ? 'crankCCW' : 'crankCW'));
+      if (order !== 'crank first') setBlock(world, 1, 3, 'battery');
+      for (let i = 0; i < 12; i++) tick(world, systems, blockInfo);
+      setBlock(world, 1, 0, crank);
+      setBlock(world, 1, 3, 'battery');
+      for (let i = 0; i < 40; i++) tick(world, systems, blockInfo);
+      ends.push([spinAt(world, 1, 0), currentAt(world, 1, 1)]);
+      assert.equal(world.signals.electric.cells.get(3 * 3 + 1).spark, spark, `${crank}, ${order}`);
+    }
+    for (const [turns, amps] of ends) {
+      assert.ok(Math.abs(turns - speed) < 1e-9, `${crank}: turns ${ends.map((end) => end[0])}`);
+      assert.ok(Math.abs(amps - current) < 0.001, `${crank}: currents ${ends.map((end) => end[1])}`);
+    }
+  }
+});
+
+test('a battery never turns a generator into free turning: with a lamp in the loop it only ever makes the crank\'s job harder or the same', () => {
+  const free = CRANK_SPEED;
+  const against = run(['.R..', 'WEWW', 'W..L', 'WBWW'], 20); // turned against the battery: no help, no hindrance
+  const adding = run(['.Q..', 'WEWW', 'W..L', 'WBWW'], 20);  // turned so its push adds to the battery's: harder
+  assert.equal(spinAt(against, 1, 0), free);
+  assert.ok(Math.abs(spinAt(adding, 1, 0)) < 0.5 && Math.abs(spinAt(adding, 1, 0)) > 0.3, `turns ${spinAt(adding, 1, 0)}`);
+  assert.ok(lampLevel(adding, 3, 2) > lampLevel(against, 3, 2)); // battery and generator together: a brighter lamp
+});
+
 test('a slowly turned generator still makes a little electricity: a dim lamp, not a dark one', () => {
   // Geared down three times (small → big, three times): the generator
   // hanging under the last gear turns 8 times slower than the crank.
