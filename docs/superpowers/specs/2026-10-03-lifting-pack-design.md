@@ -235,3 +235,28 @@ On the tick a load lands, `winchLoad` counted it as hanging for the whole tick, 
 - While the load is resting (`!canLower`), `liftSystem` no longer lets the amount go below `min(amount before, 0)`: letting out more rope does nothing, and the slack it landed with stays. Lifting again has to wind that slack in first, against the load's weight (a resting load pulls back whenever it is wound in), which pays the over-credit back exactly.
 - Result: the same 40 trips net 0.000, at every landing phase tested (2 to 30 ticks of letting out, direct and geared).
 - Still true: one landing that is never lifted again keeps up to one tick of rope's worth of credit (bounded, not repeatable).
+
+## Addendum 2026-10-04 (issue #26): the top is a hard stop, marked with an orange ⬆
+
+This **reverses** the edge-case row "Rope wound up to the winch/pulley: stops winding (one rope cell stays); gears keep turning; no load counted". A crank kept spinning at its loaded speed (0.5 over a crate) against a rope that could not move, a motor ran on, and a generator on the same train kept lighting its lamp. A real winch whose hook has reached the drum stops dead. The owner's decision is in issue #26.
+
+| Case | Behavior now |
+|---|---|
+| Load wound up to the winch/pulley, sources pushing the wind-in way (↻ at the winch) | **Hard stop.** The whole gear group's speed is 0: a hand crank stops, a motor stalls, generators and other winches on the train stop. One rope cell still stays. The winch shows an orange ⬆. |
+| Same, sources pushing the let-out way (↺) | Free: the load comes down on the very next tick. |
+| Same, no source (or the sources removed) | Nothing is stopped or marked; the ratchet holds the load. |
+| Load at the top AND too heavy for the sources | Stalled (red ⬇), as before: `stalled` wins, `blocked` is false. |
+| Rope with **no load** wound right in; winch with no rope; rope leaving sideways (nothing can hang on it) | Unchanged: the winch keeps turning, nothing is stopped. Bare rope just winds onto the drum. |
+| Load on the ground, letting out | Unchanged (issue #24 addendum): gears keep turning at the sources' own speed. |
+
+How it is built:
+
+- `spin.js` reads a new block field `spinStop(world, x, y, blockInfo, isDriven)`: `+1` if the block can't turn ↻ any further, `−1` for ↺, `0` if free. Each group keeps its stops as a way at the first block (`sign(stop × ratio)`, so gearing in between is followed). In `settle`, after the stall check, a group whose speed has the sign of one of its stops gets speed 0.
+- Two new fields on **every** spin record, distinct from `stalled` (which is not reused): `blocked` (the block's group is held by a hard stop) and `stopper` (this block is one doing the stopping). `blocked` is never true together with `stalled` or `jammed`.
+- `winchStop` (js/blocks/lifting.js) returns 1 when a load is on the rope's end, `canWindIn` is false, and the winch's part-wound amount is not negative. The winch draws the orange ⬆ (`#fb8c00`) from `stopper`, so with two winches on one train only the one whose load is at the top is marked.
+- No flicker: the stop depends only on the blocks, the part-wound amount (which a stopped winch keeps unchanged) and the sign of the sources' push. It holds while the drive persists and is gone on the tick the drive reverses or is removed.
+- Part-wound rope: a winch at the top that had let a little rope out (amount < 0, load not yet moved) is **not** stopped; it winds that bit back in against the load first, then stops. Rope wound past the cell on arrival (amount > 0, less than a cell's worth) is kept, not zeroed, and has to be unwound (with the load helping) before the load moves down, so the stop neither gives nor takes energy. Checked: 20 trips of lowering 1 to 30 ticks from the top and winding back, plain and with a pulley hook: the crank's net work never goes below 0. While stopped, speed is 0, so no work is done and a generator on the train makes nothing.
+- Shared rope ends: `winchStop` does not ask who owns the end. When the load is at the pulley **both** winches are stopped (neither rope can be pulled further); before, the non-owner spun free at 1.
+- Pictures: `docs/blocks/winch-top.png` and `docs/machines/at-the-top.png`.
+- Not done: a winch winding a bare rope end up into a pulley, or a load into a block that is in its way sideways, is not a stop (there is no such case on the grid: the load always moves into the cell its rope end leaves).
+

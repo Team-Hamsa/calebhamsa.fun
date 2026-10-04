@@ -14,11 +14,12 @@
  *
  * lift.js knows how rope works (following it, winding it in, letting it
  * out); spin.js stops a group of gears that's too weak for its load (see
- * winchLoad). This file says what each block is, moves the loads every
+ * winchLoad), or whose winch has wound its load right to the top (see
+ * winchStop). This file says what each block is, moves the loads every
  * tick, and draws everything.
  */
 import { MIN_SPEED } from '../spin.js';
-import { canLower, letOut, loadBelow, ownsRopeEnd, ropeArms, traceRope, windIn } from '../lift.js';
+import { canLower, canWindIn, letOut, loadBelow, ownsRopeEnd, ropeArms, traceRope, windIn } from '../lift.js';
 import { TICKS_PER_SECOND, turned } from './gears.js';
 
 /**
@@ -71,6 +72,38 @@ export function winchLoad(world, x, y, blockInfo, isDriven) {
   return { pull: -load.weight, resting: !canLower(world, rope, load), topSpeed };
 }
 
+/**
+ * Has this winch's load reached THE TOP? Then the winch can't wind in
+ * (turn ↻) any further: the load is right up against the winch, or
+ * against the pulley its rope hangs from. That's a hard stop, like a real
+ * crane when the hook reaches the drum: spin.js stops the whole group of
+ * gears (a hand crank stops dead, a motor stalls). Only winding IN is
+ * stopped. Turn the winch ↺ and the load comes down again.
+ *
+ * It only counts when a LOAD hangs on the rope (or rests under its end).
+ * Bare rope with nothing on it just winds onto the drum, and a winch
+ * with no rope has nothing to stop it: those keep turning.
+ *
+ * A little rope may have been let out without the load moving a whole
+ * cell yet (see liftSystem). Then the load isn't quite at the top: the
+ * winch may wind that little bit back in first.
+ *
+ * Two winches sharing one rope end are BOTH stopped when the load gets
+ * to the top: neither rope can be pulled any further.
+ * @param {object} world - the world
+ * @param {number} x - the winch's column
+ * @param {number} y - the winch's row
+ * @param {Function} blockInfo - looks up what a block name means
+ * @returns {number} 1 if it can't turn ↻ any more, 0 if it's free
+ */
+export function winchStop(world, x, y, blockInfo) {
+  const rope = traceRope(world, x, y, blockInfo);
+  if (loadBelow(world, rope, blockInfo).cells.length === 0) return 0; // nothing on the rope: nothing to stop it
+  if (canWindIn(world, rope, blockInfo)) return 0; // still rope to wind
+  const letOutABit = (world.signals.lift?.pull?.get(y * world.width + x) ?? 0) < 0;
+  return letOutABit ? 0 : 1;
+}
+
 // =============================================================
 // Running the winches
 // =============================================================
@@ -95,7 +128,9 @@ export function refreshLift(world, blockInfo) {
  * lets out (↺) a little rope. Once it has wound a whole cell's worth (two
  * with a pulley hook), the load moves one cell. The part-wound amount is
  * kept while the winch is stopped, so short turns add up. It's only
- * dropped when the rope is wound right in. A load resting on the ground
+ * dropped when a bare rope (nothing hanging on it) is wound right in. A
+ * winch whose LOAD is at the top never gets here turning ↻: spin.js has
+ * already stopped it (see winchStop). A load resting on the ground
  * keeps the bit of slack it landed with, and gets no more. Going down, a load moves one cell a tick at
  * the very most: that's how fast things fall.
  * @param {object} world - the world
@@ -185,6 +220,9 @@ export function liftSystem(world, blockInfo) {
 
 /** The rope's color. */
 const ROPE = '#c8a165';
+
+/** The color of the ⬆ a winch shows when its load has reached the top. */
+const TOP_ARROW = '#fb8c00';
 
 /** The color of the winch's little metal catch. */
 const CATCH = '#eceff1';
@@ -280,7 +318,9 @@ function drawHook(ctx, info, left, top, size, cell) {
  * Draw a winch: a drum with rope wrapped round it, and its catch (the
  * ratchet that stops the load pulling it round) at the top. The rope's
  * stripes roll as it turns. If its gears are too weak to lift the load,
- * it shows a red ⬇ (too heavy!).
+ * it shows a red ⬇ (too heavy!). If its load has reached the top and it
+ * is stopping the gears from winding any more, it shows an orange ⬆
+ * (it's at the top!).
  * @param {CanvasRenderingContext2D} ctx - the canvas paintbrush
  * @param {object} info - the block's definition
  * @param {number} left - the cell's left edge
@@ -309,6 +349,12 @@ function drawWinch(ctx, info, left, top, size, cell) {
     ctx.fillRect(left + 2.5 * p, top + 5 * p, 3 * p, p);
     ctx.fillRect(left + 1.5 * p, top + 4 * p, p, p);
     ctx.fillRect(left + 5.5 * p, top + 4 * p, p, p);
+  } else if (cell?.stopper) {
+    ctx.fillStyle = TOP_ARROW; // an orange ⬆: it has reached the top!
+    ctx.fillRect(left + 3.5 * p, top + 2 * p, p, 6 * p);
+    ctx.fillRect(left + 2.5 * p, top + 2 * p, 3 * p, p);
+    ctx.fillRect(left + 1.5 * p, top + 3 * p, p, p);
+    ctx.fillRect(left + 5.5 * p, top + 3 * p, p, p);
   }
 }
 
@@ -320,6 +366,7 @@ function drawWinch(ctx, info, left, top, size, cell) {
  * Every block in this pack, in the order the palette shows them.
  *   spin       the winch joins gear trains like any hub (a shared shaft)
  *   spinLoad   how hard its load pulls on it
+ *   spinStop   says when it can't wind in any more: the load is at the top
  *   rope       rope runs through it (rope and pulleys; it only turns at pulleys)
  *   falls      falls like sand (unless it hangs on a winch's rope)
  *   weight     how heavy it is to lift (1 if not given)
@@ -329,7 +376,7 @@ function drawWinch(ctx, info, left, top, size, cell) {
 const blocks = {
   winch: {
     title: 'Winch', color: '#8d6e63', bare: true, winch: true,
-    spin: { kind: 'hub' }, spinLoad: winchLoad, drawSignals: drawWinch,
+    spin: { kind: 'hub' }, spinLoad: winchLoad, spinStop: winchStop, drawSignals: drawWinch,
   },
   rope: {
     title: 'Rope', color: ROPE, bare: true, rope: true,
@@ -352,6 +399,7 @@ const guide = {
     'A winch turning ↻ winds the rope in (up). Turning ↺ lets it out (down).',
     'A winch has a little catch (a ratchet): let go and the load stays up. The load can\'t pull the winch round by itself. It only comes down when you turn the winch ↺.',
     'Heavy things go up slower. Too heavy for the crank, motor or water wheel, and everything STALLS: nothing turns and the winch shows a red ⬇.',
+    'When the load gets to the top (right up to the winch, or to a pulley) the rope can\'t wind any more. Everything STOPS, like a real crane: the crank, the motor and all the gears. The winch shows an orange ⬆. Turn it the other way (↺) and the load comes down again.',
     'Slower is stronger! A small gear driving a big gear makes the winch slower, so it can lift more. Gearing UP makes it weaker.',
     'Or add strength: two cranks, more batteries for a motor, or more water (or a longer fall) onto a water wheel.',
     'Going down, a hanging load helps turn the winch, but it never goes down faster than it would fall. A load lying on the ground helps nothing: its rope is slack. It only pulls when you lift it.',
@@ -359,7 +407,7 @@ const guide = {
     'Dig the rope and whatever hangs on it falls.',
   ],
   blocks: {
-    winch: { does: 'A drum that winds rope. Turn it with a crank, gears or a motor touching it. Its little catch holds the load up when nothing turns it.' },
+    winch: { does: 'A drum that winds rope. Turn it with a crank, gears or a motor touching it. Its little catch holds the load up when nothing turns it. A red ⬇ means too heavy. An orange ⬆ means the load is at the top: it can\'t wind any more, only let out.' },
     rope: { does: 'Put some next to the winch and let it hang down. Rope goes straight: it only turns a corner at a pulley.' },
     pulley: { does: 'A wheel the rope runs over, so it can change direction: up a tower and down the other side.' },
     pulleyHook: { does: 'Hang it on the rope with the load under it. The load counts half as heavy, but goes up half as fast.' },

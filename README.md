@@ -249,7 +249,7 @@ Heavy things need more. Turning ↻ winds the rope in (up), ↺ lets it out (dow
 
 | | Block | What it does | ✋ USE |
 |---|---|---|---|
-| ![Winch](docs/blocks/winch.png) | **Winch** | A drum that winds rope. Turn it with a crank, gears or a motor touching it. It has a little **catch** (a ratchet, the pale bit on top): let go and the load stays up. If the load is too heavy it **stalls**: nothing turns and it shows a red ⬇ (![Stalled winch](docs/blocks/winch-stalled.png)). | — |
+| ![Winch](docs/blocks/winch.png) | **Winch** | A drum that winds rope. Turn it with a crank, gears or a motor touching it. It has a little **catch** (a ratchet, the pale bit on top): let go and the load stays up. If the load is too heavy it **stalls**: nothing turns and it shows a red ⬇ (![Stalled winch](docs/blocks/winch-stalled.png)). When the load reaches **the top** it can't wind any more: everything stops and it shows an orange ⬆ (![Winch with its load at the top](docs/blocks/winch-top.png)). | — |
 | ![Rope](docs/blocks/rope.png) | **Rope** | Put at least one next to the winch and let it hang down. The winch adds rope and takes it away as it lets out and winds in. Rope goes straight: it only turns a corner at a pulley. Water flows through it. | — |
 | ![Pulley](docs/blocks/pulley.png) | **Pulley** | A wheel the rope runs over, so the rope can change direction: the winch on the ground, the rope up a tower and down the other side. | — |
 | ![Pulley hook](docs/blocks/pulleyHook.png) | **Pulley hook** | Hang it on the rope's end and the load under it. Two bits of rope share the load, so it counts **half as heavy**, but it goes up half as fast. | — |
@@ -289,12 +289,24 @@ a falling weight can't run a generator by itself here, and a heavy weight
 won't haul up a lighter one without a crank to start it. (A real winch with
 its catch lifted off would do both.)
 
+**The top is a hard stop.** When the load has been wound right up to the
+winch (or to the pulley its rope hangs from), the rope can't wind in any more.
+On a real crane that is a dead stop, and it is here too: the winch shows an
+orange ⬆ and **everything** on its gears stops. A hand crank stops dead, a
+motor stalls, and any other gears, generators and winches on the same train
+stop with it. Nothing is broken and nothing is too heavy (that's the red ⬇):
+it has just got to the top. Only winding **in** is stopped. Turn the winch the
+other way (↺) and the load comes straight down again; take the crank away and
+the catch holds it up there. A rope with **nothing** hanging on it doesn't
+stop anything: bare rope just winds onto the drum and the winch keeps turning.
+
 **One rope end, one winch.** If two winches' ropes meet at a pulley and share
 the same hanging end, the winch that is being **turned** winds it and feels its
 weight: crank either one and the load comes up. The other just holds still. If
 both are turned at once, only the first (the higher one, or the one further
 left) carries the load, and the other spins with nothing on it. The load goes
-at the speed of the rope, never twice as fast.
+at the speed of the rope, never twice as fast. When the load gets to the
+pulley, neither rope can be pulled any further, so **both** winches stop (orange ⬆).
 
 **Nothing floats.** This is one place the game is simpler than the real world.
 A crate or an iron weight let down into water sinks just as it does in air,
@@ -382,6 +394,12 @@ the further the water falls, the more work it can do.)
 ↻ and the crate goes up; ↺ and it goes down.
 
 ![A crank and winch lifting a crate](docs/machines/crane.png)
+
+**At the top.** Keep turning ↻ and the crate reaches the winch. The rope can't
+wind any more, so the crank stops dead and the winch shows an orange ⬆. Turn
+the crank ↺ to let it down again.
+
+![A crate wound right up to the winch, which shows an orange up arrow](docs/machines/at-the-top.png)
 
 **Too heavy!** Swap the crate for an iron weight. The crank can't turn it: the
 winch shows a red ⬇ and nothing moves.

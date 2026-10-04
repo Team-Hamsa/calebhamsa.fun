@@ -41,6 +41,7 @@ const EXTRA_PICTURES = [
   ['crankCW', 'crankCW', undefined],
   ['gearBig-jammed', 'gearBig', { speed: 0, jammed: true }],
   ['winch-stalled', 'winch', { speed: 0, stalled: true }],
+  ['winch-top', 'winch', { speed: 0, blocked: true, stopper: true }],
 ];
 
 /**
@@ -159,6 +160,14 @@ const SCENES = {
     '#######',
   ] },
   'crane': { ticks: 12, rows: [
+    'Rw',
+    '.|',
+    '.|',
+    '.|',
+    '.c',
+    '##',
+  ] },
+  'at-the-top': { ticks: 30, rows: [
     'Rw',
     '.|',
     '.|',

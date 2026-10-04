@@ -41,6 +41,11 @@
  *              It is told its group's ratios and can ask how fast any
  *              block turns, because generators in one circuit load each
  *              other (see generatorBrake in gears.js).
+ *   spinStop   a HARD STOP one way round: the block says it can't turn
+ *              ↻ (or ↺) any further, like a winch whose load has been
+ *              wound right up to the top. If the group would turn it
+ *              that way, the whole group stops dead instead (a hand
+ *              crank stops, a motor stalls). The other way is still free.
  *
  * A winch has a RATCHET (a little catch), like a real one: a load
  * hanging on its rope can never pull the gears round by itself. With
@@ -52,8 +57,8 @@
  * anticlockwise ↺. Strengths are in "crank-pushes" (see CRANK_STRENGTH).
  * This file only reads the fields blocks have: `spin`, `spinSource`
  * (which is also told the indexes of the blocks in its group), `spinLoad`
- * (which is also told which blocks have a source turning them), `spinDrag`
- * and `spinBrake`.
+ * (which is also told which blocks have a source turning them), `spinDrag`,
+ * `spinBrake` and `spinStop`.
  */
 import { getBlock, inBounds } from './world.js';
 import { partAxis } from './circuit.js';
@@ -269,6 +274,11 @@ function balance(ahead, slowing, loads, brakes = []) {
  *   speed     turns per second (+ = ↻ clockwise, − = ↺ anticlockwise)
  *   jammed    true if its group can't turn (two paths disagree)
  *   stalled   true if its group's sources are too weak for its load
+ *   blocked   true if its group is held still by a hard stop: some block
+ *             in it can't turn any further the way the sources push (a
+ *             winch whose load has reached the top). Never true together
+ *             with `stalled` or `jammed`.
+ *   stopper   true if THIS block is the one doing the stopping
  *   driven    true if its group has a source trying to turn it (even a
  *             stalled or jammed one)
  *   axis      for axles: the way it faces
@@ -398,12 +408,15 @@ export function solveSpin(world, blockInfo) {
     group.loads = []; // loads (a hanging weight), at the first block
     group.drag = 0; // push-back that grows with speed
     group.brakers = []; // the blocks with a spinBrake
+    group.stops = []; // hard stops: which block, and which way the FIRST block can't turn because of it
     for (const [index, r] of group.ratio) {
       const point = points.get(index);
       const load = loadOf(point.info.spinLoad?.(world, point.x, point.y, blockInfo, isDriven));
       if (load.pull !== 0) group.loads.push({ pull: load.pull * r, limit: load.limit / Math.abs(r) });
       group.drag += (point.info.spinDrag?.(world, point.x, point.y) ?? 0) * r * r;
       if (point.info.spinBrake) group.brakers.push({ point, r });
+      const stop = point.info.spinStop?.(world, point.x, point.y, blockInfo, isDriven) ?? 0;
+      if (stop !== 0) group.stops.push({ index, way: Math.sign(stop * r) });
     }
   }
 
@@ -415,7 +428,9 @@ export function solveSpin(world, blockInfo) {
   /**
    * Work out one group's speed, from its sources, loads and brakes.
    * @param {object} group - the group
-   * @returns {{speed: number, stalled: boolean}} its speed at the first block, and whether it's stalled
+   * @returns {{speed: number, stalled: boolean, blockedWay: number}} its
+   *   speed at the first block, whether it's stalled, and the way (+1 or
+   *   −1, at the first block) a hard stop is holding it (0 if none is)
    */
   const settle = (group) => {
     const { ratio, ahead, slowing, loads, drag } = group;
@@ -451,7 +466,17 @@ export function solveSpin(world, blockInfo) {
     let stalled = false;
     if (driven ? Math.sign(speed) !== Math.sign(ahead) : slowing > 0 && hanging !== 0) stalled = true;
     if (stalled || !driven) speed = 0;
-    return { speed, stalled };
+    // A hard stop (a winch whose load is already at the top): if the
+    // group would turn that block the way it can't go, everything stops
+    // dead, just like a real winch when the hook reaches the drum. The
+    // stop takes all the push, so nothing moves and no work is done.
+    // Push the other way and it turns freely again.
+    let blockedWay = 0;
+    if (speed !== 0 && group.stops.some((stop) => stop.way === Math.sign(speed))) {
+      blockedWay = Math.sign(speed);
+      speed = 0;
+    }
+    return { speed, stalled, blockedWay };
   };
 
   // Groups can lean on each other: two generators in the same circuit,
@@ -463,9 +488,10 @@ export function solveSpin(world, blockInfo) {
   for (let round = 0; round < MAX_ROUNDS; round++) {
     let change = 0;
     for (const group of groups) {
-      const { speed, stalled } = settle(group);
+      const { speed, stalled, blockedWay } = settle(group);
       group.speed = speed;
       group.stalled = stalled;
+      group.blockedWay = group.jammed ? 0 : blockedWay;
       for (const [index, r] of group.ratio) {
         const turns = group.jammed || stalled ? 0 : speed * r;
         const own = Math.abs(turns) < MIN_SPEED ? 0 : turns; // also turns −0 into a plain 0
@@ -478,7 +504,8 @@ export function solveSpin(world, blockInfo) {
 
   const cells = new Map();
   let turning = false;
-  for (const { ratio, jammed, slowing, stalled } of groups) {
+  for (const { ratio, jammed, slowing, stalled, blockedWay, stops } of groups) {
+    const stoppers = new Set(stops.filter((stop) => stop.way === blockedWay).map((stop) => stop.index));
     for (const index of ratio.keys()) {
       const point = points.get(index);
       const own = speeds.get(index);
@@ -487,6 +514,8 @@ export function solveSpin(world, blockInfo) {
         speed: own,
         jammed,
         stalled,
+        blocked: blockedWay !== 0,
+        stopper: stoppers.has(index),
         driven: slowing > 0,
         axis: point.axis,
         partAxis: point.info.part ? partAxis(world, point.x, point.y, blockInfo) : null,

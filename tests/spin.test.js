@@ -37,6 +37,8 @@ const TEST_BLOCKS = {
   // 2 more for every turn per second, but only while that works against the turning.
   brake: { spin: { kind: 'hub' }, spinBrake: () => ({ pull: 3, perTurn: 2 }) },
   lightBrake: { spin: { kind: 'hub' }, spinBrake: () => ({ pull: 1, perTurn: 2 }) },
+  // Like a winch whose load has reached the top: it can't turn ↻ any more.
+  topped: { spin: { kind: 'hub' }, spinStop: () => 1 },
   stone: {},
 };
 
@@ -50,7 +52,7 @@ const blockInfo = (name) => TEST_BLOCKS[name];
 /** What each letter means. */
 const LETTERS = {
   '.': 'air', s: 'gearSmall', G: 'gearBig', '-': 'axle', H: 'hub', R: 'crankCW', Q: 'crankCCW',
-  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light', g: 'grounded', f: 'falling', Z: 'racer', Y: 'strongCCW', D: 'dynamo', b: 'brake', l: 'lightBrake',
+  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light', g: 'grounded', f: 'falling', Z: 'racer', Y: 'strongCCW', D: 'dynamo', b: 'brake', l: 'lightBrake', T: 'topped',
 };
 
 /**
@@ -347,4 +349,30 @@ test('a brake only works against the turning: it can hold a group still, but nev
   assert.ok(Math.abs(spin(['Zb'])(0, 0).speed + 15 / 7) < 1e-9, `turns ${spin(['Zb'])(0, 0).speed}`);
   // With no source, a brake turns nothing.
   assert.equal(spin(['sb'])(0, 0).speed, 0);
+});
+
+test('a block that can\'t turn one way is a hard stop for its whole group, that way only', () => {
+  const at = spin(['RsT']); // no two gears touch here, so all three share a shaft and turn ↻
+  for (const x of [0, 1, 2]) {
+    assert.equal(at(x, 0).speed, 0);
+    assert.equal(at(x, 0).blocked, true);
+    assert.equal(at(x, 0).stalled, false);
+    assert.equal(at(x, 0).stopper, x === 2); // only the block doing the stopping
+  }
+  const free = spin(['QsT']); // the other way: nothing stops it
+  assert.equal(free(2, 0).speed, -1);
+  assert.equal(free(2, 0).blocked, false);
+  assert.equal(free(2, 0).stopper, false);
+});
+
+test('the stop follows the gears: it counts the way the stopped block itself would turn', () => {
+  assert.equal(spin(['RssT'])(3, 0).speed, -1);     // one mesh turns it ↺: free
+  assert.equal(spin(['QssT'])(0, 0).blocked, true); // a ↺ crank turns it ↻: stopped
+  assert.equal(spin(['QssT'])(0, 0).speed, 0);
+});
+
+test('with nothing driving, nothing is being stopped', () => {
+  const at = spin(['sT']);
+  assert.equal(at(1, 0).blocked, false);
+  assert.equal(at(1, 0).stopper, false);
 });

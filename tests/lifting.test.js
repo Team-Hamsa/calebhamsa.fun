@@ -325,7 +325,7 @@ test('two winches on one rope end don\'t lift it twice as fast, or count its wei
 
 test('two winches on one crank and one rope end: the load counts once', () => {
   // Both winches touch the crank, and both ropes end over the same crate.
-  const world = run(make(['.wRw.', '.|.|.', '.P|P.', '.|...', '.c...', '.#...']), 2);
+  const world = run(make(['.wRw.', '.|.|.', '.P|P.', '.|...', '.|...', '.c...', '.#...']), 2); // (a cell of rope to spare: right at the pulley it would be stopped)
   const rope = spinAt(world, 1, 0);
   assert.equal(rope, 0.5); // weight 1 against strength 2. Counted twice it would stall.
 });
@@ -464,4 +464,216 @@ test('lowering a load onto the ground and lifting it again never pays the crank:
       }
     }
   }
+});
+
+// ---- The top is a hard stop (issue #26) -------------------------------------
+
+/**
+ * A block's spin record.
+ * @param {object} world - the world
+ * @param {number} x - column
+ * @param {number} y - row
+ * @returns {object} its record (from spin.js)
+ */
+function record(world, x, y) {
+  return world.signals.spin.cells.get(y * world.width + x);
+}
+
+test('a crate wound right up to the winch is a hard stop: the crank stops dead and stays stopped (orange ⬆, not red ⬇)', () => {
+  for (const rows of [['Rw', '.|', '.|', '.|', '.c', '##'], ['wR', '|.', '|.', '|.', 'c.', '##']]) { // and the same, mirrored
+    const world = run(make(rows), 20);
+    const winchX = rows[0].indexOf('w');
+    const crankX = rows[0].indexOf('R');
+    for (let t = 0; t < 40; t++) { // no flickering: every single tick is the same
+      run(world, 1);
+      assert.equal(rowOf(world, winchX, 'crate'), 2, rows.join('/'));
+      assert.equal(spinAt(world, crankX, 0), 0, `the crank still turns on tick ${t}`);
+      assert.equal(spinAt(world, winchX, 0), 0);
+      assert.equal(record(world, winchX, 0).blocked, true);
+      assert.equal(record(world, winchX, 0).stopper, true);  // the winch is what stops it...
+      assert.equal(record(world, crankX, 0).blocked, true);
+      assert.equal(record(world, crankX, 0).stopper, false); // ...the crank is only stopped BY it
+      assert.equal(record(world, winchX, 0).stalled, false); // not "too heavy"
+    }
+  }
+});
+
+test('only winding in is stopped at the top: turn the other way and the load comes down at once; take the crank away and nothing is stopped', () => {
+  const world = run(make(['Rw', '.|', '.|', '.|', '.c', '##']), 30);
+  assert.equal(record(world, 1, 0).blocked, true);
+  setBlock(world, 0, 0, 'crankCCW');
+  run(world, 1);
+  assert.equal(record(world, 1, 0).blocked, false);
+  assert.ok(spinAt(world, 1, 0) < 0, 'the winch should turn the let-out way on the very next tick');
+  run(world, 11);
+  assert.equal(rowOf(world, 1, 'crate'), 4); // back on the ground
+  // Up again, then take the crank away: nothing is pushing, so nothing is being stopped.
+  setBlock(world, 0, 0, 'crankCW');
+  run(world, 30);
+  assert.equal(record(world, 1, 0).stopper, true);
+  setBlock(world, 0, 0, 'air');
+  run(world, 1);
+  assert.equal(record(world, 1, 0).blocked, false);
+  assert.equal(record(world, 1, 0).stopper, false);
+  assert.equal(rowOf(world, 1, 'crate'), 2); // the catch still holds it up
+});
+
+test('the stop goes through the gears: every gear on the train stops, and a motor stalls', () => {
+  const geared = run(make(['QsGw', '...|', '...|', '...c', '...#']), 60); // crank ↺ → big gear ↻ → winch ↻, half as fast
+  assert.equal(rowOf(geared, 3, 'crate'), 2);
+  for (let x = 0; x < 4; x++) {
+    assert.equal(spinAt(geared, x, 0), 0);
+    assert.equal(record(geared, x, 0).blocked, true);
+    assert.equal(record(geared, x, 0).stopper, x === 3);
+  }
+  const motor = run(make(['.....G--w.', 'WBBBBMBW|.', 'W......W|.', 'W......W|.', 'WWWWWWWWc.']), 60);
+  assert.equal(rowOf(motor, 8, 'crate'), 2);
+  assert.equal(spinAt(motor, 5, 1), 0); // the motor is held still
+  assert.equal(record(motor, 5, 1).blocked, true);
+  assert.equal(record(motor, 8, 0).stopper, true);
+  assert.equal(record(motor, 8, 0).stalled, false);
+});
+
+test('a generator on the stopped train stops too: its lamp goes dark', () => {
+  const world = make(['...WWW', 'Rw-E.L', '.|.WWW', '.|....', '.|....', '.c....', '######']);
+  const lamp = world.cells.indexOf('lamp');
+  run(world, 6);
+  assert.ok(world.signals.electric.cells.get(lamp).current > 0, 'the lamp should be lit while the crate goes up');
+  run(world, 200);
+  assert.equal(rowOf(world, 1, 'crate'), 3);
+  assert.equal(spinAt(world, 3, 1), 0);
+  assert.equal(world.signals.electric.cells.get(lamp).current, 0);
+});
+
+test('two winches on one train: the first load to reach the top stops them both, and only that winch is marked', () => {
+  const world = run(make(['RwRw', '.|.|', '.|.|', '.c.|', '.#.|', '.#.c', '.#.#']), 40);
+  assert.equal(rowOf(world, 1, 'crate'), 2); // up one: at the top
+  assert.equal(rowOf(world, 3, 'crate'), 4); // up one too, and there it hangs
+  for (let t = 0; t < 20; t++) {
+    run(world, 1);
+    assert.equal(rowOf(world, 3, 'crate'), 4);
+    assert.equal(spinAt(world, 3, 0), 0);
+    assert.equal(record(world, 1, 0).stopper, true);
+    assert.equal(record(world, 3, 0).stopper, false);
+    assert.equal(record(world, 3, 0).blocked, true);
+  }
+});
+
+test('a pulley hook at the top, and a load pulled up to a pulley, are hard stops too', () => {
+  const hook = run(make(['Rw', '.|', '.|', '.h', '.c', '##']), 60);
+  assert.equal(rowOf(hook, 1, 'pulleyHook'), 2);
+  assert.equal(spinAt(hook, 0, 0), 0);
+  assert.equal(record(hook, 1, 0).stopper, true);
+  const well = run(make(['P|w', '|.R', '|.#', 'c..', '...', '###']), 60);
+  assert.equal(rowOf(well, 0, 'crate'), 2);
+  assert.equal(spinAt(well, 2, 1), 0);
+  assert.equal(record(well, 2, 0).stopper, true);
+});
+
+test('two winches on one rope end: when the load is at the pulley neither can wind any more, so both stop', () => {
+  const world = run(make(['..wR', '..|.', 'w|P.', 'R.|.', '..|.', '..c.', '..#.']), 60);
+  assert.equal(rowOf(world, 2, 'crate'), 4);
+  for (let t = 0; t < 10; t++) {
+    run(world, 1);
+    assert.equal(spinAt(world, 2, 0), 0);
+    assert.equal(spinAt(world, 0, 2), 0);
+    assert.equal(record(world, 2, 0).stopper, true);
+    assert.equal(record(world, 0, 2).stopper, true);
+  }
+});
+
+test('rope let out a little at the top is wound back in before the stop: the winch turns until it really is at the top', () => {
+  const world = run(make(['Rw', '.|', '.c', '..', '##']), 4);
+  assert.equal(record(world, 1, 0).stopper, true);
+  setBlock(world, 0, 0, 'crankCCW');
+  run(world, 1); // a little rope out: not a whole cell yet
+  assert.equal(rowOf(world, 1, 'crate'), 2);
+  assert.ok(world.signals.lift.pull.get(1) < 0);
+  setBlock(world, 0, 0, 'crankCW');
+  run(world, 1);
+  assert.ok(spinAt(world, 1, 0) > 0, 'the winch should wind the slack back in');
+  run(world, 20);
+  assert.equal(spinAt(world, 1, 0), 0);
+  assert.equal(record(world, 1, 0).stopper, true);
+  assert.equal(rowOf(world, 1, 'crate'), 2);
+});
+
+test('the stop at the top gives nothing away: lowering from the top and winding back up never pays the crank', () => {
+  for (const rows of [['Rw', '.|', '.c', '..', '..', '..', '..', '##'], ['Rw', '.|', '.h', '.c', '..', '..', '..', '##']]) {
+    for (const lowering of [1, 2, 3, 4, 5, 7, 9, 30]) {
+      const world = make(rows);
+      const systems = allSystems();
+      let work = 0;
+      /**
+       * One tick, adding up the crank's work (it is paid back when the load turns it faster than its own speed).
+       * @returns {void}
+       */
+      const step = () => {
+        tick(world, systems, blockInfo);
+        const speed = Math.abs(spinAt(world, 0, 0));
+        work += (2 * (1 - speed) * speed) / 8;
+      };
+      for (let cycle = 0; cycle < 20; cycle++) {
+        setBlock(world, 0, 0, 'crankCCW');
+        for (let t = 0; t < lowering; t++) step();
+        setBlock(world, 0, 0, 'crankCW');
+        step();
+        for (let t = 0; t < 400 && !record(world, 1, 0).stopper; t++) step();
+        assert.equal(record(world, 1, 0).stopper, true, 'the load should come back to the top');
+        assert.equal(getBlock(world, 1, 2), rows[2] === '.c' ? 'crate' : 'pulleyHook');
+        assert.ok(work >= -1e-9, `${rows.join('/')} letting out for ${lowering} ticks: after ${cycle + 1} trips the crank is ${-work} ahead`);
+      }
+    }
+  }
+});
+
+test('a winch with no rope, or with rope and nothing hanging on it, is not stopped: bare rope just winds onto the drum', () => {
+  const none = run(make(['Rw', '..', '##']), 10);
+  assert.equal(spinAt(none, 0, 0), 1);
+  assert.equal(record(none, 1, 0).blocked, false);
+  const bare = run(make(['Rw', '.|', '.|', '..', '##']), 30);
+  assert.equal(spinAt(bare, 0, 0), 1);
+  assert.equal(record(bare, 1, 0).blocked, false);
+  assert.equal(record(bare, 1, 0).stopper, false);
+});
+
+test('too heavy at the top is still "too heavy": the red ⬇, not the orange ⬆', () => {
+  const world = run(make(['Rw', '.|', '.I', '..', '##']), 10);
+  assert.equal(record(world, 1, 0).stalled, true);
+  assert.equal(record(world, 1, 0).blocked, false);
+  assert.equal(record(world, 1, 0).stopper, false);
+});
+
+test('the winch at the top is drawn with an orange ⬆, and a stalled one keeps its red ⬇', () => {
+  /**
+   * The colors a winch with this record is drawn in.
+   * @param {object} cell - a pretend spin record
+   * @returns {string[]} every fill color used
+   */
+  const colors = (cell) => {
+    const used = [];
+    const ctx = { fillRect() { used.push(ctx.fillStyle); }, fillStyle: '' };
+    const info = blockInfo('winch');
+    info.drawSignals(ctx, info, 0, 0, 16, cell, 0);
+    return used;
+  };
+  const top = colors({ speed: 0, blocked: true, stopper: true });
+  assert.ok(top.includes('#fb8c00'), 'no orange arrow');
+  assert.ok(!top.includes('#e53935'), 'the red arrow is for "too heavy" only');
+  const heavy = colors({ speed: 0, stalled: true });
+  assert.ok(heavy.includes('#e53935'));
+  assert.ok(!heavy.includes('#fb8c00'));
+  // A winch that is only stopped BY another winch's load shows no arrow.
+  const other = colors({ speed: 0, blocked: true, stopper: false });
+  assert.ok(!other.includes('#fb8c00') && !other.includes('#e53935'));
+});
+
+test('the guide and the README explain the orange ⬆', async () => {
+  const { existsSync, readFileSync } = await import('node:fs');
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, /orange ⬆/);
+  assert.ok(readme.includes('(docs/blocks/winch-top.png)'));
+  assert.ok(existsSync(new URL('../docs/blocks/winch-top.png', import.meta.url)));
+  assert.match(lifting.guide.blocks.winch.does, /orange ⬆/);
+  assert.ok(lifting.guide.rules.some((rule) => /orange ⬆/.test(rule) && /top/.test(rule)));
 });
