@@ -355,56 +355,6 @@ export function flowChecker(world, sides, blockInfo) {
 }
 
 /**
- * How many turbines share the same steam with each turbine. Steam that
- * rushes up a chimney through three turbines, one after the other, is
- * still the same steam: it can only give its push once, so the three
- * have to share it.
- *
- * Turbines share when they sit in the same TUBE: starting at a turbine,
- * we walk both ways through cells that are open on exactly two sides
- * that lead somewhere (pipes, other turbines, a one-cell-wide gap). The
- * tube ends at a room (a cell open more ways) or at a dead end.
- * @param {object} world - the world
- * @param {Function} blockInfo - looks up what a block name means
- * @param {string[][]} sides - open sides by cell index (from allOpenSides)
- * @returns {Map<number, number>} for each turbine's cell index, how many turbines are in its tube (itself too)
- */
-export function turbineRuns(world, blockInfo, sides) {
-  /**
-   * The cells fluid can go to from a cell (never mind which way pumps face).
-   * @param {number} index - the cell's index
-   * @returns {number[]} the neighbors' indexes
-   */
-  const ways = (index) => {
-    const x = index % world.width;
-    const y = Math.floor(index / world.width);
-    const out = [];
-    for (const side of sides[index]) {
-      const [dx, dy] = STEP[side];
-      if (!inBounds(world, x + dx, y + dy)) continue;
-      const next = index + dx + dy * world.width;
-      if (sides[next].includes(OPPOSITE[side])) out.push(next);
-    }
-    return out;
-  };
-  const runs = new Map();
-  world.cells.forEach((name, start) => {
-    if (!blockInfo(name)?.turbine) return;
-    const tube = new Set([start]);
-    for (const first of ways(start)) {
-      let at = first;
-      // Walk on while we're in a tube: exactly two ways, in and out.
-      while (!tube.has(at) && ways(at).length === 2) {
-        tube.add(at);
-        at = ways(at).find((next) => !tube.has(next)) ?? at;
-      }
-    }
-    runs.set(start, [...tube].filter((index) => blockInfo(world.cells[index])?.turbine).length);
-  });
-  return runs;
-}
-
-/**
  * Keep a number between two limits.
  * @param {number} value - the number
  * @param {number} low - the smallest allowed
@@ -772,10 +722,18 @@ export function wheelTurn(wheel) {
  * the wheel gets all of it: so a taller waterfall really is stronger.
  * If it lands anywhere else and stops falling, or runs off sideways, it
  * has splashed its push away, like real water.
+ *
+ * STEAM ONLY GIVES ITS PUSH ONCE. Steam that has been through a turbine
+ * is "used" (world.signals.used says how much of each cell's steam is):
+ * it spent its push spinning that turbine, and going through another
+ * turbine further along gives nothing more. So three turbines on the
+ * same steam give no more than one, however the pipes between them are
+ * laid. Steam is fresh again once a chiller has turned it back into
+ * water and a burner has boiled it again.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {{moved: number, steamOut: Map<number, number>, waterOut: Map<number, number>, waterWork: Map<number, number>, wheels: Map<number, object>, sides: string[][]}}
- *   how much changed in total, how much steam left each turbine, the
+ *   how much changed in total, how much FRESH steam left each turbine, the
  *   turning flow of each water wheel (see wheelTurn), how much energy the
  *   water gave up at each water wheel, each wheel's full count
  *   ({lean, sideOut, down, gross, work}), and every cell's open sides
@@ -784,15 +742,34 @@ export function stepFluids(world, blockInfo) {
   const sides = allOpenSides(world, blockInfo);
   const canFlow = flowChecker(world, sides, blockInfo);
   const steamOut = new Map();
+  const size = world.cells.length;
+  // How much of each cell's steam is USED: it has been through a turbine
+  // already (see above). A cell can't hold more used steam than steam.
+  const used = world.signals.used?.length === size ? world.signals.used : new Float64Array(size);
+  for (let index = 0; index < size; index++) used[index] = Math.min(used[index], world.fluid.steam[index]);
+  let usedIn = new Float64Array(size);   // used steam arriving in each cell in this step
+  let usedGone = new Float64Array(size); // how much of each cell's steam moved away in this step (0 to 1)
   /**
-   * Count steam leaving a turbine (that's what spins it).
+   * Count FRESH steam leaving a turbine (that's what spins it), and keep
+   * track of which steam is used: steam that leaves a turbine is used
+   * from then on, and used steam stays used wherever it goes.
    * @param {number} from - the cell the steam left
    * @param {number} to - where it went
    * @param {number} amount - how much
+   * @param {number} energy - (not used for steam)
+   * @param {number} drop - (not used for steam)
+   * @param {number} part - how much of the cell's steam this move took (0 to 1)
    * @returns {void}
    */
-  const countTurbines = (from, to, amount) => {
-    if (blockInfo(world.cells[from])?.turbine) steamOut.set(from, (steamOut.get(from) ?? 0) + amount);
+  const countTurbines = (from, to, amount, energy, drop, part) => {
+    const usedPart = Math.min(amount, used[from] * part);
+    usedGone[from] += part;
+    if (blockInfo(world.cells[from])?.turbine) {
+      steamOut.set(from, (steamOut.get(from) ?? 0) + amount - usedPart);
+      usedIn[to] += amount;
+    } else {
+      usedIn[to] += usedPart;
+    }
   };
   const wheels = new Map();
   /**
@@ -804,7 +781,6 @@ export function stepFluids(world, blockInfo) {
     if (!wheels.has(index)) wheels.set(index, { lean: 0, sideOut: 0, down: 0, gross: 0, work: 0 });
     return wheels.get(index);
   };
-  const size = world.cells.length;
   // The push that falling water is carrying, by cell (see above).
   let falling = world.signals.falling?.length === size ? world.signals.falling : new Float64Array(size);
   // Tidy up first: a cell whose water has gone (drained, dug, boiled) carries
@@ -867,8 +843,12 @@ export function stepFluids(world, blockInfo) {
     fellFrom = new Uint8Array(size);
     taken = new Float64Array(size);
     moved += flowFluid(world, 'steam', canFlow, countTurbines);
+    for (let index = 0; index < size; index++) used[index] = used[index] * Math.max(0, 1 - usedGone[index]) + usedIn[index];
+    usedIn = new Float64Array(size);
+    usedGone = new Float64Array(size);
   }
   world.signals.falling = falling;
+  world.signals.used = used;
   moved += runSpecials(world, blockInfo, sides);
   const waterOut = new Map();
   const waterWork = new Map();

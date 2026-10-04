@@ -299,3 +299,14 @@ Each turbine's push was `steam flow × TURBINE_GAIN`, so three turbines stacked 
 ## Addendum 2026-10-04 (later): special blocks run in rounds, so left and right are the same (issue #18 review)
 
 `runSpecials` did every block's job in one pass in cell order. A chiller to the right of a drain condensed water into the drain cell AFTER the drain had emptied it, so it sat there a tick and leaked sideways (0.046 beside the drain; chiller on the left: 0). Now three rounds: (1) faucets, burners, chillers; (2) pumps, each working out its push from a snapshot taken at the start of the round (capped by what is still behind it); (3) drains. Mirrored random worlds with chiller + burner + faucet + drain: 0 of 400 differ (was 21).
+
+## Addendum 2026-10-04 (final review): steam gives its push once — a ledger replaces the tube rule (issue #17 review)
+
+`turbineRuns` shared the push by the SHAPE of the tube, and a tube ended at any cell with more or fewer than two open ways. So two turbines with a 3-wide room between them, or a pipe with a dead-end stub, each got the full push again (1.000 + 1.000; three with rooms between: 3.000).
+
+- `turbineRuns` and `signals.water.turbineRun` are gone. `stepFluids` keeps `world.signals.used` (a `Float64Array`, like `falling`): how much of each cell's steam has already been through a turbine. Used steam moves with the steam (each move takes its share, `part`); steam leaving a turbine cell becomes all used; a cell never holds more used steam than steam.
+- `steamOut` (so `turbineFlow`, `turbinePush` and the drawn spin) counts only the FRESH steam leaving a turbine.
+- Result: one turbine 1.000; three stacked 0 / 0 / 1.000 (top first: the lowest, which the steam meets first, gets it); with a wide room, a stubbed pipe, or two rooms between: the same, sum 1.000. Side-by-side chimneys still get their own steam's full push.
+- Changed from the tube rule: the push is no longer split evenly. The turbines further along get nothing and are drawn still.
+- Steam becomes fresh again only by being condensed and boiled again. `used` is not saved: after a reload all steam counts as fresh once (a one-off, at most one pass of the steam then in the pipes).
+- Still not an energy ledger for heat (issue #21, open): a burner is an endless source.

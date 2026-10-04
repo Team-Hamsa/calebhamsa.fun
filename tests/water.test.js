@@ -172,15 +172,23 @@ function plantPushes(chimney) {
   return chimney.map((row, i) => (row.includes('T') ? turbinePush(world, 2, 2 + i) : null)).filter((push) => push !== null);
 }
 
-test('turbines in a row share the same steam: three stacked give no more push than one', () => {
+test('steam only gives its push once: turbines one after the other on the same steam give no more push than one, however they are joined', () => {
   const [one] = plantPushes(['##T##']);
   assert.ok(one > 0.5, `one turbine pushes ${one}`);
-  for (const chimney of [['##T##', '##T##'], ['##T##', '##T##', '##T##'], ['##T##', '##P##', '##T##'], ['##T##', '##.##', '##T##']]) {
+  const chimneys = [
+    ['##T##', '##T##'], ['##T##', '##T##', '##T##'], ['##T##', '##P##', '##T##'], ['##T##', '##.##', '##T##'],
+    ['##T##', '#...#', '##T##'],                       // a wide room between them
+    ['##T##', '##PP#', '##T##'],                       // a pipe with a dead-end stub between them
+    ['##T##', '#...#', '##T##', '#...#', '##T##'],
+  ];
+  for (const chimney of chimneys) {
     const pushes = plantPushes(chimney);
     const together = pushes.reduce((sum, push) => sum + push, 0);
     assert.ok(together <= one + 0.01, `${chimney.join('/')}: ${pushes} adds up to more than one turbine's ${one}`);
     assert.ok(together > one * 0.8, `${chimney.join('/')}: ${pushes} adds up to much less than ${one}`);
-    for (const push of pushes) assert.ok(Math.abs(push - pushes[0]) < 0.01, `${chimney.join('/')}: not shared evenly: ${pushes}`);
+    // The turbine the steam meets first (the lowest) gets the push; the steam has none left for the others.
+    assert.ok(pushes.at(-1) > one * 0.8, `${chimney.join('/')}: the first turbine only gets ${pushes.at(-1)}`);
+    for (const push of pushes.slice(0, -1)) assert.ok(push < 0.05, `${chimney.join('/')}: used steam pushed again: ${pushes}`);
   }
 });
 
