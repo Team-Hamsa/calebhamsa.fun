@@ -1202,8 +1202,12 @@ test('a water wheel with water falling straight through keeps turning ONE way wh
   for (const rows of [
     ['..F.....', '...WW...', '.#OEM...', '..DWW...', '########'],
     ['..F.....', '..F.....', '........', '...WW...', '.#OEM...', '..DWW...', '########'],
+    // The same thing one step removed: the wheel's generator feeds a motor
+    // on a SECOND shaft, and a generator on that shaft feeds the motor
+    // on the wheel's shaft.
+    ['..WWW...WWWWW', '..W.W...W.F.W', '..W.E---M-O#W', '..W.W...W#.#W', '..W.M-ssE#.#W', '..W.W...W#D#W', '..WWW...WWWWW'],
   ]) {
-    const world = run(rows, 150);
+    const world = run(rows, 400);
     const systems = allSystems();
     const at = world.cells.indexOf('waterWheel');
     const seen = [];

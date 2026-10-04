@@ -482,16 +482,19 @@ export function solveSpin(world, blockInfo) {
     // straight through it) helps whichever way its gears go. Which way is
     // that? We ask, in this order:
     //   1. the other sources with a mind of their own (a crank, a wheel
-    //      with water coming off one side, a battery's motor): it joins
+    //      with water coming off one side, a motor that runs on
+    //      batteries or turbines alone): it joins
     //      in the way they push. So two wheels on one shaft never fight,
     //      and a mirrored build works the same.
     //   2. the way it was already turning: a turning wheel keeps going.
-    //      A source marked `echo` (a motor fed by a generator on these
-    //      same gears) gets no say in step 1, because its push is only
+    //      A source marked `echo` (a motor with a generator's current
+    //      in it) gets no say in step 1, because its push may only be
     //      an echo of that turning. (If it did, a motor wired to push
     //      back would turn the wheel round, which turns the generator's
     //      current round, which turns the motor round... the wheel would
-    //      swap ways on every tick. A real wheel is just slowed down.)
+    //      swap ways every few ticks. A real wheel is just slowed down.
+    //      If the motor is the stronger one, the gears do go its way,
+    //      and on the next tick the wheel is "already turning" that way.)
     //   3. standing still, with nobody from step 1: any push there is.
     //   4. nothing at all: the first one goes the way it says (↻ for a
     //      wheel) and the rest follow it.

@@ -357,3 +357,11 @@ The round 1 fade scaled a motor's `speed` and `strength` by the same faded amoun
 - Result: the lamp ring is steady for every lamp count from 0 to 40, either crank direction (0 lamps 0.625, 8 lamps 0.521, 16 lamps 0.623, 24 lamps 0.685, 32 lamps 0.728, 40 lamps 0.761), and from 8 lamps on each lamp more lets the crank turn a little faster. The five-row build is steady. Sweeps at this commit: 0 of 2112 and 0 of 2640 same-train builds, 0 of 500 ladder builds, 0 of the clicker-free packed 24×14 worlds flicker.
 - Known leftover (a toy simplification): a motor's drag goes by its CURRENT, not by the resistance of its circuit as a real motor's would (a real motor's top speed goes by the volts across it, ours by the amps through it). So a motor with a small current on a shaft a crank turns still slows the crank noticeably (0.76 with 40 lamps in its loop), where a real one would hardly be felt.
 
+## Addendum 2026-10-04 (round 2 review): a motor with any generator's current in it is an echo (issue #18 review)
+
+`motorSource` marked a motor `echo` only when a generator on its OWN group had a share in its current. With the feedback one step removed (wheel + generator E1 + motor M1 on shaft A; E1 feeds motor M2 on shaft B; generator E2 on shaft B feeds M1) M1 was not an echo, pointed the either-way wheel (rule 1), and the wheel swapped direction every 4 ticks for ever: `..WWW...WWWWW / ..W.W...W.F.W / ..W.E---M-O#W / ..W.W...W#.#W / ..W.M-ssE#.#W / ..W.W...W#D#W / ..WWW...WWWWW` went 0.489 0.456 0.727 −0.455 −0.489 −0.456 −0.727 0.455..., 700 reversals in 2800 ticks; 11 of 24 such wheel builds flipped, 0 of 48 with a crank in place of the wheel.
+
+- `echo` is now true for any motor whose `perVolt` has a non-zero entry: any generator's current in it, wherever that generator is. Only cranks, leaning wheels and motors on batteries or turbines alone point an either-way wheel.
+- An echo motor that is STRONGER than the wheel still reverses it, the honest way: the group's speed comes out the motor's way, and on the next tick rule 2 (the way it was already turning) has the wheel follow.
+- Result: that build turns steadily at 0.354, the same as with a crank in place of the wheel; 0 of 24 wheel builds flip.
+

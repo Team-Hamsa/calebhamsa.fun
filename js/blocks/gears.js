@@ -273,10 +273,14 @@ export function generatorBrake(world, x, y, group) {
  * its push AND for how hard it holds back gears that something else is
  * turning faster than the motor would go.
  *
- * `echo` tells spin.js that this motor is wired to a generator on its
- * OWN gears. Its push is then partly an echo of the way those gears were
- * already turning, so it doesn't get a say in which way a water wheel
- * that could go either way should turn (see solveSpin).
+ * `echo` tells spin.js that some of this motor's current comes from a
+ * generator. That generator may be on the motor's own gears, or its
+ * turning may come back round to them a longer way (it feeds a motor on
+ * a second shaft, whose generator feeds this one...). Either way the
+ * motor's push is then partly an echo of the way gears were already
+ * turning, so it doesn't get a say in which way a water wheel that
+ * could go either way should turn (see solveSpin). It can still turn
+ * such a wheel round the hard way: by being stronger than it.
  * @param {object} world - the world
  * @param {number} x - the motor's column
  * @param {number} y - the motor's row
@@ -299,7 +303,7 @@ export function motorSource(world, x, y, members) {
   const raw = Math.abs(out) / REFERENCE_CURRENT;
   const amount = fadeIn(raw);
   if (amount <= 0) return null;
-  const echo = Boolean(cell.perVolt && members?.some((other) => Math.abs(cell.perVolt.get(other) ?? 0) > 1e-9));
+  const echo = Boolean(cell.perVolt && [...cell.perVolt.values()].some((share) => Math.abs(share) > 1e-9));
   return { speed: Math.sign(out) * raw * MOTOR_SPEED, strength: amount * MOTOR_STRENGTH, echo };
 }
 
