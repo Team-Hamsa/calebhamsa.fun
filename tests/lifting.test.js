@@ -308,3 +308,24 @@ test('the winch is drawn with its little catch', () => {
   info.drawSignals(ctx, info, 0, 0, 16, undefined, 0);
   assert.ok(calls.some((call) => call.style === '#eceff1'), 'no catch drawn');
 });
+
+test('two winches on one rope end don\'t lift it twice as fast, or count its weight twice', () => {
+  const shared = make(['..wR', '..|.', 'w|P.', 'R.|.', '..|.', '..|.', '..|.', '..c.', '..#.']);
+  const single = make(['..wR', '..|.', '..|.', '..|.', '..|.', '..|.', '..|.', '..c.', '..#.']);
+  run(shared, 8);
+  run(single, 8);
+  assert.equal(rowOf(shared, 2, 'crate'), rowOf(single, 2, 'crate')); // the load goes at the speed of the rope
+  run(shared, 8);
+  run(single, 8);
+  assert.equal(rowOf(shared, 2, 'crate'), 5);
+  assert.equal(rowOf(single, 2, 'crate'), 5);
+  assert.equal(spinAt(shared, 2, 0), 0.5); // the rope end's owner carries the crate (1 of its crank's 2)...
+  assert.equal(spinAt(shared, 0, 2), 1);   // ...the other winch carries nothing
+});
+
+test('two winches on one crank and one rope end: the load counts once', () => {
+  // Both winches touch the crank, and both ropes end over the same crate.
+  const world = run(make(['.wRw.', '.|.|.', '.P|P.', '.|...', '.c...', '.#...']), 2);
+  const rope = spinAt(world, 1, 0);
+  assert.equal(rope, 0.5); // weight 1 against strength 2. Counted twice it would stall.
+});

@@ -266,6 +266,11 @@ a falling weight can't run a generator by itself here, and a heavy weight
 won't haul up a lighter one without a crank to start it. (A real winch with
 its catch lifted off would do both.)
 
+**One rope end, one winch.** If two winches' ropes meet at a pulley and share
+the same hanging end, only the first winch (the higher one, or the one further
+left) winds it and feels its weight. The other just spins. The load goes at
+the speed of the rope, never twice as fast.
+
 **Cut the rope** (⛏️ dig it) and whatever hangs on it falls.
 
 ### 🛠️ Machines to build

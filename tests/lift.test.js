@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, getBlock, getFluid, setBlock, setFluid } from '../js/world.js';
-import { canLower, canWindIn, hangingLoads, isHeld, letOut, loadBelow, ropeArms, traceRope, windIn } from '../js/lift.js';
+import { canLower, canWindIn, hangingLoads, ownsRopeEnd, isHeld, letOut, loadBelow, ropeArms, traceRope, windIn } from '../js/lift.js';
 
 /** Stand-in blocks, with the same lifting settings as js/blocks/lifting.js. */
 const TEST_BLOCKS = {
@@ -219,4 +219,21 @@ test('a load with air under it can go down; one sitting on something (or on the 
   assert.equal(lowers(['w', '|', 'c', '#']), false);
   assert.equal(lowers(['w', '|', 'c']), false); // the bottom of the world
   assert.equal(lowers(['w', '|', 'h', 'c', '#']), false); // a hook and its crate, on the ground
+});
+
+test('two winches whose ropes meet at a pulley share one rope end: only the first one owns it', () => {
+  // The top winch's rope hangs straight down through the pulley. The left winch's rope joins it there.
+  const world = make(['..w', '..|', 'w|P', '..|', '..c', '..#']);
+  const top = traceRope(world, 2, 0, blockInfo);
+  const side = traceRope(world, 0, 2, blockInfo);
+  assert.deepEqual([top.end.x, top.end.y], [side.end.x, side.end.y]); // the very same end
+  assert.equal(ownsRopeEnd(world, 2, 0, top, blockInfo), true);
+  assert.equal(ownsRopeEnd(world, 0, 2, side, blockInfo), false);
+  assert.equal(isHeld(world, 2, 4, blockInfo), true); // still held up, of course
+});
+
+test('a winch with its own rope owns it, however many other winches there are', () => {
+  const world = make(['w.w', '|.|', 'c.c', '###']);
+  assert.equal(ownsRopeEnd(world, 0, 0, traceRope(world, 0, 0, blockInfo), blockInfo), true);
+  assert.equal(ownsRopeEnd(world, 2, 0, traceRope(world, 2, 0, blockInfo), blockInfo), true);
 });

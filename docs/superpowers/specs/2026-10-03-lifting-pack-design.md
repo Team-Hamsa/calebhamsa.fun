@@ -200,3 +200,13 @@ The ratchet ("With no source, Ω = 0" and "sources push one way but Ω comes out
 - Drawn: a pale two-pixel catch at the top right of the winch's drum.
 - Not done: a tappable catch (✋ on/off, so a falling weight could drive a generator or haul a lighter one). That is a feature, and contradicts "With no source, Ω = 0" above; left for a later design.
 
+## Addendum 2026-10-04: one owner per rope end (issue #27)
+
+A pulley in the middle of a rope column let a second winch's rope join the same hanging end. Both winches then felt the whole weight and both wound the rope each tick: the crate rose 2 cells in 8 ticks (one winch: 16), and on one crank a crate counted 2.
+
+- `ownsRopeEnd` (in `lift.js`): the first winch in scan order (top row first, left to right) whose trace ends at a cell owns that end.
+- `winchLoad` gives a non-owner no load, and `liftSystem` skips it: it turns freely and moves no rope.
+- `hangingLoads` and `ropeArms` are unchanged: the load is still held, and both ropes are still drawn into the pulley.
+- Scan order is arbitrary (it favors the higher, then the left winch), so a mirrored build can swap which crank carries the load. The load's own speed and weight are the same either way.
+- The edge-case row "Two winches in one group: their loads add up" still holds for winches with their own rope ends.
+

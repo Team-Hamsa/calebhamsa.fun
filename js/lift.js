@@ -13,6 +13,9 @@
  * leaves the winch), just like real rope: so two ropes side by side
  * never get muddled up.
  *
+ * A rope end belongs to ONE winch. If two winches' ropes meet at a pulley
+ * and share an end, only the first one winds it (see ownsRopeEnd).
+ *
  * Only ONE block hangs on the end (or a pulley hook with one block under
  * it). Anything under that is just resting, so it isn't lifted, and it
  * falls if there's nothing under it.
@@ -86,6 +89,31 @@ export function traceRope(world, x, y, blockInfo) {
   const last = path[path.length - 1];
   const end = last && !infoAt(world, last.x, last.y, blockInfo).pulley ? last : null;
   return { path, end, hanging: Boolean(end) && end.side === 'down' };
+}
+
+/**
+ * Does this winch OWN the end of its rope? Two winches' ropes can meet
+ * at a pulley and share one hanging end. A rope end can only be wound by
+ * one drum at a time, so the first winch (reading the world like a book:
+ * top row first, left to right) owns it. The others feel no weight and
+ * move nothing: otherwise the load would be counted twice and lifted
+ * twice as fast as the rope moves.
+ * @param {object} world - the world
+ * @param {number} x - the winch's column
+ * @param {number} y - the winch's row
+ * @param {{end: object|null}} rope - this winch's rope, from traceRope
+ * @param {Function} blockInfo - looks up what a block name means
+ * @returns {boolean} true if no earlier winch's rope has the same end
+ */
+export function ownsRopeEnd(world, x, y, rope, blockInfo) {
+  if (!rope.end) return true;
+  const mine = y * world.width + x;
+  for (let index = 0; index < mine; index++) {
+    if (!blockInfo(world.cells[index])?.winch) continue;
+    const other = traceRope(world, index % world.width, Math.floor(index / world.width), blockInfo);
+    if (other.end && other.end.x === rope.end.x && other.end.y === rope.end.y) return false;
+  }
+  return true;
 }
 
 /**

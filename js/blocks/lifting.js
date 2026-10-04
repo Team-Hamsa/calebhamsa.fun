@@ -18,7 +18,7 @@
  * tick, and draws everything.
  */
 import { MIN_SPEED } from '../spin.js';
-import { canLower, letOut, loadBelow, ropeArms, traceRope, windIn } from '../lift.js';
+import { canLower, letOut, loadBelow, ownsRopeEnd, ropeArms, traceRope, windIn } from '../lift.js';
 import { TICKS_PER_SECOND, turned } from './gears.js';
 
 /**
@@ -57,6 +57,8 @@ export const ROPE_PER_TURN = 2;
  */
 export function winchLoad(world, x, y, blockInfo) {
   const rope = traceRope(world, x, y, blockInfo);
+  // A rope end shared with an earlier winch is that winch's to carry: no load here.
+  if (!ownsRopeEnd(world, x, y, rope, blockInfo)) return { pull: 0, resting: false, topSpeed: Infinity };
   const load = loadBelow(world, rope, blockInfo);
   // Falling speed is 1 cell a tick. With a pulley hook, each cell takes 2 cells of rope.
   const topSpeed = (TICKS_PER_SECOND * (load.hook ? 2 : 1)) / ROPE_PER_TURN;
@@ -105,6 +107,8 @@ export function liftSystem(world, blockInfo) {
     if (Math.abs(speed) < MIN_SPEED) continue; // stopped (or stalled): forget any half-wound rope
     const x = index % world.width;
     const y = Math.floor(index / world.width);
+    // Two winches sharing one rope end: only its owner winds it (the other just spins).
+    if (!ownsRopeEnd(world, x, y, traceRope(world, x, y, blockInfo), blockInfo)) continue;
     let amount = (before.get(index) ?? 0) + (speed * ROPE_PER_TURN) / TICKS_PER_SECOND;
     /**
      * How much rope moves the load one cell: 2 with a pulley hook.
