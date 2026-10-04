@@ -739,8 +739,10 @@ test('a crank turning a generator that powers a motor pushing back does not flic
   const seen = [];
   for (let i = 0; i < 30; i++) {
     tick(world, systems, blockInfo);
-    if (i >= 20) seen.push(`${spinAt(world, 1, 1)}/${world.signals.spin.cells.get(4).jammed}`);
+    if (i >= 20) seen.push(`${spinAt(world, 1, 1).toFixed(6)}/${world.signals.spin.cells.get(4).jammed}`);
   }
+  // (To six places: the motor takes up its current half at a time, so the
+  // speed creeps the last millionths of the way instead of landing at once.)
   assert.equal(new Set(seen).size, 1, `it flickers: ${seen.join(' ')}`);
 });
 
@@ -1169,5 +1171,25 @@ test('a battery in a loop with two generators that push against each other never
       tick(free, systems, blockInfo);
       assert.ok(Math.abs(spinAt(free, 1, 2)) <= CRANK_SPEED + 1e-9, `${picture[1]}: crank at ${spinAt(free, 1, 2)} on tick ${i}`);
     }
+  }
+});
+
+test('a motor on the same gears as the generators that feed it settles to one steady speed: no flicker from tick to tick', () => {
+  const pictures = [
+    ['WBWW', 'EGsE', 'WQ.W', 'WMLW', '....'],
+    ['WWWW', 'EGsE', 'WR.W', 'WMBW', '....'],
+    ['WBWW', 'EssE', 'WR.W', 'WMBW', '....'],
+    // A battery's motor gears a generator up, and that generator feeds a second motor on its own shaft.
+    ['.............WBW..WW...', '............sE.MGsEM...', '.............WWW..WW...', '.......................'],
+  ];
+  const systems = allSystems();
+  for (const rows of pictures) {
+    const world = run(rows, 200);
+    const seen = [];
+    for (let i = 0; i < 12; i++) {
+      tick(world, systems, blockInfo);
+      seen.push([...world.signals.spin.cells.values()].map((cell) => cell.speed.toFixed(6)).join(' '));
+    }
+    assert.equal(new Set(seen).size, 1, `${rows.join(' / ')} flickers:\n${[...new Set(seen)].join('\n')}`);
   }
 });

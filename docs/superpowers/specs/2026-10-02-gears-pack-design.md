@@ -309,3 +309,14 @@ Two holes were left by the `forced` rule above.
 - `balance` now asks which way the group is pushed AT STANDING STILL and `climb`s that way, stretch by stretch, until the push runs out (a real zero of the push, or an edge where a load or brake switches and holds it). Pushed neither way, the group is held at 0.
 - Every speed it returns is one where pushing and pushing back really balance, so no layout of brakes can make a group turn unpaid. Where the push only ever falls (every machine before this one) the answer is the same as before.
 - Result: that build stands still (stalled) and the weight stays down; with the battery taken out it stalls as before. In a sweep of 2640 two-generator trains none runs faster than its crank and none gives out more than it is given.
+
+## Addendum 2026-10-04 (round 1 review): a motor takes up its generators' current half at a time (issue #17 review)
+
+A motor on the same train as the generators that feed it is a feedback loop with one tick of delay: more current slows the train, which makes less current. Two things kept it from settling. The `MIN_SOURCE` cut-off switched the motor fully off when its current dipped under 0.05 × `REFERENCE_CURRENT`, so the loop restarted from the unloaded speed every other tick; and the motor read the circuit's current, which is built from pushes rounded to `PUSH_STEP`, so it hopped between two steps. `WBWW / EGsE / WQ.W / WMLW` swung between −0.635 and −0.376 turns a second for ever; 30 of 2640 swept same-train builds and 1 of 1000 random ladder builds flickered.
+
+- `gearsSystem` keeps `signals.spin.fed`: for every part in a circuit with a generator, the generators' share of the current out of its + end, smoothed: `fed = (fed + now) ÷ FEED_SMOOTHING` (2). `now` is `Σ perVolt[g] × generatorPush(g)` at last tick's speeds, unrounded: the same current `generatorBrake` charged the shafts for. A rewired part (see `rewired`) starts again from 0. Less than `FEED_MIN` (1e-6) is dropped.
+- `motorSource` uses `fixed + fed` (only `fixed` on the tick it is rewired). A motor in a circuit with no generator still reads its real current, at once.
+- Below `MIN_SOURCE` the motor's amount fades as `2 × amount − MIN_SOURCE`, reaching 0 at half of `MIN_SOURCE`, instead of a step.
+- With a loop slope φ′ (about −0.5 before, never above +0.8), the smoothed loop's slope is (1 + φ′) ÷ 2: it converges for any φ′ between −3 and 1.
+- Energy: averaging hands on exactly the current the generators made, spread out; a motor's best work grows with the square of its current, so spreading can only lower it. The clicker and winding-down tests are unchanged and pass.
+- Result: the four builds in the review settle (−0.4527 for the one above); 0 of 2640 same-train builds and 0 of 1000 ladder builds flicker. A motor now reaches its speed over about 20 ticks to six places (half the gap each tick) instead of 1 tick.

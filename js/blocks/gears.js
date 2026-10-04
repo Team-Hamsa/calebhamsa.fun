@@ -93,6 +93,15 @@ export const GENERATOR_TORQUE = 1;
 /** Sources slower than this don't drive anything. */
 const MIN_SOURCE = 0.05;
 
+/**
+ * A motor takes up a change in its generators' current over a few ticks:
+ * each tick it moves 1 ÷ FEED_SMOOTHING of the way (half).
+ */
+const FEED_SMOOTHING = 2;
+
+/** A smoothed generator current smaller than this is dropped (it would halve for ever and never reach 0). */
+const FEED_MIN = 1e-6;
+
 /** A water wheel with less water than this going through it each tick doesn't turn. */
 const MIN_WHEEL_FLOW = 0.0025;
 
@@ -236,8 +245,8 @@ export function generatorBrake(world, x, y, group) {
  * going: the generator only gives back 8 tenths of the work, so each time
  * round there's less, and it winds down. No special rule needed!)
  *
- * A motor feels a generator's electricity ONE TICK LATE: it uses the
- * current the generators made (and were pushed back for) on the tick
+ * A motor feels a generator's electricity A LITTLE LATE: it uses the
+ * current the generators made (and were pushed back for) on the ticks
  * before. So every bit of current a motor uses was paid for by somebody
  * turning a generator. On the tick its wiring changes (a clicker closes,
  * a switch is flipped, a wire is added) there is no such current yet for
@@ -246,22 +255,55 @@ export function generatorBrake(world, x, y, group) {
  * batteries and turbines send it, and the generators' share starts on
  * the next tick. (Without this, a clicker would hand a motor one tick of
  * free full-speed electricity on every beat.)
+ *
+ * The generators' share is also SMOOTHED: the motor takes up a change in
+ * it half at a time (see generatorFeed), a bit like a real motor's coil,
+ * which can't change its current in an instant. That matters when the
+ * motor sits on the same gears as its generators: more current slows
+ * the gears, which makes less current, which speeds them up again...
+ * Taken up all at once, a tick late, that never settles: the gears
+ * flicker faster-slower-faster for ever. Half at a time, it settles.
+ *
+ * A motor with only a whisper of current (less than MIN_SOURCE) fades
+ * out smoothly instead of switching off with a snap (see FADE below),
+ * for the same reason: a snap is something to flicker around.
+ *
+ * `echo` tells spin.js that this motor is wired to a generator on its
+ * OWN gears. Its push is then partly an echo of the way those gears were
+ * already turning, so it doesn't get a say in which way a water wheel
+ * that could go either way should turn (see solveSpin).
  * @param {object} world - the world
  * @param {number} x - the motor's column
  * @param {number} y - the motor's row
- * @returns {{speed: number, strength: number}|null} its top speed and strength, or null if it has no power
+ * @param {number[]} [members] - the cell indexes of the blocks on this motor's gears
+ * @returns {{speed: number, strength: number, echo: boolean}|null} its top speed and strength, or null if it has no power
  */
-export function motorSource(world, x, y) {
+export function motorSource(world, x, y, members) {
   const index = y * world.width + x;
   const cell = world.signals.electric?.cells?.get(index);
   if (!cell) return null;
   const rewired = world.signals.spin?.rewired?.has(index);
-  const out = rewired ? cell.fixed ?? 0 : cell.arms[plusSide(cell.axis)] ?? 0;
+  const steady = cell.perVolt ? cell.fixed ?? 0 : cell.arms[plusSide(cell.axis)] ?? 0; // from batteries and turbines
+  const out = steady + (rewired ? 0 : world.signals.spin?.fed?.get(index) ?? 0);
   // The real current, not `level` (that stops at MAX_LEVEL, only so lamps
   // don't get too bright): five batteries make a motor five times as strong.
-  const amount = Math.abs(out) / REFERENCE_CURRENT;
-  if (amount < MIN_SOURCE) return null;
-  return { speed: Math.sign(out) * amount * MOTOR_SPEED, strength: amount * MOTOR_STRENGTH };
+  const amount = fadeIn(Math.abs(out) / REFERENCE_CURRENT);
+  if (amount <= 0) return null;
+  const echo = Boolean(cell.perVolt && members?.some((other) => Math.abs(cell.perVolt.get(other) ?? 0) > 1e-9));
+  return { speed: Math.sign(out) * amount * MOTOR_SPEED, strength: amount * MOTOR_STRENGTH, echo };
+}
+
+/**
+ * How much of a motor's current counts. All of it from MIN_SOURCE up.
+ * Below that it fades away quickly but smoothly, down to nothing at half
+ * of MIN_SOURCE: so a motor with hardly any current still stops, but
+ * there is no sudden step for the gears to flicker around.
+ * @param {number} amount - the current ÷ REFERENCE_CURRENT (0 or more)
+ * @returns {number} the amount that counts (0 = no power)
+ */
+function fadeIn(amount) {
+  if (amount >= MIN_SOURCE) return amount;
+  return Math.max(0, 2 * amount - MIN_SOURCE);
 }
 
 /**
@@ -329,9 +371,10 @@ export function refreshSpin(world, blockInfo) {
   const wheelFlow = world.signals.spin?.wheelFlow ?? new Map();
   const wheelWork = world.signals.spin?.wheelWork ?? new Map();
   const felt = world.signals.spin?.felt;
+  const fed = world.signals.spin?.fed;
   world.signals.spin = { ...world.signals.spin, rewired: rewiredParts(world, felt) };
   const solved = keepAngles(solveSpin(world, blockInfo), world.signals.spin?.cells, false);
-  world.signals.spin = { ...solved, wheels, wheelFlow, wheelWork, blocks, felt };
+  world.signals.spin = { ...solved, wheels, wheelFlow, wheelWork, blocks, felt, fed };
 }
 
 /**
@@ -348,6 +391,38 @@ function generatorWiring(world) {
     if (cell.perVolt) wiring.set(index, cell.perVolt);
   }
   return wiring;
+}
+
+/**
+ * The generators' share of every part's current, smoothed: each tick a
+ * part takes up HALF of the change (see motorSource for why). The share
+ * is what the generators sent out of the part's + end at the speeds they
+ * turned on the last tick: the very current their shafts were pushed
+ * back for (see generatorBrake). We work it out from those speeds
+ * exactly, not from the circuit's rounded pushes (see roundPush in
+ * circuit.js): rounding goes in little steps, and a motor on its
+ * generators' own gears would hop between two steps for ever.
+ *
+ * A part that has just been rewired starts again from nothing: the
+ * current through its new wiring hasn't been paid for yet.
+ *
+ * Averaging never gives a motor more than was paid for: over time it
+ * hands on exactly the current the generators made, only spread out.
+ * @param {object} world - the world
+ * @param {Map<number, number>|undefined} before - the smoothed shares on the last tick
+ * @param {Set<number>} rewired - the parts whose wiring changed this tick (from rewiredParts)
+ * @returns {Map<number, number>} part's cell index → smoothed current out of its + end from generators
+ */
+function generatorFeed(world, before, rewired) {
+  const fed = new Map();
+  for (const [index, cell] of world.signals.electric?.cells ?? []) {
+    if (!cell.perVolt || rewired.has(index)) continue;
+    let now = 0;
+    for (const [maker, share] of cell.perVolt) now += share * generatorPush(world, maker % world.width, Math.floor(maker / world.width));
+    const smooth = ((before?.get(index) ?? 0) + now) / FEED_SMOOTHING;
+    if (Math.abs(smooth) > FEED_MIN) fed.set(index, smooth);
+  }
+  return fed;
 }
 
 /**
@@ -431,9 +506,10 @@ export function gearsSystem(world, blockInfo) {
   // The wheels read `wheels` while solveSpin works out the turning.
   const cellsBefore = world.signals.spin?.cells;
   const rewired = rewiredParts(world, world.signals.spin?.felt);
-  world.signals.spin = { ...world.signals.spin, wheels, wheelFlow, wheelWork, rewired };
+  const fed = generatorFeed(world, world.signals.spin?.fed, rewired);
+  world.signals.spin = { ...world.signals.spin, wheels, wheelFlow, wheelWork, rewired, fed };
   const solved = keepAngles(solveSpin(world, blockInfo), cellsBefore, true);
-  world.signals.spin = { ...solved, wheels, wheelFlow, wheelWork, blocks: world.cells.join(','), felt: generatorWiring(world) };
+  world.signals.spin = { ...solved, wheels, wheelFlow, wheelWork, blocks: world.cells.join(','), felt: generatorWiring(world), fed };
   if (world.signals.spin.turning) world.animating = true;
   return false;
 }

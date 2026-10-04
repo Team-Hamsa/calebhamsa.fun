@@ -240,9 +240,13 @@ use the motor block for that). It only makes the generator very hard to turn
 the way that adds to the battery's current, and leaves it free the other way.
 Generators wired in a row each feel **all** the current they make together:
 three on one crank are much harder to turn than one, and never give out more
-than the crank puts in. A motor feels a generator's electricity one tick late,
-and skips a tick when its wiring changes (a clicker closing, a switch flipped):
-so a clicker can't hand it a burst of electricity nobody pushed for.
+than the crank puts in. A motor feels a generator's electricity a little late,
+and takes up a change in it half at a time (like a real motor's coil, which
+can't change its current in an instant): so a motor on the same gears as the
+generators that feed it settles to one steady speed instead of flickering. It
+skips a tick when its wiring changes (a clicker closing, a switch flipped):
+so a clicker can't hand it a burst of electricity nobody pushed for. A motor
+with only a whisper of current fades out smoothly, then stops.
 
 **Nothing runs forever.** A generator turns at most 8 tenths of the work you
 put in into electricity (the rest becomes heat, like in a real one), so a motor
