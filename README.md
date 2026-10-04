@@ -324,7 +324,7 @@ finished: it glows, the room says its name, and it goes in the 📖 book.
 |---|---|
 | 🧱 PLACE | Tap or drag to put the chosen atom down |
 | ⛏️ REMOVE | Tap or drag to take atoms away |
-| 🔗 BOND | Tap between two atoms: one more stick (double, triple bonds). When they can't take more sticks, the tap pulls them apart, and the next tap joins them again |
+| 🔗 BOND | Tap between two atoms, or slide from one atom onto the one beside it: one more stick (double, triple bonds). When they can't take more sticks, it pulls them apart, and the next time joins them again. While your finger is down the two atoms glow with what will happen (🔗 one more stick, ✂️ pull apart, 🚫 can't change); it happens when you lift your finger, so slide off to change your mind |
 
 - **Name cards:** 📖 a molecule from the book (with a fun fact), 🌟 a real
   molecule with its real chemistry name ("super rare!"), 💡 a molecule nobody
@@ -428,6 +428,7 @@ Run through this after big changes (Caleb is the best tester):
 - [ ] Add to Home Screen shows the grass-block icon and opens full-screen.
 - [ ] Chemistry: H–O–H says "Water!" and unlocks C; the book shows the water picture.
 - [ ] Chemistry: 🔗 on O–O makes O=O (Oxygen); 🔗 on a full pair pulls it apart.
+- [ ] Chemistry: holding 🔗 on an atom glows the pair it means (🔗/✂️/🚫); sliding onto another neighbor switches pairs; nothing changes until the finger lifts.
 - [ ] Chemistry: a molecule with a long chemistry name gets 🌟 (needs the internet once).
 - [ ] Turn on Airplane Mode and open the home-screen app: every page still works.
 

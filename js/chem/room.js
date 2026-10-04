@@ -8,11 +8,13 @@
  *
  *   🧱 PLACE   tap or drag to put the chosen atom down
  *   ⛏️ REMOVE  tap or drag to take atoms away
- *   🔗 BOND    tap between two atoms: one more stick, or pull them apart
+ *   🔗 BOND    tap between two atoms (or slide from one to the other): one
+ *             more stick, or pull them apart. It happens when the finger
+ *             lifts, so Caleb sees what it will do first (and can slide away)
  *
  * chem.html calls initChem() once. Everything else here only runs after that.
  */
-import { BOARD_HEIGHT, BOARD_WIDTH, createBoard, findGroups, groupGraph, groupLayout, newlyFinished, placeAtom, removeAtom, tapBond } from './board.js';
+import { APART, BOARD_HEIGHT, BOARD_WIDTH, createBoard, findGroups, groupGraph, groupLayout, newlyFinished, placeAtom, removeAtom, tapBond } from './board.js';
 import { ALL_ATOMS, LADDER, createBook, nameNewestInvention, record, resolvePending, unlockAll, unlockedAtoms } from './book.js';
 import { canonLabel } from './canon.js';
 import { ATOM_INFO, drawAtom, drawBoard } from './chem-art.js';
@@ -68,27 +70,80 @@ export function fitCellSize(boxWidth, boxHeight, columns, rows) {
 }
 
 /**
- * 🔗 BOND: which two cells did a tap mean? The cell under the finger,
- * and the neighbor on the side the finger is closest to.
+ * How far from a gap between two atoms a finger can be and still mean
+ * that gap, in cells. (A finger on an atom's middle is 0.5 from each of
+ * its gaps, so it still counts.)
+ * 🧪 Try this! 0.6 makes 🔗 pickier; 1.5 lets it reach a long way.
+ */
+const BOND_REACH = 0.9;
+
+/**
+ * 🔗 BOND: which two atoms does the finger mean?
+ *
+ * Slid from one atom onto the atom beside it? Then those two. Otherwise,
+ * the gap between two side-by-side atoms that's nearest the finger. Gaps
+ * with an empty cell on one side don't count, so a tap never "misses"
+ * onto nothing.
  * @param {number} x - finger position, in pixels from the board's left
  * @param {number} y - finger position, in pixels from the board's top
  * @param {number} cell - cell size in pixels
- * @param {number} width - cells across
- * @param {number} height - cells down
- * @returns {[number, number]|null} the two cell numbers, or null if off the board
+ * @param {{width: number, height: number, atoms: (string|null)[]}} board - the board
+ * @param {number|null} [from] - the cell the finger first touched (for a slide)
+ * @returns {[number, number]|null} the two atoms' cells, or null if none is near
  */
-export function bondTarget(x, y, cell, width, height) {
-  const cx = Math.floor(x / cell);
-  const cy = Math.floor(y / cell);
+export function bondTarget(x, y, cell, board, from = null) {
+  const { width, height, atoms } = board;
+  const gx = x / cell; // finger position, in cells
+  const gy = y / cell;
+  const cx = Math.floor(gx);
+  const cy = Math.floor(gy);
   if (cx < 0 || cy < 0 || cx >= width || cy >= height) return null;
-  const dx = x / cell - cx - 0.5; // −0.5 (left edge) … +0.5 (right edge)
-  const dy = y / cell - cy - 0.5;
-  let nx = cx;
-  let ny = cy;
-  if (Math.abs(dx) >= Math.abs(dy)) nx += dx < 0 ? -1 : 1;
-  else ny += dy < 0 ? -1 : 1;
-  if (nx < 0 || ny < 0 || nx >= width || ny >= height) return null;
-  return [cy * width + cx, ny * width + nx];
+  const here = cy * width + cx;
+
+  // A slide from an atom onto the atom right beside it.
+  if (from !== null && from !== here && atoms[from] && atoms[here]) {
+    const fx = from % width;
+    const fy = Math.floor(from / width);
+    if (Math.abs(fx - cx) + Math.abs(fy - cy) === 1) return [from, here];
+  }
+
+  // The nearest gap with an atom on both sides.
+  let best = null;
+  let bestDistance = BOND_REACH;
+  for (let y0 = cy - 1; y0 <= cy + 1; y0 += 1) {
+    for (let x0 = cx - 1; x0 <= cx + 1; x0 += 1) {
+      if (x0 < 0 || y0 < 0 || x0 >= width || y0 >= height || !atoms[y0 * width + x0]) continue;
+      const a = y0 * width + x0;
+      for (const [x1, y1] of [[x0 + 1, y0], [x0, y0 + 1]]) { // the gap on its right, the gap below it
+        if (x1 >= width || y1 >= height || !atoms[y1 * width + x1]) continue;
+        // The gap's middle is halfway between the two atoms' middles.
+        const distance = Math.hypot(gx - (x0 + x1 + 1) / 2, gy - (y0 + y1 + 1) / 2);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = [a, y1 * width + x1];
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * What would 🔗 do to these two atoms? (Tries it on a copy of the board,
+ * so the real one doesn't change.)
+ * @param {ReturnType<typeof createBoard>} board - the board
+ * @param {number} a - one atom's cell
+ * @param {number} b - the other atom's cell, right beside it
+ * @returns {'more'|'apart'|'join'|'nothing'} one more stick, pulled apart,
+ *   joined again, or nothing can change
+ */
+export function bondPreview(board, a, b) {
+  const copy = structuredClone(board);
+  const before = [copy.right, copy.down].join();
+  const after = tapBond(copy, a, b);
+  if ([copy.right, copy.down].join() === before) return 'nothing';
+  if (after === APART) return 'apart';
+  return after === 1 ? 'join' : 'more';
 }
 
 /**
@@ -163,6 +218,7 @@ const state = {
   cell: 0,
   boom: new Map(), // cell → time its 💥 ends
   cards: [], // name cards waiting to be shown
+  aim: null, // 🔗 while a finger is down: {from, pair, will}
 };
 
 /** label → hand-written entry (made once, at the start). */
@@ -359,7 +415,7 @@ function draw() {
   const stuck = new Set(groups.flatMap((g) => g.stuck));
   const now = Date.now();
   for (const [cell, until] of state.boom) if (until <= now) state.boom.delete(cell);
-  drawBoard(ctx, state.board, state.cell, { glow, stuck, boom: new Set(state.boom.keys()) });
+  drawBoard(ctx, state.board, state.cell, { glow, stuck, boom: new Set(state.boom.keys()), aim: state.aim });
 }
 
 /**
@@ -437,20 +493,41 @@ function setupPointer() {
     }
     const point = pointFrom(event);
     pointer = { id: event.pointerId, ...point };
-    if (state.tool === 'bond') bondAt(point);
+    if (state.tool === 'bond') aimBond(point, cellAt(point));
     else paintLine(point, point);
   });
   canvas.addEventListener('pointermove', (event) => {
-    if (!pointer || event.pointerId !== pointer.id || state.tool === 'bond') return;
+    if (!pointer || event.pointerId !== pointer.id) return;
     const point = pointFrom(event);
+    if (state.tool === 'bond') {
+      aimBond(point, state.aim?.from ?? null);
+      return;
+    }
     paintLine(pointer, point);
     pointer = { id: pointer.id, ...point };
   });
-  for (const type of ['pointerup', 'pointercancel']) {
-    window.addEventListener(type, (event) => {
-      if (pointer?.id === event.pointerId) pointer = null;
-    });
-  }
+  window.addEventListener('pointerup', (event) => {
+    if (pointer?.id !== event.pointerId) return;
+    pointer = null;
+    if (state.tool === 'bond') bondNow();
+  });
+  window.addEventListener('pointercancel', (event) => {
+    if (pointer?.id !== event.pointerId) return;
+    pointer = null;
+    aimBond(null, null); // the iPad took the finger away (a swipe, a call): don't bond
+  });
+}
+
+/**
+ * Which cell a point is in (or null off the board).
+ * @param {{x: number, y: number}} point - a position on the board, in CSS pixels
+ * @returns {number|null} the cell number
+ */
+function cellAt(point) {
+  const x = Math.floor(point.x / state.cell);
+  const y = Math.floor(point.y / state.cell);
+  if (x < 0 || y < 0 || x >= BOARD_WIDTH || y >= BOARD_HEIGHT) return null;
+  return y * BOARD_WIDTH + x;
 }
 
 /**
@@ -482,18 +559,34 @@ function paintLine(from, to) {
 }
 
 /**
- * 🔗 BOND: tap between two atoms.
- * @param {{x: number, y: number}} point - where the finger is
+ * 🔗 BOND, while the finger is down: work out which two atoms it means,
+ * and show them glowing with what will happen (🔗 ✂️ or 🚫).
+ * @param {{x: number, y: number}|null} point - where the finger is (null = stop aiming)
+ * @param {number|null} from - the cell the finger first touched
  * @returns {void}
  */
-function bondAt(point) {
-  const target = bondTarget(point.x, point.y, state.cell, BOARD_WIDTH, BOARD_HEIGHT);
-  changeBoard(() => {
-    if (!target) return false;
-    const before = [state.board.right.slice(), state.board.down.slice()].join();
-    tapBond(state.board, ...target);
-    return [state.board.right, state.board.down].join() !== before;
-  });
+function aimBond(point, from) {
+  const pair = point && bondTarget(point.x, point.y, state.cell, state.board, from);
+  state.aim = point ? { from, pair, will: pair && bondPreview(state.board, ...pair) } : null;
+  draw();
+}
+
+/**
+ * 🔗 BOND, when the finger lifts: do it to the two atoms it was aiming at.
+ * @returns {void}
+ */
+function bondNow() {
+  const aim = state.aim;
+  state.aim = null;
+  if (aim?.will === 'nothing') flash(frame, 'nope', 400); // 🚫: those two can't change
+  if (aim?.pair) {
+    changeBoard(() => {
+      const before = [state.board.right, state.board.down].join();
+      tapBond(state.board, ...aim.pair);
+      return [state.board.right, state.board.down].join() !== before;
+    });
+  }
+  draw(); // takes the glow away
 }
 
 // ---- Cards, book, grown-up corner ----

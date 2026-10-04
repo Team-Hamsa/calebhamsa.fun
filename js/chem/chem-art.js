@@ -33,6 +33,18 @@ const BALL = 0.32;
 /** Gap between the sticks of a double or triple bond, as a share of the cell. */
 const STICK_GAP = 0.1;
 
+/**
+ * How the 🔗 aim looks while a finger is down: a glow behind the two
+ * atoms, and a sign on the gap saying what lifting the finger will do.
+ * 🧪 Try this! Change ✂️ to 👋 for "let go".
+ */
+const AIM_LOOK = {
+  join: { color: 'rgba(255, 193, 7, 0.45)', sign: '🔗' },
+  more: { color: 'rgba(255, 193, 7, 0.45)', sign: '🔗' },
+  apart: { color: 'rgba(229, 57, 53, 0.3)', sign: '✂️' },
+  nothing: { color: 'rgba(120, 120, 120, 0.3)', sign: '🚫' },
+};
+
 /** The four diagonal directions free hands point in (never where sticks go). */
 const DIAGONALS = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
 
@@ -41,14 +53,15 @@ const DIAGONALS = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
  * @param {CanvasRenderingContext2D} ctx - where to draw
  * @param {{width: number, height: number, atoms: (string|null)[], right: number[], down: number[]}} board - what to draw
  * @param {number} cell - cell size in pixels
- * @param {{grid?: boolean, stuck?: Set<number>, glow?: Set<number>, boom?: Set<number>, hands?: boolean}} [marks]
+ * @param {{grid?: boolean, stuck?: Set<number>, glow?: Set<number>, boom?: Set<number>, hands?: boolean, aim?: {pair: number[]|null, will: string|null}|null}} [marks]
  *   grid: draw the cell lines; stuck: atoms with stuck hands (red stubs);
  *   glow: atoms in finished molecules; boom: atoms to draw 💥 on;
- *   hands: draw free hands (book pictures have none)
+ *   hands: draw free hands (book pictures have none);
+ *   aim: the two atoms 🔗 is pointing at, and what it will do (see AIM_LOOK)
  * @returns {void}
  */
 export function drawBoard(ctx, board, cell, marks = {}) {
-  const { grid = true, stuck = new Set(), glow = new Set(), boom = new Set(), hands = true } = marks;
+  const { grid = true, stuck = new Set(), glow = new Set(), boom = new Set(), hands = true, aim = null } = marks;
   const { width, height } = board;
   ctx.fillStyle = '#fffaf0';
   ctx.fillRect(0, 0, width * cell, height * cell);
@@ -57,6 +70,18 @@ export function drawBoard(ctx, board, cell, marks = {}) {
     ctx.lineWidth = 1;
     for (let x = 1; x < width; x += 1) line(ctx, x * cell, 0, x * cell, height * cell);
     for (let y = 1; y < height; y += 1) line(ctx, 0, y * cell, width * cell, y * cell);
+  }
+
+  // The 🔗 aim's glow goes under everything, like a highlighter.
+  const look = aim?.pair && AIM_LOOK[aim.will];
+  if (look) {
+    const [x1, y1] = centre(aim.pair[0], width, cell);
+    const [x2, y2] = centre(aim.pair[1], width, cell);
+    ctx.strokeStyle = look.color;
+    ctx.lineWidth = cell * 0.9;
+    ctx.lineCap = 'round'; // round ends make a pill around both atoms
+    line(ctx, x1, y1, x2, y2);
+    ctx.lineCap = 'butt';
   }
 
   // Sticks first, so the balls sit on top of their ends.
@@ -81,6 +106,16 @@ export function drawBoard(ctx, board, cell, marks = {}) {
       ctx.fillText('💥', cx + cell * 0.3, cy - cell * 0.3);
     }
   });
+
+  // The aim's sign sits on top, in the gap between the two atoms.
+  if (look) {
+    const [x1, y1] = centre(aim.pair[0], width, cell);
+    const [x2, y2] = centre(aim.pair[1], width, cell);
+    ctx.font = `${Math.round(cell * 0.4)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(look.sign, (x1 + x2) / 2, (y1 + y2) / 2);
+  }
 }
 
 /**
