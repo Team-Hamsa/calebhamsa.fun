@@ -130,7 +130,7 @@ two about 10.
 | ![Drain](docs/blocks/drain.png) | **Drain** | Water that flows into it disappears. | — |
 | ![Burner](docs/blocks/burnerOn.png) | **Burner** | Boils the water just above it into steam. Off, it looks like this: ![Burner off](docs/blocks/burnerOff.png) | on ↔ off |
 | ![Chiller](docs/blocks/chiller.png) | **Chiller** | Very cold: steam touching it turns back into water (it "rains"). | — |
-| ![Turbine](docs/blocks/turbine.png) | **Turbine** | A fan inside a pipe. Steam rushing through it spins it, and that makes **electricity**: wire it up like a battery. More steam = more power. | — |
+| ![Turbine](docs/blocks/turbine.png) | **Turbine** | A fan inside a pipe. Steam rushing through it spins it, and that makes **electricity**: wire it up like a battery. More steam = more power. Turbines one after the other in the same pipe share the same steam: three give no more than one. | — |
 | ![Pump](docs/blocks/pumpRight.png) | **Pump** | Uses **electricity** to push water the way its arrow points, even uphill. Wire it into a loop with a battery (wires on the sides the pipe isn't on). The arrow glows when it has power. Uphill is hard work: the higher, the slower. If the water stops part way up, add a battery. ![Pump pointing up](docs/blocks/pumpUp.png) | turns: → ↓ ← ↑ |
 
 ### ⚡ POWER

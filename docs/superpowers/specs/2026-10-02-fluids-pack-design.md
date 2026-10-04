@@ -281,3 +281,10 @@ The edge-case row "Building/digging a cell with fluid in it: that cell's fluid d
 - with no such neighbor (shut in on every side), the fluid is lost. This and DIG, faucets and drains are the only ways water is made or lost.
 
 The pushed water may overfill the neighbor for a moment (it is squished); the ordinary flow rules spread it out. `setBlock` still empties the cell: it is the plain helper for loading saves and tests.
+
+## Addendum 2026-10-04 (later): turbines in one tube share the steam (issue #17 review)
+
+Each turbine's push was `steam flow × TURBINE_GAIN`, so three turbines stacked in one chimney over one burner each pushed a full 1.000 V from the same steam.
+
+- `turbineRuns` (in `fluids.js`) walks from each turbine both ways through "tube" cells (exactly two open, connected ways: pipes, turbines, a one-wide gap) and counts the turbines in that tube. `turbinePush` divides by the count: 1 → 1.000, 2 → 0.500 each, 3 → 0.333 each, also with a pipe or a one-cell gap between them. Turbines in separate chimneys keep their own steam's full push.
+- It is a sharing rule, not an energy ledger: steam still loses nothing by turning a turbine (issue #21, open).

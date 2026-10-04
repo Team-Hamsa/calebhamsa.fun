@@ -13,7 +13,7 @@
  *    ☁️ steam rises → ⚙️ turbine spins → ⚡ lamp lights
  *    🔥 burner boils water          ❄️ chiller turns steam back to water
  */
-import { FULL, MIN_AMOUNT, PUMP_ON_LEVEL, drawingSides, stepFluids } from '../fluids.js';
+import { FULL, MIN_AMOUNT, PUMP_ON_LEVEL, allOpenSides, drawingSides, stepFluids, turbineRuns } from '../fluids.js';
 import { swapBlock } from '../world.js';
 
 /**
@@ -49,14 +49,19 @@ const PUMP_TURNS = { pumpRight: 'pumpDown', pumpDown: 'pumpLeft', pumpLeft: 'pum
 
 /**
  * How hard a turbine pushes right now: its smoothed steam flow × TURBINE_GAIN.
+ * Turbines in a row in the same tube share that push between them (see
+ * turbineRuns in fluids.js): the same steam can't give its push three
+ * times, so three stacked turbines give no more than one.
  * @param {object} world - the world
  * @param {number} x - the turbine's column
  * @param {number} y - the turbine's row
  * @returns {number} the push, in volts (0 to MAX_TURBINE_PUSH)
  */
 export function turbinePush(world, x, y) {
-  const flow = world.signals.water?.turbineFlow?.get(y * world.width + x) ?? 0;
-  return Math.min(MAX_TURBINE_PUSH, flow * TURBINE_GAIN);
+  const index = y * world.width + x;
+  const flow = world.signals.water?.turbineFlow?.get(index) ?? 0;
+  const sharing = world.signals.water?.turbineRun?.get(index) ?? 1;
+  return Math.min(MAX_TURBINE_PUSH, flow * TURBINE_GAIN) / sharing;
 }
 
 /**
@@ -96,7 +101,8 @@ function fluidCells(world, blockInfo, turbineFlow) {
  */
 export function refreshWater(world, blockInfo) {
   const turbineFlow = world.signals.water?.turbineFlow ?? new Map();
-  world.signals.water = { cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow };
+  const turbineRun = turbineRuns(world, blockInfo, allOpenSides(world, blockInfo));
+  world.signals.water = { cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow, turbineRun };
 }
 
 /**
@@ -110,7 +116,7 @@ export function refreshWater(world, blockInfo) {
  * @returns {boolean} always false: no blocks moved
  */
 export function waterSystem(world, blockInfo) {
-  const { moved, steamOut, waterOut, waterWork } = stepFluids(world, blockInfo);
+  const { moved, steamOut, waterOut, waterWork, sides } = stepFluids(world, blockInfo);
   const before = world.signals.water?.turbineFlow ?? new Map();
   const turbineFlow = new Map();
   world.cells.forEach((name, index) => {
@@ -120,7 +126,8 @@ export function waterSystem(world, blockInfo) {
   });
   // waterOut and waterWork are kept for the ⚙️ pack: water flowing through a
   // water wheel turns it, and the energy the water gives up there is its strength.
-  world.signals.water = { cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow, waterOut, waterWork };
+  const turbineRun = turbineRuns(world, blockInfo, sides);
+  world.signals.water = { cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow, turbineRun, waterOut, waterWork };
   if (moved > MOVE_EPSILON) world.fluidChanged = true;
   const spinning = [...turbineFlow.values()].some((flow) => flow > MIN_AMOUNT);
   if (moved > MOVE_EPSILON || spinning || world.cells.includes('burnerOn')) world.animating = true;
@@ -461,7 +468,7 @@ const guide = {
     drain: { does: 'Water that flows into it disappears.' },
     burnerOn: { does: 'Boils the water just above it into steam.', use: 'on ↔ off' },
     chiller: { does: 'Very cold: steam touching it turns back into water. It rains!' },
-    turbine: { does: 'A fan in a pipe. Steam rushing through spins it and makes electricity: wire it up like a battery.' },
+    turbine: { does: 'A fan in a pipe. Steam rushing through spins it and makes electricity: wire it up like a battery. Turbines in a row share the same steam, so three give no more than one.' },
     pumpRight: {
       does: 'Uses electricity to push water the way its arrow points, even uphill. Wire it into a loop with a battery. Uphill is hard work: the higher, the slower. If the water stops part way up, add a battery.',
       use: 'turns it: → ↓ ← ↑',

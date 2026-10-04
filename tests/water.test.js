@@ -14,7 +14,7 @@ import water, { turbinePush } from '../js/blocks/water.js';
 /** What each letter in a test picture means. `~` is air full of water. */
 const LETTERS = {
   '.': 'air', '~': 'air', '#': 'stone', W: 'wire', L: 'lamp', B: 'battery',
-  F: 'burnerOn', T: 'turbine', '^': 'pumpUp', P: 'pipe',
+  F: 'burnerOn', T: 'turbine', '^': 'pumpUp', P: 'pipe', C: 'chiller',
 };
 
 /**
@@ -157,4 +157,38 @@ test('sand sinks through water: they trade places and no water is lost', () => {
   for (let i = 0; i < 5; i++) tick(world, systems, blockInfo);
   assert.equal(getBlock(world, 0, 1), 'sand');
   assert.ok(Math.abs(getFluid(world, 'water', 0, 0) - 1) < 1e-9);
+});
+
+/**
+ * Build a steam plant with some turbines stacked in one chimney over ONE
+ * burner, run it until the steam is steady, and read each turbine's push.
+ * @param {string[]} chimney - the rows between the top chamber and the pot, like ['##T##', '##T##']
+ * @returns {number[]} each turbine's push, in volts, top first
+ */
+function plantPushes(chimney) {
+  const world = worldFrom(['#CCC#', '#...#', ...chimney, '#~~~#', '##F##']);
+  const systems = allSystems();
+  for (let i = 0; i < 400; i++) tick(world, systems, blockInfo);
+  return chimney.map((row, i) => (row.includes('T') ? turbinePush(world, 2, 2 + i) : null)).filter((push) => push !== null);
+}
+
+test('turbines in a row share the same steam: three stacked give no more push than one', () => {
+  const [one] = plantPushes(['##T##']);
+  assert.ok(one > 0.5, `one turbine pushes ${one}`);
+  for (const chimney of [['##T##', '##T##'], ['##T##', '##T##', '##T##'], ['##T##', '##P##', '##T##'], ['##T##', '##.##', '##T##']]) {
+    const pushes = plantPushes(chimney);
+    const together = pushes.reduce((sum, push) => sum + push, 0);
+    assert.ok(together <= one + 0.01, `${chimney.join('/')}: ${pushes} adds up to more than one turbine's ${one}`);
+    assert.ok(together > one * 0.8, `${chimney.join('/')}: ${pushes} adds up to much less than ${one}`);
+    for (const push of pushes) assert.ok(Math.abs(push - pushes[0]) < 0.01, `${chimney.join('/')}: not shared evenly: ${pushes}`);
+  }
+});
+
+test('turbines side by side in their own chimneys each keep all the push of their own steam', () => {
+  const world = worldFrom(['#CCCCC#', '#.....#', '##T#T##', '#~~~~~#', '##F#F##']);
+  const systems = allSystems();
+  for (let i = 0; i < 400; i++) tick(world, systems, blockInfo);
+  const [one] = plantPushes(['##T##']);
+  assert.ok(Math.abs(turbinePush(world, 2, 2) - one) < 0.1, `left pushes ${turbinePush(world, 2, 2)}, one alone ${one}`);
+  assert.ok(Math.abs(turbinePush(world, 4, 2) - turbinePush(world, 2, 2)) < 1e-9);
 });

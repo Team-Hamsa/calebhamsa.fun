@@ -353,6 +353,56 @@ export function flowChecker(world, sides, blockInfo) {
 }
 
 /**
+ * How many turbines share the same steam with each turbine. Steam that
+ * rushes up a chimney through three turbines, one after the other, is
+ * still the same steam: it can only give its push once, so the three
+ * have to share it.
+ *
+ * Turbines share when they sit in the same TUBE: starting at a turbine,
+ * we walk both ways through cells that are open on exactly two sides
+ * that lead somewhere (pipes, other turbines, a one-cell-wide gap). The
+ * tube ends at a room (a cell open more ways) or at a dead end.
+ * @param {object} world - the world
+ * @param {Function} blockInfo - looks up what a block name means
+ * @param {string[][]} sides - open sides by cell index (from allOpenSides)
+ * @returns {Map<number, number>} for each turbine's cell index, how many turbines are in its tube (itself too)
+ */
+export function turbineRuns(world, blockInfo, sides) {
+  /**
+   * The cells fluid can go to from a cell (never mind which way pumps face).
+   * @param {number} index - the cell's index
+   * @returns {number[]} the neighbors' indexes
+   */
+  const ways = (index) => {
+    const x = index % world.width;
+    const y = Math.floor(index / world.width);
+    const out = [];
+    for (const side of sides[index]) {
+      const [dx, dy] = STEP[side];
+      if (!inBounds(world, x + dx, y + dy)) continue;
+      const next = index + dx + dy * world.width;
+      if (sides[next].includes(OPPOSITE[side])) out.push(next);
+    }
+    return out;
+  };
+  const runs = new Map();
+  world.cells.forEach((name, start) => {
+    if (!blockInfo(name)?.turbine) return;
+    const tube = new Set([start]);
+    for (const first of ways(start)) {
+      let at = first;
+      // Walk on while we're in a tube: exactly two ways, in and out.
+      while (!tube.has(at) && ways(at).length === 2) {
+        tube.add(at);
+        at = ways(at).find((next) => !tube.has(next)) ?? at;
+      }
+    }
+    runs.set(start, [...tube].filter((index) => blockInfo(world.cells[index])?.turbine).length);
+  });
+  return runs;
+}
+
+/**
  * Keep a number between two limits.
  * @param {number} value - the number
  * @param {number} low - the smallest allowed
