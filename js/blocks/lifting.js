@@ -338,7 +338,7 @@ const guide = {
     'A winch has a little catch (a ratchet): let go and the load stays up. The load can\'t pull the winch round by itself. It only comes down when you turn the winch ↺.',
     'Heavy things go up slower. Too heavy for the crank, motor or water wheel, and everything STALLS: nothing turns and the winch shows a red ⬇.',
     'Slower is stronger! A small gear driving a big gear makes the winch slower, so it can lift more. Gearing UP makes it weaker.',
-    'Or add strength: two cranks, more batteries for a motor, or a longer fall of water onto a water wheel.',
+    'Or add strength: two cranks, more batteries for a motor, or more water (or a longer fall) onto a water wheel.',
     'Going down, a hanging load helps turn the winch, but it never goes down faster than it would fall. A load lying on the ground helps nothing: its rope is slack. It only pulls when you lift it.',
     'Dig the rope and whatever hangs on it falls.',
   ],

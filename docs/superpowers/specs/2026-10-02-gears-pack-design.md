@@ -261,3 +261,17 @@ The law is now written once, without branches. The current through a generator i
 - `forced` ≠ 0: a new block field `spinBrake` → `{pull, perTurn}`. `balance` in `spin.js` takes brakes alongside loads: a brake pushes back `pull + perTurn × speed` only while `(pull + perTurn × speed) × speed > 0`; its edges are 0 and `−pull ÷ perTurn`. The total push is still non-increasing in speed, so the stretch-by-stretch search still finds the one root. A group held at 0 by a brake is `stalled`.
 - Result: `.R./WEW/W.W/WBW` is 1.000 turn/s, 1.887 A, no spark, and `.Q.` is 0 turn/s, 9.434 A, spark, in every build order.
 - **Not done (issue #14): motoring.** In the free stretch a real machine is a motor (torque with the turning). Trying it (`spinSource` of strength `GAIN² ÷ TORQUE × |forced|`, top speed `−forced ÷ (load × GAIN)`, with the brake carrying the rest) worked and was order-independent, but a free generator in series with a battery then spins up until no current flows, which starves the pump in every battery-in-series loop the perpetual-motion tests use, and needs its own energy audit of generator-to-generator rings. Left for #14; the guide and README now say a generator is not a motor here.
+
+## Addendum 2026-10-04 (later): the water wheel's speed and strength the right way round (issues #17 and #18 review)
+
+The first #17 fix set `speed = flow × WHEEL_GAIN` and `strength = 4 × DROP_POWER × work ÷ |speed|`. The power bound was right, but the split was backwards (more water made a wheel faster, not stronger: three faucets could not lift what one could not), `speed` used the signed NET outflow so a nearly balanced spill divided full work by a tiny speed (strength 4.6 from one faucet on a lopsided ledge, unbounded near the cut-off), and the sign rule (down or right = +) made a mirrored wheel turn at a different speed (0.926 vs −0.770).
+
+Now, from the smoothed per-wheel counts `{lean, sideOut, down, gross, work}` (see the fluids spec):
+
+- `fall = work ÷ gross` (cells fallen per unit of water), `water = min(gross, |turn|)` where `turn = wheelTurn(...)`.
+- `speed = ±WHEEL_SPEED × √fall` (WHEEL_SPEED = 1), `strength = WHEEL_STRENGTH × water × √fall` (WHEEL_STRENGTH = 4 × DROP_POWER ÷ WHEEL_SPEED = 40). `WHEEL_GAIN` is gone.
+- Best work = strength × speed ÷ 4 = DROP_POWER × work × (water ÷ gross) ≤ DROP_POWER × work: the same ledger as before.
+- One faucet, one cell: speed 1, strength 2 (a crank). Three faucets: speed 1, strength 6. One faucet falling 4 cells: speed 2, strength 4; 9 cells: 3 and 6. Level stream: about 0.28 and 0.56 (best work 0.04).
+- Water leaving both sides cancels: a symmetric ledge gives no source; a lopsided one is weaker than a one-sided one, never stronger.
+- Direction (`wheelTurn`): sideways outflow right is ↻, left is ↺; downward outflow takes the sign of the sideways lean (in and out); with no sideways water at all, down is ↻. So mirrored builds turn at equal and opposite speeds. The one case that cannot be opposite is water falling dead straight through (its mirror image is itself): that stays ↻.
+- Known jump: because of that default, a tiny sideways lean decides the sign of a big straight-down flow.

@@ -180,7 +180,7 @@ or a crank, wheel, motor or generator touching a gear) turn the **same** way.
 | ![Big gear](docs/blocks/gearBig.png) | **Big gear** | 16 teeth, so it turns **half as fast** as a small gear it's touching (and a small gear driven by it turns **twice as fast**). Big gears also touch corner to corner. | — |
 | ![Axle](docs/blocks/axle.png) | **Axle** | A rod: carries turning in a straight line, the same way round. It only joins things at its two **ends**: a gear beside a shaft doesn't touch it (and doesn't break it). | — |
 | ![Crank](docs/blocks/crankStop.png) | **Crank** | Hand power! Red knob = stopped, green knob = turning. ![Turning crank](docs/blocks/crankCW.png) | stop → ↻ → ↺ → stop |
-| ![Water wheel](docs/blocks/waterWheel.png) | **Water wheel** | Turns when 💧 water flows through it. More water = **faster**. A longer fall = **stronger**: put it where the water drops. | — |
+| ![Water wheel](docs/blocks/waterWheel.png) | **Water wheel** | Turns when 💧 water flows through it. More water = **stronger**. A longer fall = **faster and stronger**: put it where the water drops. | — |
 | ![Motor](docs/blocks/motor.png) | **Motor** | Turns ⚡ electricity into turning. Put it in a loop with a battery (wires on its sides). Move the battery to the other side of the loop and it turns the other way. | — |
 | ![Generator](docs/blocks/generator.png) | **Generator** | Turns turning into ⚡ electricity: wire it up like a battery. Its **+** end swaps when it turns the other way. | — |
 
@@ -198,13 +198,18 @@ red ❌ (![Jammed gear](docs/blocks/gearBig-jammed.png)).
 **Speed and strength.** Everything that turns gears has a **top speed** (how
 fast it goes with nothing to push) and a **strength** (how hard it can push
 before it stops). The harder it has to push, the slower it goes, like a real
-motor or a real arm. A crank has strength 2. A water wheel gets stronger the
-**further the water falls** on its way through: falling one block (a faucet
-right on top, a drain right below) makes it as strong as a crank, and falling
-onto it from the block above as well makes it twice as strong. One wheel can
-only catch the fall right at the wheel, so for a tall waterfall put several
-wheels one under the other on the same shaft: each catches its own block of
-fall, and their strengths add up. More water makes a wheel faster, not stronger.
+motor or a real arm. A crank has strength 2. A water wheel's push comes from
+the **weight of the water** and **how far it falls**. One faucet falling one
+block through a wheel (the faucet right on top, a drain right below) makes it
+just like a crank: top speed 1, strength 2. **More water makes it stronger**:
+three faucets, strength 6, at the same top speed. **A longer fall makes it
+faster and stronger**, because falling water speeds up: four blocks of fall
+(not two) make it twice as fast and twice as strong. The water keeps the push
+of its whole fall for as long as it keeps falling, and gives it all to the
+first wheel it lands on. If it lands on the ground or in a pool first, it has
+splashed its push away. Water that spills off both sides of a wheel pushes it
+both ways, and that cancels out. Build a machine the other way round (mirrored)
+and its wheel turns the other way, just as fast.
 In a level stream it still turns, but only feebly: that water hardly falls. A motor gets
 stronger with more electricity. Two of them on the same gears **add up**. Two
 cranks turning opposite ways push against each other: the stronger one wins.
@@ -253,7 +258,7 @@ gear in between and the winch turns half as fast but pushes twice as hard, so
 the iron weight counts as 2: still too much. Do it twice (a quarter as fast)
 and it counts as 1: up it goes. Gear it UP (big gear driving a small one) and
 it can't even lift a crate. More strength works too: two cranks, a motor with
-more batteries, or a longer fall of water onto a water wheel. Real cranes, bike gears and
+more batteries, or more water (or a longer fall) onto a water wheel. Real cranes, bike gears and
 car gears all trade speed for strength.
 
 **Heavier = slower.** The closer the load is to the machine's strength, the

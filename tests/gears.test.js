@@ -10,7 +10,7 @@ import { allSystems, blockInfo, blocksInPack, isKnownBlock, refreshSignals } fro
 import { drawWorld } from '../js/block-art.js';
 import { DROP_POWER, PUMP_HEAD, PUMP_RATE } from '../js/fluids.js';
 import gears, {
-  CRANK_SPEED, CRANK_STRENGTH, GENERATOR_GAIN, GENERATOR_TORQUE, WHEEL_GAIN, WHEEL_STRENGTH, spinAt, turned, wheelSource,
+  CRANK_SPEED, CRANK_STRENGTH, GENERATOR_GAIN, GENERATOR_TORQUE, WHEEL_SPEED, WHEEL_STRENGTH, spinAt, turned, wheelSource,
 } from '../js/blocks/gears.js';
 import { REFERENCE_CURRENT } from '../js/circuit.js';
 
@@ -318,7 +318,7 @@ test('water power cannot loop forever either: the energy books balance at every 
   // 2. A wheel: the most work it does (half its strength at half its top
   //    speed) is exactly what water falling one cell gives up, never more.
   const flow = 0.05;
-  const wheelBest = (WHEEL_STRENGTH / 2) * ((flow * WHEEL_GAIN) / 2);
+  const wheelBest = ((WHEEL_STRENGTH * flow) / 2) * (WHEEL_SPEED / 2);
   assert.ok(Math.abs(wheelBest - DROP_POWER * flow) < 1e-12);
   // 3. A generator gives back less electricity than the work that turns it.
   assert.ok(GENERATOR_GAIN / GENERATOR_TORQUE < 1);
@@ -376,9 +376,13 @@ test('one faucet falling one cell through a water wheel is as good as one crank'
 
 test('a wheel in a level stream still turns, but feebly: the water hardly falls', () => {
   const world = run(['F.....', '..O..D', '######'], 300);
-  assert.ok(spinAt(world, 2, 1) > 0.5, `with nothing to push it turns at ${spinAt(world, 2, 1)}`);
+  // Slow water, slow wheel: much slower than one under a faucet (which turns at 1).
+  assert.ok(spinAt(world, 2, 1) > 0.1 && spinAt(world, 2, 1) < 0.5, `with nothing to push it turns at ${spinAt(world, 2, 1)}`);
   const wheel = wheelSource(world, 2, 1);
-  assert.ok(wheel.strength > 0 && wheel.strength < CRANK_STRENGTH / 4, `strength ${wheel.strength}`);
+  assert.ok(wheel.strength > 0 && wheel.strength < CRANK_STRENGTH / 3, `strength ${wheel.strength}`);
+  // The most work it can do is less than a tenth of a crank's.
+  const best = (wheel.strength / 2) * (wheel.speed / 2);
+  assert.ok(best < 0.1 * (CRANK_STRENGTH / 2) * (CRANK_SPEED / 2), `best work ${best}`);
 });
 
 test('a taller fall is stronger: three wheels stacked under one faucet each get a full cell of fall', () => {
@@ -421,6 +425,89 @@ test('water standing still in a pool gives a wheel no push at all', () => {
   more(world, 100);
   assert.equal(spinAt(world, 2, 1), 0);
   assert.equal(wheelSource(world, 2, 1), null);
+});
+
+test('more water makes a wheel STRONGER, not faster: three faucets push three times as hard as one', () => {
+  const one = run(['.F.', '...', '#O#', '#D#'], 300);
+  const three = run(['FFF', '...', '#O#', '#D#'], 300);
+  const weak = wheelSource(one, 1, 2);
+  const strong = wheelSource(three, 1, 2);
+  assert.ok(Math.abs(weak.speed - strong.speed) < 0.05, `top speeds ${weak.speed}, ${strong.speed}`);
+  assert.ok(strong.strength > 2.7 * weak.strength && strong.strength < 3.1 * weak.strength, `strengths ${weak.strength}, ${strong.strength}`);
+});
+
+test('more water lifts more: one faucet\'s wheel stalls on the iron weight, three faucets lift it', () => {
+  const LIFT = { ...LETTERS, w: 'winch', '|': 'rope', I: 'ironWeight' };
+  const rows = (top) => [top, '....', '#Ow.', '#D|.', '..|.', '..I.', '....', '####'];
+  const worlds = ['.F..', 'FFF.'].map((top) => {
+    const world = createWorld(4, 8);
+    rows(top).forEach((row, y) => [...row].forEach((letter, x) => setBlock(world, x, y, LIFT[letter])));
+    return more(world, 300);
+  });
+  assert.equal(worlds[0].cells.indexOf('ironWeight'), 5 * 4 + 2); // too heavy for one faucet's wheel
+  assert.ok(worlds[1].cells.indexOf('ironWeight') < 5 * 4 + 2, 'three faucets should lift the iron weight');
+});
+
+test('a longer fall makes a wheel faster and stronger: the water brings the push of its whole fall to the wheel', () => {
+  const short = wheelSource(run(['#F#', '#O#', '#D#'], 300), 1, 1);                                              // falls 1 cell
+  const tall = wheelSource(run(['#F#', '#.#', '#.#', '#.#', '#O#', '#D#'], 300), 1, 4);                               // falls 4 cells
+  const taller = wheelSource(run(['#F#', '#.#', '#.#', '#.#', '#.#', '#.#', '#.#', '#.#', '#.#', '#O#', '#D#'], 300), 1, 9); // falls 9 cells
+  assert.ok(Math.abs(short.speed - 1) < 0.02 && Math.abs(short.strength - CRANK_STRENGTH) < 0.1, JSON.stringify(short));
+  assert.ok(Math.abs(tall.speed - 2) < 0.1 && Math.abs(tall.strength - 2 * CRANK_STRENGTH) < 0.2, JSON.stringify(tall));
+  assert.ok(Math.abs(taller.speed - 3) < 0.15 && Math.abs(taller.strength - 3 * CRANK_STRENGTH) < 0.3, JSON.stringify(taller));
+  // Nine times the fall is nine times the work it can do: three times as fast × three times as strong.
+});
+
+test('water that falls onto the ground has splashed its push away: a wheel further along the stream gets none of it', () => {
+  const level = wheelSource(run(['F......', '....O.D', '#######'], 400), 4, 1);
+  const afterFall = wheelSource(run(['F......', '.......', '.......', '.......', '....O.D', '#######'], 400), 4, 4);
+  assert.ok(afterFall.strength < 1.1 * level.strength, `after a 3 cell fall ${afterFall.strength}, level ${level.strength}`);
+  assert.ok(afterFall.strength < CRANK_STRENGTH / 3, `strength ${afterFall.strength}`);
+});
+
+test('water spilling off both sides of a wheel pushes it both ways: that cancels, it does not make it stronger', () => {
+  // One faucet, one cell of fall onto a wheel on a ledge. The water runs off...
+  const oneWay = run(['...F...', '.......', '...O...', '####...', '.......', 'DDDDDDD'], 400);   // ...all to the right
+  const lopsided = run(['...F...', '.......', '...O...', '.###...', '.......', 'DDDDDDD'], 400); // ...mostly right, some left
+  const balanced = run(['...F...', '.......', '...O...', '..###..', '.......', 'DDDDDDD'], 400); // ...half each way
+  const full = wheelSource(oneWay, 3, 2).strength;
+  const part = wheelSource(lopsided, 3, 2).strength;
+  assert.ok(full <= Math.SQRT2 * CRANK_STRENGTH + 0.1, `one way: ${full}`); // one faucet falling two cells, at the very most
+  assert.ok(part < full, `lopsided ${part} should be weaker than one way ${full}`);
+  assert.equal(wheelSource(balanced, 3, 2), null);
+  assert.equal(spinAt(balanced, 3, 2), 0);
+});
+
+test('water falling straight down through a wheel (nothing sideways) turns it ↻, in a mirrored machine too', () => {
+  for (const rows of [['..F...', '#.O#..', '#..#..', '#.PPPD', '######'], ['...F..', '..#O.#', '..#..#', 'DPPP.#', '######']]) {
+    const world = run(rows, 300);
+    const at = world.cells.indexOf('waterWheel');
+    assert.ok(spinAt(world, at % world.width, Math.floor(at / world.width)) > 0.5, rows.join('/'));
+  }
+});
+
+test('a mirrored water wheel machine turns just as fast, the other way', () => {
+  const pictures = [
+    ['..F...', '#.O..D', '#.#.##', '######'],            // the water runs off one side
+    ['..F...', '..O...', '#..#D#', '######'],            // down into a basin that spills one way
+    ['...F..', '...O..', '##.P.D', '######'],            // down onto a pipe elbow
+    ['F.....', '..O..D', '######'],                      // a level stream
+    ['F.....', '......', '.#O..D', '.#####'],            // in from one side and above, out the other side
+  ];
+  for (const rows of pictures) {
+    const mirrored = rows.map((row) => [...row].reverse().join(''));
+    const a = run(rows, 400);
+    const b = run(mirrored, 400);
+    const at = a.cells.indexOf('waterWheel');
+    const x = at % a.width;
+    const y = Math.floor(at / a.width);
+    const speed = spinAt(a, x, y);
+    assert.ok(Math.abs(speed) > 0.1, `${rows.join('/')}: only turns ${speed}`);
+    assert.ok(Math.abs(speed + spinAt(b, a.width - 1 - x, y)) < 1e-9, `${rows.join('/')}: ${speed} as drawn, ${spinAt(b, a.width - 1 - x, y)} mirrored`);
+    const one = wheelSource(a, x, y);
+    const other = wheelSource(b, a.width - 1 - x, y);
+    assert.ok(Math.abs(one.strength - other.strength) < 1e-9, `${rows.join('/')}: strengths ${one.strength}, ${other.strength}`);
+  }
 });
 
 // =============================================================

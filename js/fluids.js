@@ -19,7 +19,9 @@
  * WATER HAS TO FALL TO GIVE ITS PUSH. High water (and squished water)
  * holds energy, like a ball at the top of a slide. Every time some water
  * moves, we work out how much lower it ended up (see fallEnergy): that
- * is the only push a water wheel can catch. And LIFTING WATER USES UP A
+ * is the only push a water wheel can catch. Falling water keeps that
+ * push for as long as it keeps falling, and gives it to the first wheel
+ * it lands on (see stepFluids). And LIFTING WATER USES UP A
  * PUMP'S PUSH: the higher a pump has to lift, the less water it moves,
  * until the water is too heavy for it and it stops (see pumpAmount).
  * Because of those two rules, water going round and round through a
@@ -421,11 +423,20 @@ function clamp(value, low, high) {
  * step and added up in a fresh copy, so it doesn't matter which cell
  * goes first, and left and right are treated just the same.
  *
+ * The ENERGY each move gives up is worked out at the end of the step,
+ * once we know everything that left and entered each cell. Each cell's
+ * energy change is shared out between its moves by how much water each
+ * one carried, so streams that meet in one cell are never counted for
+ * more than the water really gave up, and left and right get the same.
+ *
  * @param {object} world - the world
  * @param {'water'|'steam'} kind - which fluid
  * @param {Function} canFlow - from flowChecker
- * @param {Function} onMove - told (fromIndex, toIndex, amount, energy) for every
- *   move: `energy` is how much the water gave up by moving (see fallEnergy; 0 for steam)
+ * @param {Function} onMove - told (fromIndex, toIndex, amount, energy, drop, part)
+ *   for every move: `energy` is how much the water gave up by moving (see
+ *   fallEnergy; 0 for steam), `drop` is how many cells lower it ended up
+ *   (1 falling, 0 sideways, −1 rising), and `part` is how much of the
+ *   cell's fluid this move took (0 to 1)
  * @returns {number} the total amount that moved
  */
 export function flowFluid(world, kind, canFlow, onMove) {
@@ -435,22 +446,26 @@ export function flowFluid(world, kind, canFlow, onMove) {
   const fall = kind === 'water' ? 'down' : 'up';
   const rise = OPPOSITE[fall];
   let moved = 0;
+  const moves = [];
+  const left = new Map();    // how much left each cell this step
+  const entered = new Map(); // how much entered each cell this step
 
   /**
    * Move some fluid from one cell to another.
    * @param {number} from - the cell it leaves
    * @param {number} to - the cell it goes to
    * @param {number} amount - how much
-   * @param {number} here - how much the cell it leaves holds right now
    * @param {number} drop - how many cells lower it ends up (1 falling, 0 sideways, −1 rising)
    * @returns {void}
    */
-  const move = (from, to, amount, here, drop) => {
+  const move = (from, to, amount, drop) => {
     if (amount <= 0) return;
     after[from] -= amount;
     after[to] += amount;
     moved += amount;
-    onMove(from, to, amount, kind === 'water' ? fallEnergy(here, before[to], amount, drop) : 0);
+    moves.push({ from, to, amount, drop });
+    left.set(from, (left.get(from) ?? 0) + amount);
+    entered.set(to, (entered.get(to) ?? 0) + amount);
   };
 
   /**
@@ -469,7 +484,7 @@ export function flowFluid(world, kind, canFlow, onMove) {
     const below = canFlow(index, fall); // for steam, this is the cell ABOVE
     if (below >= 0) {
       const flow = clamp(stableBelow(remaining + before[below]) - before[below], 0, Math.min(MAX_FLOW, remaining));
-      move(index, below, flow, remaining, 1);
+      move(index, below, flow, 1);
       remaining -= flow;
     }
     if (remaining <= 0) continue;
@@ -483,7 +498,7 @@ export function flowFluid(world, kind, canFlow, onMove) {
       const beside = canFlow(index, side);
       if (beside < 0 || !roomFor(beside)) continue;
       const flow = clamp((level - before[beside]) / 4, 0, remaining);
-      move(index, beside, flow, remaining, 0);
+      move(index, beside, flow, 0);
       remaining -= flow;
     }
     if (remaining <= 0) continue;
@@ -491,8 +506,22 @@ export function flowFluid(world, kind, canFlow, onMove) {
     const above = canFlow(index, rise);
     if (above >= 0 && roomFor(above)) {
       const flow = clamp(remaining - stableBelow(remaining + before[above]), 0, Math.min(MAX_FLOW, remaining));
-      move(index, above, flow, remaining, -1);
+      move(index, above, flow, -1);
     }
+  }
+
+  for (const { from, to, amount, drop } of moves) {
+    let energy = 0;
+    if (kind === 'water') {
+      // This move's share of what its two cells' water lost: the cell it
+      // left (by all that left it) and the cell it entered (by all that entered).
+      const gone = left.get(from);
+      const came = entered.get(to);
+      energy = amount * drop
+        + (storedEnergy(before[from]) - storedEnergy(before[from] - gone)) * (amount / gone)
+        + (storedEnergy(before[to]) - storedEnergy(before[to] + came)) * (amount / came);
+    }
+    onMove(from, to, amount, energy, drop, Math.min(1, amount / before[from]));
   }
 
   for (let index = 0; index < after.length; index++) if (after[index] < 0) after[index] = 0;
@@ -684,15 +713,42 @@ export function runSpecials(world, blockInfo, sides) {
 }
 
 /**
+ * Which way, and how much, the water going through a wheel turns it.
+ *
+ *   • Water leaving to the right turns it ↻ (+), to the left ↺ (−). Water
+ *     leaving both ways pushes both ways, and that cancels.
+ *   • Water leaving downward turns it the way the water LEANS: the way
+ *     the sideways water goes (coming in or going out). So a mirrored
+ *     machine turns the other way, just as fast. With no sideways water
+ *     at all (straight down through the middle), down counts as ↻.
+ * @param {{lean: number, sideOut: number, down: number}} wheel - the water's
+ *   sideways lean (in and out, + to the right), the water that left
+ *   sideways (+ right, − left) and the water that left down (+) or up (−)
+ * @returns {number} the turning flow (+ = ↻)
+ */
+export function wheelTurn(wheel) {
+  const amount = Math.abs(wheel.sideOut) + Math.abs(wheel.down);
+  const way = Math.abs(wheel.lean) > 1e-9 ? Math.sign(wheel.lean) : Math.sign(wheel.down);
+  return way * amount || 0; // "|| 0" turns −0 into a plain 0
+}
+
+/**
  * One tick of fluids: water and steam move (in FLUID_STEPS small
  * steps), then the special blocks do their jobs once.
+ *
+ * FALLING WATER CARRIES ITS PUSH WITH IT. The energy water gives up
+ * while it falls stays with that water (in world.signals.falling, by
+ * cell) for as long as it keeps falling. If it lands on a water wheel,
+ * the wheel gets all of it: so a taller waterfall really is stronger.
+ * If it lands anywhere else and stops falling, or runs off sideways, it
+ * has splashed its push away, like real water.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
- * @returns {{moved: number, steamOut: Map<number, number>, waterOut: Map<number, number>, waterWork: Map<number, number>, sides: string[][]}}
- *   how much changed in total, how much steam left each turbine, how much
- *   water left each water wheel (+ going down or right, − going up or left),
- *   how much energy the water gave up at each water wheel, and every
- *   cell's open sides
+ * @returns {{moved: number, steamOut: Map<number, number>, waterOut: Map<number, number>, waterWork: Map<number, number>, wheels: Map<number, object>, sides: string[][]}}
+ *   how much changed in total, how much steam left each turbine, the
+ *   turning flow of each water wheel (see wheelTurn), how much energy the
+ *   water gave up at each water wheel, each wheel's full count
+ *   ({lean, sideOut, down, gross, work}), and every cell's open sides
  */
 export function stepFluids(world, blockInfo) {
   const sides = allOpenSides(world, blockInfo);
@@ -708,39 +764,87 @@ export function stepFluids(world, blockInfo) {
   const countTurbines = (from, to, amount) => {
     if (blockInfo(world.cells[from])?.turbine) steamOut.set(from, (steamOut.get(from) ?? 0) + amount);
   };
-  const waterOut = new Map();
-  const waterWork = new Map();
+  const wheels = new Map();
   /**
-   * Count water leaving a water wheel, and which way it went (that's
-   * what says how fast it turns, and which way): down or right counts
-   * +, up or left counts −.
+   * The count for one water wheel, made empty the first time.
+   * @param {number} index - the wheel's cell index
+   * @returns {{lean: number, sideOut: number, down: number, gross: number, work: number}} its count
+   */
+  const wheelAt = (index) => {
+    if (!wheels.has(index)) wheels.set(index, { lean: 0, sideOut: 0, down: 0, gross: 0, work: 0 });
+    return wheels.get(index);
+  };
+  const size = world.cells.length;
+  // The push that falling water is carrying, by cell (see above).
+  let falling = world.signals.falling?.length === size ? world.signals.falling : new Float64Array(size);
+  // Tidy up first: a cell whose water has gone (drained, dug, boiled) carries
+  // nothing, and no water can carry more than a fall from the top of the world.
+  for (let index = 0; index < size; index++) {
+    falling[index] = Math.min(falling[index], world.fluid.water[index] * world.height);
+  }
+  let next = new Float64Array(size);
+  let fellFrom = new Uint8Array(size);   // 1 if water fell out of this cell in this step
+  let taken = new Float64Array(size);    // how much of each cell's water moved away in this step
+  /**
+   * Count water going through a water wheel: how much leaves it and which
+   * way (that says which way it turns), and the ENERGY the water gives up
+   * leaving a wheel, or brings with it landing on one from somewhere that
+   * isn't a wheel (that says how hard the wheel can push). Each bit of
+   * energy is only ever given to ONE wheel: when water goes straight from
+   * one wheel into another, the one it leaves gets it.
    *
-   * Also count the ENERGY the water gave up leaving a wheel, or landing
-   * on one from somewhere that isn't a wheel (that's what says how hard
-   * the wheel can push). Each bit of energy is only ever given to ONE
-   * wheel: when water goes straight from one wheel into another, the
-   * one it leaves gets it.
+   * Water that isn't at a wheel keeps the energy it gives up for as long
+   * as it keeps falling, and loses it when it goes sideways or up.
    * @param {number} from - the cell the water left
    * @param {number} to - where it went
    * @param {number} amount - how much
    * @param {number} energy - how much energy the water gave up (see fallEnergy)
+   * @param {number} drop - how many cells lower it ended up (1, 0 or −1)
+   * @param {number} part - how much of the cell's water this move took (0 to 1)
    * @returns {void}
    */
-  const countWheels = (from, to, amount, energy) => {
+  const countWheels = (from, to, amount, energy, drop, part) => {
     const leaves = Boolean(blockInfo(world.cells[from])?.wheel);
+    const lands = Boolean(blockInfo(world.cells[to])?.wheel);
+    const sideways = drop === 0 ? (to > from ? amount : -amount) : 0; // + to the right
     if (leaves) {
-      const signed = to > from ? amount : -amount; // down (+width) and right (+1) are bigger indexes
-      waterOut.set(from, (waterOut.get(from) ?? 0) + signed);
+      const wheel = wheelAt(from);
+      wheel.gross += amount;
+      wheel.sideOut += sideways;
+      wheel.lean += sideways;
+      wheel.down += drop * amount;
     }
-    if (energy <= 0) return;
-    const wheel = leaves ? from : to;
-    if (leaves || blockInfo(world.cells[to])?.wheel) waterWork.set(wheel, (waterWork.get(wheel) ?? 0) + energy);
+    if (lands) wheelAt(to).lean += sideways;
+    // What this water has to give: what it carried, and what it gave up just now.
+    const brought = falling[from] * part;
+    taken[from] += part;
+    if (drop === 1) fellFrom[from] = 1;
+    const gives = Math.max(0, brought + energy);
+    if (leaves) wheelAt(from).work += gives;
+    else if (lands) wheelAt(to).work += gives;
+    else if (drop === 1) next[to] += gives; // still falling: it keeps its push
   };
   let moved = 0;
   for (let step = 0; step < FLUID_STEPS; step++) {
     moved += flowFluid(world, 'water', canFlow, countWheels);
+    // Water that stayed behind in a column that is still falling keeps its
+    // share of the push. Water that has stopped falling has splashed it away.
+    for (let index = 0; index < size; index++) {
+      if (fellFrom[index] && falling[index] > 0) next[index] += falling[index] * Math.max(0, 1 - taken[index]);
+    }
+    falling = next;
+    next = new Float64Array(size);
+    fellFrom = new Uint8Array(size);
+    taken = new Float64Array(size);
     moved += flowFluid(world, 'steam', canFlow, countTurbines);
   }
+  world.signals.falling = falling;
   moved += runSpecials(world, blockInfo, sides);
-  return { moved, steamOut, waterOut, waterWork, sides };
+  const waterOut = new Map();
+  const waterWork = new Map();
+  for (const [index, wheel] of wheels) {
+    waterOut.set(index, wheelTurn(wheel));
+    waterWork.set(index, wheel.work);
+  }
+  return { moved, steamOut, waterOut, waterWork, wheels, sides };
 }

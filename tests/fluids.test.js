@@ -389,11 +389,104 @@ test('water spreads the same to the left and to the right (no favorite side)', (
     left += waterOut.get(1 * 3 + 0) ?? 0;
     right += waterOut.get(1 * 3 + 2) ?? 0;
   }
-  assert.ok(Math.abs(left - right) < 1e-9, `left wheel ${left} right wheel ${right}`);
+  // The same stream through each, turning them opposite ways (the left one's water leans left: ↺).
+  assert.ok(right > 2, `right wheel ${right}`);
+  assert.ok(Math.abs(left + right) < 1e-9, `left wheel ${left} right wheel ${right}`);
 });
 
 test('steam spreads the same to the left and to the right too', () => {
   const cloud = worldFrom(['###', '.s.']);
   stepFluids(cloud, blockInfo);
   assert.ok(Math.abs(getFluid(cloud, 'steam', 0, 1) - getFluid(cloud, 'steam', 2, 1)) < 1e-12);
+});
+
+test('when streams meet in one cell, the wheels still get no more energy than the water really gave up', () => {
+  TEST_BLOCKS.waterWheel = { fluid: { sides: 'all' }, wheel: true };
+  LETTERS.O = 'waterWheel';
+  /**
+   * All the height energy in a world (each cell's own, plus how high the cell is).
+   * @param {object} world - the world
+   * @returns {number} the total
+   */
+  const energy = (world) => world.fluid.water.reduce((sum, amount, index) => {
+    const up = world.height - 1 - Math.floor(index / world.width);
+    return sum + storedEnergy(amount) + amount * up;
+  }, 0);
+  const pictures = [
+    ['~~O~~', '#####'], ['#~~~#', '#~O~#', '##.##', '##.##', '#####'], ['~~~~~', '~OOO~', '~O.O~', '#####'],
+    ['~~~', '~~~', 'OOO', '...', '###'], ['~#~', '~#~', '~#~', '~O~', '###'], ['~.~', '~.~', '~O~', '###'],
+  ];
+  for (const rows of pictures) {
+    const world = worldFrom(rows);
+    const start = energy(world);
+    let credited = 0;
+    for (let i = 0; i < 400; i++) {
+      for (const work of stepFluids(world, blockInfo).waterWork.values()) credited += work;
+      assert.ok(credited <= start - energy(world) + 1e-9, `${rows.join('/')} tick ${i}: credited ${credited}, gave up ${start - energy(world)}`);
+    }
+  }
+});
+
+test('water wheels are counted the same in a mirrored world: the flow the other way, the energy just the same', () => {
+  TEST_BLOCKS.waterWheel = { fluid: { sides: 'all' }, wheel: true };
+  LETTERS.O = 'waterWheel';
+  for (const rows of [['~~~..', '~~O..', '####.', '.....'], ['.~...', '.O...', '#..#.', '####.'], ['~~.', '~O.', '~..', '#..']]) {
+    const world = worldFrom(rows);
+    const mirror = worldFrom(rows.map((row) => [...row].reverse().join('')));
+    const at = world.cells.indexOf('waterWheel');
+    const other = mirror.cells.indexOf('waterWheel');
+    for (let i = 0; i < 40; i++) {
+      const a = stepFluids(world, blockInfo);
+      const b = stepFluids(mirror, blockInfo);
+      const one = a.wheels.get(at) ?? { lean: 0, sideOut: 0, down: 0, gross: 0, work: 0 };
+      const two = b.wheels.get(other) ?? { lean: 0, sideOut: 0, down: 0, gross: 0, work: 0 };
+      const what = `${rows.join('/')} tick ${i}: ${JSON.stringify(one)} and ${JSON.stringify(two)}`;
+      assert.ok(Math.abs(one.lean + two.lean) < 1e-12, what);       // sideways water: the other way
+      assert.ok(Math.abs(one.sideOut + two.sideOut) < 1e-12, what);
+      assert.ok(Math.abs(one.down - two.down) < 1e-12, what);       // falling water: just the same
+      assert.ok(Math.abs(one.gross - two.gross) < 1e-12, what);
+      assert.ok(Math.abs(one.work - two.work) < 1e-12, what);
+      // Once any water leans sideways, the wheels turn opposite ways.
+      if (Math.abs(one.lean) > 1e-9) assert.ok(Math.abs(a.waterOut.get(at) + b.waterOut.get(other)) < 1e-12, what);
+    }
+  }
+});
+
+test('in lots of random worlds, wheels never get more energy than the water has given up so far, and no water is lost', () => {
+  TEST_BLOCKS.waterWheel = { fluid: { sides: 'all' }, wheel: true };
+  let seed = 7;
+  /**
+   * The next make-believe random number (the same ones every run).
+   * @returns {number} from 0 up to 1
+   */
+  const random = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  /**
+   * All the height energy in a world (each cell's own, plus how high the cell is).
+   * @param {object} world - the world
+   * @returns {number} the total
+   */
+  const energy = (world) => world.fluid.water.reduce((sum, amount, index) => {
+    const up = world.height - 1 - Math.floor(index / world.width);
+    return sum + storedEnergy(amount) + amount * up;
+  }, 0);
+  for (let trial = 0; trial < 60; trial++) {
+    const world = createWorld(6 + Math.floor(random() * 4), 5 + Math.floor(random() * 5));
+    world.cells.forEach((_, index) => {
+      const pick = random();
+      const name = pick < 0.5 ? 'air' : pick < 0.65 ? 'stone' : pick < 0.85 ? 'waterWheel' : 'pipe';
+      setBlock(world, index % world.width, Math.floor(index / world.width), name);
+      if (name !== 'stone' && random() < 0.5) world.fluid.water[index] = random() < 0.3 ? 1 + random() * 0.8 : random();
+    });
+    const water = total(world, 'water');
+    const start = energy(world);
+    let credited = 0;
+    for (let i = 0; i < 120; i++) {
+      for (const work of stepFluids(world, blockInfo).waterWork.values()) credited += work;
+      assert.ok(credited <= start - energy(world) + 1e-9, `world ${trial} tick ${i}: credited ${credited}, gave up ${start - energy(world)}`);
+    }
+    assert.ok(Math.abs(total(world, 'water') - water) < 1e-9, `world ${trial}: water ${water} → ${total(world, 'water')}`);
+  }
 });
