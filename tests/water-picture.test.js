@@ -482,6 +482,19 @@ test('digging at water you can see always takes that water, even where it is onl
   assert.equal(scoop(world, 1, 0, blockInfo), false);
 });
 
+test('a speck of real water in a cell that is drawn full does not swallow the scoop', () => {
+  const world = shaft(10);
+  run(world, 400);
+  const cell = 4 * 3 + 1; // drawn full, but its water is really squished into the cells below
+  world.fluid.water[cell] = 2e-15; // a leftover far too small to see or draw
+  const { shown } = waterPicture(world, blockInfo);
+  assert.ok(shown[cell] > 0.99, `drawn ${shown[cell]}`);
+  const before = total(world.fluid.water);
+  assert.equal(scoop(world, 1, 4, blockInfo), true);
+  assert.ok(Math.abs(before - total(world.fluid.water) - shown[cell]) < 1e-9, `the scoop took ${before - total(world.fluid.water)} of the ${shown[cell]} drawn there`);
+  assert.equal(world.fluid.water[cell], 0, 'and the speck is gone too');
+});
+
 test('DIG on the Build page takes the block and one scoop; water over a full cell stays behind', () => {
   const world = createWorld(3, 3);
   setFluid(world, 'water', 1, 1, 1.6);

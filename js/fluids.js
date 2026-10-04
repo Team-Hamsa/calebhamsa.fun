@@ -287,13 +287,18 @@ export function scoop(world, x, y, blockInfo) {
     steam[index] = Math.max(0, steam[index] - FULL);
     took = true;
   }
-  if (water[index] > 0) {
+  if (water[index] >= MIN_AMOUNT) {
     water[index] = Math.max(0, water[index] - FULL);
     return true;
   }
-  // No water really here. Is some DRAWN here? Then take that much from
-  // the water underneath, starting at its top cell and working down.
+  // No water really here (or only a speck too small to see or draw: that
+  // goes into the bucket too). Is some DRAWN here? Then take that much
+  // from the water underneath, starting at its top cell and working down.
   const picture = waterPicture(world, blockInfo);
+  if (water[index] > 0) {
+    water[index] = 0;
+    took = true;
+  }
   let want = picture.shown[index];
   let from = picture.source[index];
   while (want > 0 && from >= 0 && from < water.length && water[from] > 0) {
