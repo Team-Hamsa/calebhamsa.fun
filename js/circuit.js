@@ -336,7 +336,10 @@ function shortedByShape(battery, point, points, touching, width) {
  *   axis   'h' or 'v' for parts (null for wires)
  *   faces  the sides it's connected through
  *   arms   current out through each connected side (negative = flowing in)
- *   level  for parts: current through it ÷ REFERENCE_CURRENT (0 to MAX_LEVEL)
+ *   level  for parts: current through it ÷ REFERENCE_CURRENT (0 to MAX_LEVEL),
+ *          for drawing (a lamp can only shine so bright)
+ *   current  for parts: the real current through it, with no limit
+ *          (a motor's strength and a generator's push-back use this)
  *   spark  true for a short-circuited battery
  *   group  which separate circuit it's in (a number), or null if it's a gap
  *
@@ -353,7 +356,7 @@ export function solveCircuit(world, blockInfo) {
       if (!isElectric(info)) continue;
       const index = y * world.width + x;
       const axis = info.conducts ? null : partAxis(world, x, y, blockInfo);
-      cells.set(index, { axis, faces: [], arms: {}, level: 0, spark: false, group: null });
+      cells.set(index, { axis, faces: [], arms: {}, level: 0, current: 0, spark: false, group: null });
       const part = activePart(info, world);
       if (info.conducts || part) {
         points.set(index, { x, y, info, part, axis, sides: sidesFor(info, axis), push: partPush(part, world, x, y) });
@@ -413,6 +416,7 @@ export function solveCircuit(world, blockInfo) {
     if (!point.part) continue;
     const cell = cells.get(index);
     const through = Math.max(0, ...point.sides.map((side) => Math.abs(cell.arms[side] ?? 0)));
+    cell.current = through;
     cell.level = Math.min(MAX_LEVEL, through / REFERENCE_CURRENT);
     if (point.push !== 0 && through > SHORT_CURRENT) {
       cell.spark = shortedByShape(index, point, points, touching, world.width);

@@ -140,10 +140,10 @@ export function generatorDrag(world, x, y) {
   const index = y * world.width + x;
   const conducts = world.signals.spin?.conducts;
   const cell = world.signals.spin?.cells?.get(index);
-  const level = world.signals.electric?.cells?.get(index)?.level;
+  const current = world.signals.electric?.cells?.get(index)?.current;
   // Last tick's push, rounded the same way the circuit rounds it (partPush).
   const push = Math.floor(Math.abs((cell?.speed ?? 0) * GENERATOR_GAIN) * 10 + 1e-9) / 10;
-  if (conducts && push >= 0.1 && level !== undefined) conducts.set(index, (level * REFERENCE_CURRENT) / push);
+  if (conducts && push >= 0.1 && current !== undefined) conducts.set(index, current / push);
   const perVolt = conducts?.get(index) ?? 0;
   return GENERATOR_TORQUE * perVolt * GENERATOR_GAIN; // volts per turn × current per volt × push-back per current
 }
@@ -167,7 +167,10 @@ export function motorSource(world, x, y) {
   if (!cell || cell.level < MIN_SOURCE) return null;
   const out = cell.arms[cell.axis === 'v' ? 'up' : 'right'] ?? 0;
   if (out === 0) return null;
-  return { speed: Math.sign(out) * cell.level * MOTOR_SPEED, strength: cell.level * MOTOR_STRENGTH };
+  // The real current, not `level` (that stops at MAX_LEVEL, only so lamps
+  // don't get too bright): five batteries make a motor five times as strong.
+  const amount = cell.current / REFERENCE_CURRENT;
+  return { speed: Math.sign(out) * amount * MOTOR_SPEED, strength: amount * MOTOR_STRENGTH };
 }
 
 /**

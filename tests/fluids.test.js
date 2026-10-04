@@ -6,6 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, getFluid, setBlock, setFluid } from '../js/world.js';
+import { REFERENCE_CURRENT } from '../js/circuit.js';
 import {
   BOIL_RATE, CONDENSE_RATE, FAUCET_RATE, PUMP_RATE, SQUISH, openSides, stableBelow, stepFluids,
 } from '../js/fluids.js';
@@ -232,7 +233,7 @@ test('a powered pump pushes water uphill; an unpowered one does not', () => {
   const off = run(build(), 100);
   assert.ok(getFluid(off, 'water', 1, 0) < 0.001);
   const on = build();
-  on.signals.electric = { cells: new Map([[1 * 3 + 1, { level: 1 }]]) };
+  on.signals.electric = { cells: new Map([[1 * 3 + 1, { level: 1, current: REFERENCE_CURRENT }]]) };
   stepFluids(on, blockInfo);
   assert.ok(Math.abs(getFluid(on, 'water', 1, 0) - PUMP_RATE) < 1e-9);
 });

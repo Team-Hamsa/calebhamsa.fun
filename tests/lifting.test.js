@@ -16,7 +16,7 @@ import { spinAt } from '../js/blocks/gears.js';
 const LETTERS = {
   '.': 'air', '#': 'stone', s: 'gearSmall', G: 'gearBig', '-': 'axle', R: 'crankCW', Q: 'crankCCW',
   w: 'winch', '|': 'rope', P: 'pulley', h: 'pulleyHook', c: 'crate', I: 'ironWeight', S: 'sand',
-  f: 'faucet', O: 'waterWheel', D: 'drain',
+  f: 'faucet', O: 'waterWheel', D: 'drain', W: 'wire', B: 'battery', M: 'motor',
 };
 
 /**
@@ -149,6 +149,18 @@ test('more water is stronger: one faucet\'s wheel can\'t lift the hooked iron we
     'f...........', '............', '.O-----sw...', '.D......|...', '........|...', '........h...', '........I...', '############',
   ]), 80);
   assert.equal(rowOf(world, 8, 'ironWeight'), 6);
+});
+
+test('more batteries make a motor stronger: five batteries lift the iron weight with no gears', () => {
+  // Five batteries and a motor in a loop; a big gear on the motor's shaft, axles over to the winch.
+  const world = run(make(['.....G--w.', 'WBBBBMBW|.', 'W......W|.', 'W......W|.', 'WWWWWWWWI.']), 24);
+  assert.equal(world.signals.spin.cells.get(8).stalled, false);
+  assert.ok(rowOf(world, 8, 'ironWeight') < 4, 'the iron weight did not move');
+});
+
+test('one battery\'s motor is only as strong as a crank: it can\'t lift the iron weight', () => {
+  const world = run(make(['.....G--w.', 'WWWWWMBW|.', 'W......W|.', 'W......W|.', 'WWWWWWWWI.']), 24);
+  assert.equal(world.signals.spin.cells.get(8).stalled, true);
 });
 
 test('heavier loads go up slower', () => {

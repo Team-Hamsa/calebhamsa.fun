@@ -21,7 +21,7 @@
  * do, and pipes only along their open sides (see openSides).
  */
 import { AIR, getBlock, inBounds } from './world.js';
-import { OPPOSITE, SIDES } from './circuit.js';
+import { OPPOSITE, REFERENCE_CURRENT, SIDES } from './circuit.js';
 
 /** A full cell. */
 export const FULL = 1;
@@ -428,7 +428,9 @@ export function runSpecials(world, blockInfo, sides) {
     }
     const front = info.fluid?.pump;
     if (front) {
-      const level = world.signals.electric?.cells?.get(index)?.level ?? 0;
+      // The real current (not `level`, which stops at 2 so lamps don't get
+      // too bright): more batteries really do pump faster.
+      const level = (world.signals.electric?.cells?.get(index)?.current ?? 0) / REFERENCE_CURRENT;
       if (level < PUMP_ON_LEVEL) continue;
       const back = beside(index, OPPOSITE[front]);
       const ahead = beside(index, front);
