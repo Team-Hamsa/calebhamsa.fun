@@ -16,6 +16,7 @@ import { spinAt } from '../js/blocks/gears.js';
 const LETTERS = {
   '.': 'air', '#': 'stone', s: 'gearSmall', G: 'gearBig', '-': 'axle', R: 'crankCW', Q: 'crankCCW',
   w: 'winch', '|': 'rope', P: 'pulley', h: 'pulleyHook', c: 'crate', I: 'ironWeight', S: 'sand',
+  f: 'faucet', O: 'waterWheel', D: 'drain',
 };
 
 /**
@@ -59,7 +60,7 @@ test('the lifting tab shows its six blocks', () => {
 });
 
 test('a crank turning a winch ↻ lifts a crate, as far as the rope goes', () => {
-  const world = run(make(['Rw', '.|', '.|', '.|', '.c', '##']), 12);
+  const world = run(make(['Rw', '.|', '.|', '.|', '.c', '##']), 24);
   assert.equal(rowOf(world, 1, 'crate'), 2); // up two; the last bit of rope stays
   assert.equal(getBlock(world, 1, 1), 'rope');
 });
@@ -82,7 +83,7 @@ test('the iron weight is too heavy for a crank: everything stalls', () => {
 test('geared down twice (a quarter as fast) the crank lifts the iron weight', () => {
   // crank 1 → small 1 → big −½ → axle −½ → small −½ → big ¼ → winch ¼
   const world = run(make(['RsG-sGw', '......|', '......|', '......|', '......I', '......#']), 40);
-  assert.equal(spinAt(world, 6, 0), 0.25);
+  assert.equal(spinAt(world, 6, 0), 0.125); // a quarter as fast, then halved again by the heavy load
   assert.ok(rowOf(world, 6, 'ironWeight') < 4, 'the iron weight did not move');
 });
 
@@ -132,6 +133,31 @@ test('cutting the rope in the middle drops the crate', () => {
   setBlock(world, 1, 2, 'air');
   run(world, 6);
   assert.equal(rowOf(world, 1, 'crate'), 6);
+});
+
+test('lots of water is strong: two water wheels lift a hooked iron weight with no gears at all', () => {
+  // Like Caleb's dad's machine: six faucets, two wheels on one axle, a gear, the winch.
+  const world = run(make([
+    'fff.fff.....', '............', '.O---O-sw...', '.D...D..|...', '........|...', '........h...', '........I...', '############',
+  ]), 80);
+  assert.equal(world.signals.spin.cells.get(2 * 12 + 8).stalled, false);
+  assert.ok(rowOf(world, 8, 'ironWeight') < 6, 'the iron weight did not move');
+});
+
+test('more water is stronger: one faucet\'s wheel can\'t lift the hooked iron weight that six can', () => {
+  const world = run(make([
+    'f...........', '............', '.O-----sw...', '.D......|...', '........|...', '........h...', '........I...', '############',
+  ]), 80);
+  assert.equal(rowOf(world, 8, 'ironWeight'), 6);
+});
+
+test('heavier loads go up slower', () => {
+  const crate = run(make(['Rw', '.|', '.|', '.|', '.|', '.c', '.#']), 4);
+  const hookedIron = run(make(['QsGw', '...|', '...|', '...|', '...h', '...I', '...#']), 4);
+  // Crank → winch with a crate (1 of its 2): half the crank's speed.
+  assert.equal(spinAt(crate, 1, 0), 0.5);
+  // Geared down once, hooked iron (counts 2 → 1 at the crank): also half... of half.
+  assert.equal(spinAt(hookedIron, 3, 0), 0.25);
 });
 
 test('every lifting block can be drawn, in the world and in the palette', () => {

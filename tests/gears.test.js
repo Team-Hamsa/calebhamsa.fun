@@ -9,7 +9,8 @@ import { createWorld, getBlock, setBlock, setFluid, tick } from '../js/world.js'
 import { allSystems, blockInfo, blocksInPack, isKnownBlock, refreshSignals } from '../js/blocks/registry.js';
 import { drawWorld } from '../js/block-art.js';
 import { PUMP_RATE } from '../js/fluids.js';
-import gears, { GENERATOR_GAIN, WHEEL_GAIN, spinAt } from '../js/blocks/gears.js';
+import gears, { CRANK_SPEED, CRANK_STRENGTH, GENERATOR_GAIN, GENERATOR_TORQUE, WHEEL_GAIN, spinAt } from '../js/blocks/gears.js';
+import { REFERENCE_CURRENT } from '../js/circuit.js';
 
 /** What each letter in a test picture means. */
 const LETTERS = {
@@ -73,7 +74,7 @@ test('a crank turning a generator lights a lamp, whichever way it turns', () => 
       'W.W',
       'WLW',
     ], 3);
-    assert.ok(lampLevel(world, 1, 3) > 0.5, `crank ${crank}: lamp at ${lampLevel(world, 1, 3)}`);
+    assert.ok(lampLevel(world, 1, 3) > 0.3, `crank ${crank}: lamp at ${lampLevel(world, 1, 3)}`);
   }
 });
 
@@ -125,12 +126,19 @@ test('the water wheel is drawn with its spinning record (so it can be seen turni
   assert.ok(handed && typeof handed.speed === 'number' && handed.speed > 0, `wheel got ${JSON.stringify(handed)}`);
 });
 
-test('gears change speed, not power: a generator geared up twice as fast pushes the same', () => {
-  const direct = run(['.R.', 'WEW', 'W.W', 'WLW'], 3);
-  const gearedUp = run(['RGs.', '.WEW', '.W.W', '.WLW'], 3); // crank → big gear → small gear (2× faster) → generator
-  assert.equal(spinAt(gearedUp, 2, 1), -2); // twice as fast (the other way round: it meshes with the small gear)
-  assert.ok(Math.abs(lampLevel(gearedUp, 2, 3) - lampLevel(direct, 1, 3)) < 0.06,
-    `direct ${lampLevel(direct, 1, 3)} vs geared ${lampLevel(gearedUp, 2, 3)}`);
+test('gears don\'t make power: a geared-up generator is harder to turn, and the lamp never gets more than the crank puts in', () => {
+  const direct = run(['.R.', 'WEW', 'W.W', 'WLW'], 10);
+  const gearedUp = run(['RGs.', '.WEW', '.W.W', '.WLW'], 10); // crank → big gear → small gear (2× faster) → generator
+  // Geared up, the generator pushes back twice as hard on twice the turning: the crank slows down.
+  assert.ok(spinAt(gearedUp, 0, 0) < spinAt(direct, 1, 0), `crank ${spinAt(gearedUp, 0, 0)} vs ${spinAt(direct, 1, 0)}`);
+  // The most work a crank can do: half its strength at half its top speed.
+  const crankBest = (CRANK_STRENGTH / 2) * (CRANK_SPEED / 2);
+  for (const [world, x] of [[direct, 1], [gearedUp, 2]]) {
+    const current = lampLevel(world, x, 3) * REFERENCE_CURRENT;
+    const lampPower = current * current * 1; // a lamp's resistance is 1
+    assert.ok(lampPower <= crankBest * (GENERATOR_GAIN / GENERATOR_TORQUE), `lamp gets ${lampPower}`);
+    assert.ok(lampPower > 0.05, 'the lamp should still light');
+  }
 });
 
 test('a geared-up motor and generator wind down when the crank stops (no perpetual motion)', () => {
@@ -141,6 +149,12 @@ test('a geared-up motor and generator wind down when the crank stops (no perpetu
   setBlock(world, 0, 1, 'crankStop');
   for (let i = 0; i < 60; i++) tick(world, systems, blockInfo);
   for (let x = 1; x <= 4; x++) assert.equal(spinAt(world, x, 1), 0, `x=${x} still turning`);
+});
+
+test('a generator lighting more lamps is harder to turn: the crank slows down', () => {
+  const one = run(['.R.', 'WEW', 'W.W', 'WLW'], 10);
+  const two = run(['.R.', 'WEW', 'WLW', 'WLW'], 10); // a second lamp side by side: more current
+  assert.ok(spinAt(two, 1, 0) < spinAt(one, 1, 0), `one lamp ${spinAt(one, 1, 0)}, two ${spinAt(two, 1, 0)}`);
 });
 
 test('water power cannot loop forever either: pump → wheel → generator loses energy', () => {

@@ -15,6 +15,7 @@
  */
 import { solveSpin, MIN_SPEED } from '../spin.js';
 import { swapBlock } from '../world.js';
+import { REFERENCE_CURRENT } from '../circuit.js';
 
 /**
  * How fast a crank turns, in turns per second.
@@ -22,8 +23,19 @@ import { swapBlock } from '../world.js';
  */
 export const CRANK_SPEED = 1;
 
+/**
+ * How hard a crank can push (its "torque"), when it's held still. This is
+ * the unit every other strength is measured in. The faster it turns, the
+ * less it can push: at full speed (nothing to push against) it pushes nothing.
+ * 🧪 Try this! 5, a grown-up's crank: it lifts the iron weight with no gears.
+ */
+export const CRANK_STRENGTH = 2;
+
 /** How fast a motor turns with a normal amount of current (level 1). */
 export const MOTOR_SPEED = 1;
+
+/** How hard a motor can push with a normal amount of current (level 1): more current, stronger. */
+export const MOTOR_STRENGTH = 2;
 
 /**
  * How fast a water wheel turns for each unit of water flowing through
@@ -32,13 +44,29 @@ export const MOTOR_SPEED = 1;
 export const WHEEL_GAIN = 20;
 
 /**
- * How hard a generator pushes (volts) for each turn per second. Less
- * than 1, so motor → generator → motor loops run down: no machine runs
- * forever on its own.
- * 🧪 Try this! 1.5 and build a motor powered by its own generator... it
- * runs away faster and faster (real machines can't do that!).
+ * How hard a water wheel can push for each unit of water flowing through
+ * it per tick. More water hitting the paddles pushes harder: one faucet
+ * (0.05 a tick) makes it as strong as a crank.
+ */
+export const WHEEL_STRENGTH = 40;
+
+/**
+ * How hard a generator pushes (volts) for each turn per second.
  */
 export const GENERATOR_GAIN = 0.8;
+
+/**
+ * How hard the electricity a generator makes pushes back on its shaft,
+ * for each unit of current. Making electricity takes work: that's why a
+ * generator lighting lots of lamps is harder to turn. A generator gives
+ * back GENERATOR_GAIN ÷ GENERATOR_TORQUE (8 out of 10) of the work that
+ * turns it as electricity; the rest is lost as heat, like in a real one.
+ * So no machine can run forever on its own.
+ * 🧪 Try this! 0.5: the generator gives back more than you put in, and a
+ * motor powered by its own generator runs faster and faster (real
+ * machines can't do that!).
+ */
+export const GENERATOR_TORQUE = 1;
 
 /** Sources slower than this don't drive anything. */
 const MIN_SOURCE = 0.05;
@@ -81,12 +109,8 @@ export function spinAt(world, x, y) {
 }
 
 /**
- * A generator's push: how fast the SOURCE driving its gears turns ×
- * GENERATOR_GAIN, in the direction the generator turns (turning the
- * other way swaps its + end). Gears can make a generator spin faster,
- * but not stronger: speeding it up with gears doesn't make extra power,
- * just like in real life. That's why a geared-up motor and generator
- * still wind down.
+ * A generator's push: how fast it turns × GENERATOR_GAIN. Turning the
+ * other way swaps its + end. Faster = more volts.
  * @param {object} world - the world
  * @param {number} x - the generator's column
  * @param {number} y - the generator's row
@@ -95,46 +119,69 @@ export function spinAt(world, x, y) {
 export function generatorPush(world, x, y) {
   const cell = world.signals.spin?.cells?.get(y * world.width + x);
   if (!cell || Math.abs(cell.speed) < MIN_SPEED) return 0;
-  return Math.sign(cell.speed) * cell.drive * GENERATOR_GAIN;
+  return cell.speed * GENERATOR_GAIN;
 }
 
 /**
- * How fast a motor wants to turn: as hard as the current through it,
- * and which way depends on which way the current goes. Current coming
- * out of its right end (or top end, facing up-down) turns it ↻.
+ * How hard a generator pushes back on its shaft for each turn per second.
  *
- * A motor powered by a generator turned by the motor's OWN gears isn't
- * driving anything: it's only getting back (some of) its own push, so it
- * can't keep itself going or fight the crank that's really doing the work.
+ * Its push makes current flow: how much depends on what it's wired to
+ * (more lamps side by side = more current). The current pushes back on
+ * the shaft. We learn "how much current for each volt" from the last
+ * tick's electricity (that doesn't change unless the wiring does), and
+ * remember it in world.signals.spin.conducts, so a slow generator whose
+ * push rounds down to 0 still remembers its lamps.
+ * @param {object} world - the world
+ * @param {number} x - the generator's column
+ * @param {number} y - the generator's row
+ * @returns {number} push-back (strength) per turn per second
+ */
+export function generatorDrag(world, x, y) {
+  const index = y * world.width + x;
+  const conducts = world.signals.spin?.conducts;
+  const cell = world.signals.spin?.cells?.get(index);
+  const level = world.signals.electric?.cells?.get(index)?.level;
+  // Last tick's push, rounded the same way the circuit rounds it (partPush).
+  const push = Math.floor(Math.abs((cell?.speed ?? 0) * GENERATOR_GAIN) * 10 + 1e-9) / 10;
+  if (conducts && push >= 0.1 && level !== undefined) conducts.set(index, (level * REFERENCE_CURRENT) / push);
+  const perVolt = conducts?.get(index) ?? 0;
+  return GENERATOR_TORQUE * perVolt * GENERATOR_GAIN; // volts per turn × current per volt × push-back per current
+}
+
+/**
+ * How a motor drives: the more current through it, the faster and
+ * stronger. Which way depends on which way the current goes: current
+ * coming out of its right end (or top end, facing up-down) turns it ↻.
+ *
+ * (A motor powered by a generator on its OWN gears can't keep itself
+ * going: the generator only gives back 8 tenths of the work, so each time
+ * round there's less, and it winds down. No special rule needed!)
  * @param {object} world - the world
  * @param {number} x - the motor's column
  * @param {number} y - the motor's row
- * @param {number[]} [group] - the indexes of the spinning blocks in its group
- * @returns {number|null} turns per second, or null if it has no power
+ * @returns {{speed: number, strength: number}|null} its top speed and strength, or null if it has no power
  */
-export function motorSource(world, x, y, group = []) {
+export function motorSource(world, x, y) {
   const electric = world.signals.electric?.cells;
   const cell = electric?.get(y * world.width + x);
   if (!cell || cell.level < MIN_SOURCE) return null;
-  const ownGenerator = group.some((index) => world.cells[index] === 'generator' && electric.get(index)?.group === cell.group);
-  if (ownGenerator) return null;
   const out = cell.arms[cell.axis === 'v' ? 'up' : 'right'] ?? 0;
   if (out === 0) return null;
-  return Math.sign(out) * cell.level * MOTOR_SPEED;
+  return { speed: Math.sign(out) * cell.level * MOTOR_SPEED, strength: cell.level * MOTOR_STRENGTH };
 }
 
 /**
- * How fast a water wheel wants to turn: the water flowing through it
- * (smoothed), × WHEEL_GAIN. Water going down or right turns it ↻.
+ * How a water wheel drives: the more water flowing through it
+ * (smoothed), the faster AND stronger. Water going down or right turns it ↻.
  * @param {object} world - the world
  * @param {number} x - the wheel's column
  * @param {number} y - the wheel's row
- * @returns {number|null} turns per second, or null if hardly any water flows
+ * @returns {{speed: number, strength: number}|null} its top speed and strength, or null if hardly any water flows
  */
 export function wheelSource(world, x, y) {
   const flow = world.signals.spin?.wheelFlow?.get(y * world.width + x) ?? 0;
   const speed = flow * WHEEL_GAIN;
-  return Math.abs(speed) < MIN_SOURCE ? null : speed;
+  return Math.abs(speed) < MIN_SOURCE ? null : { speed, strength: Math.abs(flow) * WHEEL_STRENGTH };
 }
 
 // =============================================================
@@ -154,7 +201,8 @@ export function refreshSpin(world, blockInfo) {
   const blocks = world.cells.join(',');
   if (world.signals.spin?.blocks === blocks) return;
   const wheelFlow = world.signals.spin?.wheelFlow ?? new Map();
-  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, blocks };
+  const conducts = world.signals.spin?.conducts ?? new Map();
+  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, conducts, blocks };
 }
 
 /**
@@ -174,7 +222,10 @@ export function gearsSystem(world, blockInfo) {
     const last = before.get(index) ?? 0;
     wheelFlow.set(index, last + ((waterOut.get(index) ?? 0) - last) / WHEEL_SMOOTHING);
   });
-  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, blocks: world.cells.join(',') };
+  if (!world.signals.spin) world.signals.spin = { cells: new Map() };
+  world.signals.spin.conducts ??= new Map();
+  const conducts = world.signals.spin.conducts;
+  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, conducts, blocks: world.cells.join(',') };
   if (world.signals.spin.turning) world.animating = true;
   return false;
 }
@@ -430,7 +481,7 @@ function crank(speed, name) {
     hidden: name !== 'crankStop',
     turning: speed !== 0,
     spin: { kind: 'hub' },
-    spinSource: speed === 0 ? undefined : () => speed,
+    spinSource: speed === 0 ? undefined : () => ({ speed, strength: CRANK_STRENGTH }),
     use: (ctx) => swapBlock(ctx.world, ctx.x, ctx.y, CRANK_TURNS[name]),
     drawSignals: drawCrank,
   };
@@ -439,7 +490,8 @@ function crank(speed, name) {
 /**
  * Every block in this pack, in the order the palette shows them.
  *   spin         how it joins the spinning: a gear (with teeth), an axle, or a hub (a shaft)
- *   spinSource   how fast it wants to turn right now (null = not driving)
+ *   spinSource   its top speed and strength right now (null = not driving)
+ *   spinDrag     how hard it pushes back for each turn per second (generator)
  *   wheel        the 💧 pack counts water flowing through it
  *   part         it's also an ⚡ circuit part (motor, generator)
  *   hidden       not in the palette (you get it with ✋)
@@ -463,7 +515,7 @@ const blocks = {
   },
   generator: {
     title: 'Generator', color: '#546e7a',
-    spin: { kind: 'hub' }, part: { resistance: 0.05, pushNow: generatorPush }, drawSignals: drawGenerator,
+    spin: { kind: 'hub' }, part: { resistance: 0.05, pushNow: generatorPush }, spinDrag: generatorDrag, drawSignals: drawGenerator,
   },
   crankCW: crank(CRANK_SPEED, 'crankCW'),
   crankCCW: crank(-CRANK_SPEED, 'crankCCW'),
@@ -478,16 +530,18 @@ const guide = {
   rules: [
     'Gears that touch turn OPPOSITE ways. Things on the same shaft (an axle, or a crank, wheel, motor or generator touching a gear) turn the SAME way.',
     'Jammed! Three big gears touching in an L can\'t turn: each would have to turn both ways at once. They show a red ❌.',
+    'Everything that turns has a top speed and a strength. The harder it pushes, the slower it goes. Two on the same gears add their strength.',
     'Gears change speed, not power: they can make things faster or stronger, never both.',
+    'Generators push back: the more lamps they light, the harder they are to turn.',
     'Nothing runs forever. A motor powered by its own generator slows down and stops, like a real one.',
   ],
   blocks: {
     gearSmall: { does: '8 teeth. Turns the gears next to it the other way.' },
     gearBig: { does: '16 teeth: half as fast as a small gear it touches. Big gears also touch corner to corner.' },
     axle: { does: 'A rod. Carries turning in a straight line, the same way round.' },
-    crankStop: { does: 'Hand power! Red knob = stopped, green knob = turning.', use: 'stop → ↻ → ↺ → stop' },
-    waterWheel: { does: 'Turns when water flows through it. More water = faster.' },
-    motor: { does: 'Turns electricity into turning. Put it in a loop with a battery. Flip the battery round and it turns the other way.' },
+    crankStop: { does: 'Hand power, strength 2! Red knob = stopped, green knob = turning.', use: 'stop → ↻ → ↺ → stop' },
+    waterWheel: { does: 'Turns when water flows through it. More water = faster AND stronger.' },
+    motor: { does: 'Turns electricity into turning: more electricity = faster and stronger. Put it in a loop with a battery. Flip the battery round and it turns the other way.' },
     generator: { does: 'Turns turning into electricity: wire it up like a battery. Its + end swaps when it turns the other way.' },
   },
 };

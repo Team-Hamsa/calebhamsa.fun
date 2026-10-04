@@ -158,7 +158,7 @@ const SCENES = {
     '.D..WWW',
     '#######',
   ] },
-  'crane': { ticks: 6, rows: [
+  'crane': { ticks: 12, rows: [
     'Rw',
     '.|',
     '.|',
@@ -173,7 +173,7 @@ const SCENES = {
     '.I',
     '.#',
   ] },
-  'iron-geared': { ticks: 24, rows: [
+  'iron-geared': { ticks: 48, rows: [
     'RiG-iGw',
     '......|',
     '......|',
@@ -181,7 +181,7 @@ const SCENES = {
     '......I',
     '......#',
   ] },
-  'pulley-hook': { ticks: 24, rows: [
+  'pulley-hook': { ticks: 48, rows: [
     'QiGw',
     '...|',
     '...|',
@@ -190,7 +190,7 @@ const SCENES = {
     '...I',
     '...#',
   ] },
-  'well': { ticks: 8, rows: [
+  'well': { ticks: 16, rows: [
     'U||w',
     '|..R',
     '|...',

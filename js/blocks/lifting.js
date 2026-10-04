@@ -7,7 +7,8 @@
  *    crank → small gear → BIG gear → ...   slower, but stronger: ✓
  *
  * A winch turning slower is stronger, so gearing it down lets the same
- * crank lift more. You trade speed for strength. A pulley hook does the
+ * crank lift more. You trade speed for strength. And the heavier the
+ * load, the slower it goes, just like a real crane. A pulley hook does the
  * same: two bits of rope share the load, so it counts half as heavy, but
  * it goes up half as fast.
  *
@@ -17,7 +18,7 @@
  * tick, and draws everything.
  */
 import { MIN_SPEED } from '../spin.js';
-import { canWindIn, letOut, loadBelow, ropeArms, traceRope, windIn } from '../lift.js';
+import { letOut, loadBelow, ropeArms, traceRope, windIn } from '../lift.js';
 import { TICKS_PER_SECOND, turned } from './gears.js';
 
 /**
@@ -26,34 +27,24 @@ import { TICKS_PER_SECOND, turned } from './gears.js';
  */
 export const ROPE_PER_TURN = 2;
 
-/**
- * How strong turning things are: how much weight a source turning at
- * 1 turn a second can lift with a winch turning at 1 turn a second.
- * 🧪 Try this! 4, and a crank lifts the iron weight with no gears at all.
- */
-export const STRENGTH = 1;
-
 // =============================================================
 // Load and effort
 // =============================================================
 
 /**
- * How much "drive" a winch needs to turn at this speed: its load's
- * weight × how fast it winds. Turning ↺ lets the rope out, and that's
- * free (the load's weight does the work). spin.js adds these up and
- * stalls the gears if the source isn't strong enough.
+ * How hard the load on a winch's rope pulls on it: its weight, pulling
+ * the rope out (that's the ↺ way, so it's a minus). spin.js adds it to
+ * the gears: if the cranks, motors and water wheels can't push harder
+ * than this, it stalls. The closer the load is to their strength, the
+ * slower it goes up.
  * @param {object} world - the world
  * @param {number} x - the winch's column
  * @param {number} y - the winch's row
- * @param {number} speed - how fast it would turn (+ = ↻, winding in)
  * @param {Function} blockInfo - looks up what a block name means
- * @returns {number} the drive needed (0 if nothing to lift)
+ * @returns {number} the pull (0 if nothing hangs on it)
  */
-export function winchLoad(world, x, y, speed, blockInfo) {
-  if (speed <= 0) return 0;
-  const rope = traceRope(world, x, y, blockInfo);
-  if (!canWindIn(world, rope, blockInfo)) return 0; // wound all the way in: nothing to pull
-  return (loadBelow(world, rope, blockInfo).weight * speed) / STRENGTH;
+export function winchLoad(world, x, y, blockInfo) {
+  return -loadBelow(world, traceRope(world, x, y, blockInfo), blockInfo).weight;
 }
 
 // =============================================================
@@ -257,7 +248,7 @@ function drawWinch(ctx, info, left, top, size, cell, ticks) {
 /**
  * Every block in this pack, in the order the palette shows them.
  *   spin       the winch joins gear trains like any hub (a shared shaft)
- *   spinLoad   how much drive the winch needs to lift its load
+ *   spinLoad   how hard its load pulls on it
  *   rope       rope runs through it (rope and pulleys; it only turns at pulleys)
  *   falls      falls like sand (unless it hangs on a winch's rope)
  *   weight     how heavy it is to lift (1 if not given)
@@ -288,8 +279,9 @@ const blocks = {
 const guide = {
   rules: [
     'A winch turning ↻ winds the rope in (up). Turning ↺ lets it out (down).',
-    'Heavy things need more effort. Too heavy, and everything STALLS: nothing turns and the winch shows a red ⬇.',
+    'Heavy things go up slower. Too heavy for the crank, motor or water wheel, and everything STALLS: nothing turns and the winch shows a red ⬇.',
     'Slower is stronger! A small gear driving a big gear makes the winch slower, so it can lift more. Gearing UP makes it weaker.',
+    'Or add strength: two cranks, more batteries for a motor, or more water on a water wheel.',
     'Dig the rope and whatever hangs on it falls.',
   ],
   blocks: {
@@ -298,7 +290,7 @@ const guide = {
     pulley: { does: 'A wheel the rope runs over, so it can change direction: up a tower and down the other side.' },
     pulleyHook: { does: 'Hang it on the rope with the load under it. The load counts half as heavy, but goes up half as fast.' },
     crate: { does: 'Weighs 1. Falls like sand, unless it hangs on the end of a winch\'s rope.' },
-    ironWeight: { does: 'Weighs 4. Too heavy for a crank on its own: gear it down!' },
+    ironWeight: { does: 'Weighs 4. Too heavy for a crank on its own: gear it down, or add strength!' },
   },
 };
 

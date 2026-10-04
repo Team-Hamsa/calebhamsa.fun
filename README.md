@@ -164,18 +164,29 @@ or a crank, wheel, motor or generator touching a gear) turn the **same** way.
 
 **Jammed!** Three big gears all touching each other (in an L) can't turn: each
 one would have to turn both ways at once. The whole group stops and shows a
-red ❌ (![Jammed gear](docs/blocks/gearBig-jammed.png)). Two cranks turning
-opposite ways on the same gears jam too.
+red ❌ (![Jammed gear](docs/blocks/gearBig-jammed.png)).
+
+**Speed and strength.** Everything that turns gears has a **top speed** (how
+fast it goes with nothing to push) and a **strength** (how hard it can push
+before it stops). The harder it has to push, the slower it goes, like a real
+motor or a real arm. A crank has strength 2. A water wheel gets stronger the
+more water hits it (one faucet's worth = as strong as a crank). A motor gets
+stronger with more electricity. Two of them on the same gears **add up**. Two
+cranks turning opposite ways push against each other: the stronger one wins.
 
 **Gears change speed, not power.** A small gear driven by a big one spins
-faster, but a generator on it doesn't make any more electricity: gears can
-make things faster or stronger, never more powerful.
+twice as fast but pushes half as hard. Gearing a generator up makes it spin
+faster, but it gets harder to turn, so the crank slows down: you never get out
+more than you put in.
 
-**Nothing runs forever.** A generator gives back a little less electricity
-than a motor uses, and a motor powered by a generator on its own gears can't
-push back, so machines that try to power themselves slow down and stop, just
-like real ones. (The same goes for a pump pushing water through a water wheel
-that turns the pump's own generator.)
+**Generators push back.** Making electricity takes work. The more lamps a
+generator lights, the harder it is to turn.
+
+**Nothing runs forever.** A generator only turns 8 tenths of the work you put
+in into electricity (the rest becomes heat, like in a real one), so a motor
+powered by a generator on its own gears slows down and stops. (The same goes
+for a pump pushing water through a water wheel that turns the pump's own
+generator.)
 
 ### 🏗️ LIFTING
 
@@ -191,11 +202,18 @@ Heavy things need more. Turning ↻ winds the rope in (up), ↺ lets it out (dow
 | ![Crate](docs/blocks/crate.png) | **Crate** | Weighs **1**. Falls like sand, unless it hangs on a winch's rope. Only the one block on the rope's end is lifted (or a pulley hook and the block under it). | — |
 | ![Iron weight](docs/blocks/ironWeight.png) | **Iron weight** | Weighs **4**. Too heavy for a crank turning a winch on its own! | — |
 
-**Slower is stronger.** A crank can lift weight 1 with the winch on its own
-shaft. Put a small gear driving a big gear in between and the winch turns half
-as fast, so it can lift 2. Do it twice (a quarter as fast) and it lifts the
-iron weight. Gear it UP (big gear driving a small one) and it can't even lift a
-crate. Real cranes, bike gears and car gears all trade speed for strength.
+**Slower is stronger.** A crank (strength 2) turning the winch on its own
+shaft lifts a crate (weight 1), slowly: pulling half its strength, it goes
+half speed. It can't lift the iron weight (4). Put a small gear driving a big
+gear in between and the winch turns half as fast but pushes twice as hard, so
+the iron weight counts as 2: still too much. Do it twice (a quarter as fast)
+and it counts as 1: up it goes. Gear it UP (big gear driving a small one) and
+it can't even lift a crate. More strength works too: two cranks, a motor with
+more batteries, or lots of water on a water wheel. Real cranes, bike gears and
+car gears all trade speed for strength.
+
+**Heavier = slower.** The closer the load is to the machine's strength, the
+slower it goes up. Letting it down, the load helps: heavy things come down fast.
 
 **Cut the rope** (⛏️ dig it) and whatever hangs on it falls.
 

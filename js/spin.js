@@ -13,14 +13,30 @@
  *
  * If two paths give a block different ratios (like three big gears in a
  * triangle: each one would have to turn both ways at once), the group is
- * JAMMED and nothing in it turns. Then the "sources" (cranks, motors,
- * water wheels) decide how fast the group goes.
+ * JAMMED and nothing in it turns.
  *
- * Speeds are in turns per second. + is clockwise ↻, − is anticlockwise ↺.
+ * HOW FAST a group turns works like real machines. Every source (a crank,
+ * motor or water wheel) has two numbers:
+ *
+ *   speed      how fast it turns with nothing to push against
+ *   strength   how hard it can push (its "torque") before it stops
+ *
+ * The harder it has to push, the slower it goes: pushing half its
+ * strength, it turns at half speed; pushing all of it, it stops.
+ * Sources on the same gears ADD their strength together. Gears trade one
+ * for the other: a gear turning half as fast pushes twice as hard.
+ *
+ * Things that push back:
+ *   spinLoad   a steady pull, like a weight hanging on a winch's rope
+ *   spinDrag   a push back that grows with speed, like a generator
+ *              making electricity (more lamps = harder to turn)
+ *
+ * The group settles at the speed where the pushing and the pushing back
+ * balance. Speeds are in turns per second. + is clockwise ↻, − is
+ * anticlockwise ↺. Strengths are in "crank-pushes" (see CRANK_STRENGTH).
  * This file only reads the fields blocks have: `spin`, `spinSource`
- * (which is also told the indexes of the blocks in its group), and
- * `spinLoad` (how much drive a block needs to turn at a speed, like a
- * winch lifting something heavy).
+ * (which is also told the indexes of the blocks in its group), `spinLoad`
+ * and `spinDrag`.
  */
 import { getBlock, inBounds } from './world.js';
 import { partAxis } from './circuit.js';
@@ -100,11 +116,8 @@ function sideRatio(a, b, side) {
  *
  * Returns a record for every spinning block:
  *   speed     turns per second (+ = ↻ clockwise, − = ↺ anticlockwise)
- *   drive     how fast the source driving its group turns (gears can make
- *             things faster or slower, but this stays the same: it's
- *             how much "power" the group has)
  *   jammed    true if its group can't turn (two paths disagree)
- *   stalled   true if its group is too weak to turn its load (see spinLoad)
+ *   stalled   true if its group's sources are too weak for its load
  *   axis      for axles: the way it faces
  *   partAxis  for blocks that are also electric parts (motors,
  *             generators): the way they face in a circuit
@@ -177,37 +190,42 @@ export function solveSpin(world, blockInfo) {
       }
     }
 
-    // The sources say how fast the first block must turn. They must all
-    // agree on the direction (or it's jammed); the fastest one wins.
-    let speed = 0;
-    let drive = 0; // how fast the winning source itself turns: the group's "power"
+    // Add up the pushing, all measured at the first block (a gear turning
+    // r times as fast as the first block pushes like r times as hard on it).
+    // Each source pushes `strength` when still, less as it speeds up, and
+    // nothing at its own top speed:   push = strength × (1 − speed / top)
+    // So all of them together push    push = ahead − slowing × speed
+    // where `ahead` is their strengths added up (with + or −) and
+    // `slowing` says how fast their push fades as the group speeds up.
+    let ahead = 0;
+    let slowing = 0;
+    let pull = 0; // loads (a hanging weight), at the first block
+    let drag = 0; // push-back that grows with speed (generators)
     const members = [...ratio.keys()];
-    for (const index of members) {
+    for (const [index, r] of ratio) {
       const point = points.get(index);
-      const wants = point.info.spinSource?.(world, point.x, point.y, members) ?? null;
-      if (!wants) continue; // null or 0: not driving right now
-      const first = wants / ratio.get(index);
-      if (speed !== 0 && Math.sign(first) !== Math.sign(speed)) jammed = true;
-      if (Math.abs(first) > Math.abs(speed)) {
-        speed = first;
-        drive = Math.abs(wants);
+      const source = point.info.spinSource?.(world, point.x, point.y, members) ?? null;
+      if (source && source.speed && source.strength > 0) {
+        const top = source.speed / r;                // its top speed, at the first block
+        const strength = source.strength * Math.abs(r);
+        ahead += Math.sign(top) * strength;
+        slowing += strength / Math.abs(top);
       }
+      pull += (point.info.spinLoad?.(world, point.x, point.y, blockInfo) ?? 0) * r;
+      drag += (point.info.spinDrag?.(world, point.x, point.y) ?? 0) * r * r;
     }
 
-    // Is it too heavy? A block that needs effort to turn (a winch lifting
-    // a load) says how much drive it takes at its own speed. If they all
-    // need more than the source has, the group STALLS: it stops dead.
-    // Effort grows with speed, so gearing a winch DOWN (slower) lets the
-    // same crank lift more: you trade speed for strength.
+    // The speed where the pushing and the pushing back balance:
+    //   ahead − slowing × speed + pull − drag × speed = 0
+    let speed = slowing > 0 ? (ahead + pull) / (slowing + drag) : 0;
+    // A winch has a ratchet (a little catch), so a load too heavy for the
+    // sources can't pull them backwards: everything just STALLS.
     let stalled = false;
-    if (!jammed && speed !== 0) {
-      let needed = 0;
-      for (const [index, r] of ratio) {
-        const point = points.get(index);
-        needed += point.info.spinLoad?.(world, point.x, point.y, speed * r, blockInfo) ?? 0;
-      }
-      stalled = needed > drive + 1e-9;
+    if (ahead !== 0 && Math.sign(speed) !== Math.sign(ahead)) {
+      speed = 0;
+      stalled = true;
     }
+    if (slowing === 0) speed = 0; // nothing driving it: the ratchet holds any load
     const stopped = jammed || stalled;
 
     for (const [index, r] of ratio) {
@@ -218,7 +236,6 @@ export function solveSpin(world, blockInfo) {
       if (Math.abs(own) > MIN_SPEED) turning = true;
       cells.set(index, {
         speed: own,
-        drive: stopped ? 0 : drive,
         jammed,
         stalled,
         axis: point.axis,

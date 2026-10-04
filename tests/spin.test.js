@@ -17,12 +17,15 @@ const TEST_BLOCKS = {
   gearBig: { spin: { kind: 'gear', teeth: 16, diagonal: true } },
   axle: { spin: { kind: 'axle' } },
   hub: { spin: { kind: 'hub' } },
-  crankCW: { spin: { kind: 'hub' }, spinSource: () => 1 },
-  crankCCW: { spin: { kind: 'hub' }, spinSource: () => -1 },
-  fastCrank: { spin: { kind: 'hub' }, spinSource: () => 3 },
-  // Like a winch lifting: turning ↻ takes effort (2 or ½ per turn per second), ↺ is free.
-  heavy: { spin: { kind: 'hub' }, spinLoad: (world, x, y, speed) => (speed > 0 ? 2 * speed : 0) },
-  light: { spin: { kind: 'hub' }, spinLoad: (world, x, y, speed) => (speed > 0 ? 0.5 * speed : 0) },
+  crankCW: { spin: { kind: 'hub' }, spinSource: () => ({ speed: 1, strength: 2 }) },
+  crankCCW: { spin: { kind: 'hub' }, spinSource: () => ({ speed: -1, strength: 2 }) },
+  fastCrank: { spin: { kind: 'hub' }, spinSource: () => ({ speed: 3, strength: 2 }) },
+  strongCCW: { spin: { kind: 'hub' }, spinSource: () => ({ speed: -1, strength: 6 }) },
+  // Like a winch with a weight on its rope: it's pulled the ↺ way, always.
+  heavy: { spin: { kind: 'hub' }, spinLoad: () => -3 },
+  light: { spin: { kind: 'hub' }, spinLoad: () => -1 },
+  // Like a generator: pushes back 2 for every turn per second.
+  dynamo: { spin: { kind: 'hub' }, spinDrag: () => 2 },
   stone: {},
 };
 
@@ -36,7 +39,7 @@ const blockInfo = (name) => TEST_BLOCKS[name];
 /** What each letter means. */
 const LETTERS = {
   '.': 'air', s: 'gearSmall', G: 'gearBig', '-': 'axle', H: 'hub', R: 'crankCW', Q: 'crankCCW',
-  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light',
+  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light', Y: 'strongCCW', D: 'dynamo',
 };
 
 /**
@@ -114,11 +117,20 @@ test('four small gears in a square turn fine (an even loop)', () => {
   assert.equal(at(0, 1).speed, -1);
 });
 
-test('two cranks turning opposite ways jam; the same way, the faster wins', () => {
+test('two cranks turning opposite ways push against each other: equal ones stand still', () => {
   const fight = spin(['RsssQ']);
-  assert.equal(fight(2, 0).jammed, true);
-  const agree = spin(['RsF']); // R ↻1 through a gear; F ↻3 on the same gear's shaft
-  assert.equal(agree(1, 0).speed, 3);
+  assert.equal(fight(2, 0).speed, 0);
+  assert.equal(fight(2, 0).jammed, false);
+  assert.equal(fight(2, 0).stalled, false);
+});
+
+test('the stronger crank wins a fight, but slowly', () => {
+  // R pushes ↻ with 2, Y pushes ↺ with 6: ↺ wins, at half Y's top speed.
+  assert.equal(spin(['RsssY'])(4, 0).speed, -0.5);
+});
+
+test('a fast crank and a slow crank together turn in between (the slow one holds it back)', () => {
+  assert.equal(spin(['RsF'])(1, 0).speed, 1.5);
 });
 
 test('no source, no turning; a source in one group does not turn another', () => {
@@ -128,7 +140,7 @@ test('no source, no turning; a source in one group does not turn another', () =>
   assert.equal(at(3, 0).jammed, false);
 });
 
-test('a load heavier than the drive stalls the whole group (stops dead)', () => {
+test('a load heavier than the source\'s strength stalls the whole group', () => {
   const at = spin(['RK']);
   assert.equal(at(0, 0).speed, 0);
   assert.equal(at(1, 0).speed, 0);
@@ -137,15 +149,38 @@ test('a load heavier than the drive stalls the whole group (stops dead)', () => 
   assert.equal(at(1, 0).jammed, false);
 });
 
-test('a light load turns, and turning the free way needs no effort', () => {
-  const light = spin(['Rk']);
-  assert.equal(light(1, 0).speed, 1);
+test('a load slows a source down: half its strength, half its speed', () => {
+  const light = spin(['Rk']); // strength 2, load 1
+  assert.equal(light(1, 0).speed, 0.5);
   assert.equal(light(1, 0).stalled, false);
-  assert.equal(spin(['QK'])(1, 0).speed, -1);
 });
 
-test('a faster source is not a stronger one when the load turns faster too', () => {
-  assert.equal(spin(['FK'])(1, 0).stalled, true); // drive 3, needs 2 × 3 = 6
+test('turning the way the load pulls, the load helps: it goes faster', () => {
+  assert.equal(spin(['QK'])(1, 0).speed, -2.5);
+});
+
+test('two sources on the same shaft add their strength together', () => {
+  assert.equal(spin(['RK'])(1, 0).stalled, true);  // 2 < 3
+  assert.equal(spin(['RKR'])(1, 0).speed, 0.25);    // 2 + 2 = 4 > 3
+});
+
+test('a faster source is not a stronger one', () => {
+  assert.equal(spin(['FK'])(1, 0).stalled, true);
+});
+
+test('gearing down trades speed for strength: half as fast, twice as strong', () => {
+  // Q ↺ → small → big (½ as fast, the other way) → heavy: 3 counts as 1.5 < 2, so it lifts slowly.
+  const at = spin(['QsGK']);
+  assert.equal(at(3, 0).stalled, false);
+  assert.equal(at(3, 0).speed, 0.125);
+});
+
+test('a generator pushes back, harder the faster it\'s geared to turn', () => {
+  const direct = spin(['RD']);
+  assert.equal(direct(1, 0).speed, 0.5);
+  const gearedUp = spin(['RGsD']); // the generator turns twice as fast as the crank...
+  assert.equal(gearedUp(3, 0).speed, -0.4);
+  assert.equal(gearedUp(0, 0).speed, 0.2); // ...but the crank turns slower than before
 });
 
 test('a jammed group stays jammed, not stalled', () => {

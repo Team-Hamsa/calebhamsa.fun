@@ -37,6 +37,32 @@ Teach **load and effort** with a winch, rope and pulleys:
 | Tab | Its own 🏗️ Lifting tab (⚙️ would have 13 blocks). The winch still joins gear trains |
 | Rejected | A ropeless "lift block" (hides the idea); swinging/stretchy rope physics (too much) |
 
+## Realistic strength (2026-10-04, replaces the "drive" effort rule)
+
+**Why:** on the iPad, a machine with 12 faucets driving two water wheels on one axle couldn't lift a hooked iron weight. The old rule, `weight × winch speed ≤ drive` with drive = the source's speed, cancelled the source out, so every source was exactly as strong as a crank. Sources didn't add up, and overloads stopped dead. The user asked for real-world behaviour instead.
+
+**Model:** the standard linear torque–speed curve.
+- Each source reports `spinSource → { speed, strength }`: its top speed (no load) and its stall torque.
+  - Crank: 1 turn/s, strength 2 (`CRANK_STRENGTH`).
+  - Motor: level × 1 turn/s, level × 2 (`MOTOR_STRENGTH`).
+  - Water wheel: flow × 20 turns/s, |flow| × 40 (`WHEEL_STRENGTH`). One faucet is about a crank.
+- Measured at the group's first block (ratio r): top = speed / r, strength′ = strength × |r|. The source pushes `strength′ × (1 − Ω/top)`. Summed over sources: `ahead − slowing × Ω`.
+- Loads: `spinLoad → torque` at the block (the winch returns −weight; gravity pulls ↺), referred × r.
+- Drag: `spinDrag → c` (torque per turn/s), referred × r².
+  - Generator: c = GENERATOR_TORQUE × (current per volt from last tick, remembered in `signals.spin.conducts`) × GENERATOR_GAIN.
+  - Generator push = speed × GENERATOR_GAIN. Electric power out = 0.8 × mechanical power in.
+- Ω = (ahead + pull) / (slowing + drag).
+- If the sources push one way but Ω comes out zero or the other way, the winch's ratchet holds: **stalled**, Ω = 0.
+- With no source, Ω = 0 (the ratchet holds the load).
+- Opposite sources now **fight** (the stronger wins, slowly) instead of jamming. Geometric jams (an L of big gears) still jam.
+- Removed: the `drive` record field, and the "motor powered by its own generator isn't a source" rule. The motor/generator loop now winds down from the 0.8 efficiency alone.
+
+**Effects:**
+- Heavier loads lift slower. Lowering with a load runs faster than the crank's top speed (the load helps).
+- Gearing a generator up slows the crank.
+- More lamps make a generator harder to turn.
+- A hand crank lights a lamp at about half a battery's brightness.
+
 ## Changes after the final review (2026-10-03)
 
 These override the details below:
