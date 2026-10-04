@@ -223,9 +223,26 @@ function loadOf(load) {
  * push-back works AGAINST the turning. So it has two edges: speed 0, and
  * the speed where its push-back is nothing.
  *
- * Loads and brakes switch on or off at their edges, and the push always
- * gets smaller (never bigger) as the speed goes up. So we try the
- * stretches between the edges one at a time, slowest first.
+ * Loads and brakes switch on or off at their edges. So between two edges
+ * the push is a plain straight line, and we can look at the stretches
+ * between the edges one at a time.
+ *
+ * We always START FROM STANDING STILL, like a real machine does, and ask
+ * which way the push goes there:
+ *
+ *   • pushed ↻: the group speeds up ↻ until the push runs out. That is
+ *     its speed. (`climb` walks up the stretches to find it.)
+ *   • pushed ↺: the same, the other way round.
+ *   • neither (a push ↻ would be pushed back harder, and so would a push
+ *     ↺): it stays still. It is HELD.
+ *
+ * This matters when a brake gets WEAKER as the group speeds up (a
+ * generator in a loop with a battery and another generator that pushes
+ * against it). Then there can be a fast speed where the brakes would let
+ * go. But a group that is held at standing still can never get there:
+ * nothing gives it the push to start. The speed we return is always one
+ * where the pushing and the pushing back really balance (or an edge that
+ * holds it), so the group never turns without something paying for it.
  * @param {number} ahead - the sources' strengths added up (+ or −)
  * @param {number} slowing - how fast the push fades as the group speeds up (more than 0)
  * @param {Array<{pull: number, limit: number}>} loads - the loads, at the first block
@@ -233,38 +250,74 @@ function loadOf(load) {
  * @returns {number} the group's speed, at the first block
  */
 function balance(ahead, slowing, loads, brakes = []) {
+  const up = climb(ahead, slowing, loads, brakes);
+  if (up !== null) return up;
+  // The same question the other way round: flip every push, climb, flip the answer back.
+  /**
+   * A load or brake as it looks with ↻ and ↺ swapped.
+   * @param {{pull: number}} thing - a load or a brake
+   * @returns {object} the same, pulling the other way
+   */
+  const flip = (thing) => ({ ...thing, pull: -thing.pull });
+  const down = climb(-ahead, slowing, loads.map(flip), brakes.map(flip));
+  return down === null ? 0 : -down || 0; // "|| 0" turns −0 into a plain 0
+}
+
+/**
+ * Starting from standing still, how fast does a group get going the ↻
+ * way (see `balance`)?
+ *
+ * We walk up the stretches between the edges, from speed 0. In each one
+ * the push is  ahead + pull − fading × speed.  The group keeps speeding
+ * up while the push is more than 0, and settles:
+ *
+ *   • where the push comes down to 0 inside a stretch, or
+ *   • at an edge, if the push is still there just below the edge and
+ *     gone (or backwards) just above it: a load or brake that switches
+ *     right there holds the group at that speed.
+ * @param {number} ahead - the sources' strengths added up (+ or −)
+ * @param {number} slowing - how fast the push fades as the group speeds up (more than 0)
+ * @param {Array<{pull: number, limit: number}>} loads - the loads, at the first block
+ * @param {Array<{pull: number, perTurn: number}>} brakes - the brakes, at the first block
+ * @returns {number|null} the speed (more than 0), or null if nothing
+ *   pushes the group ↻ from standing still
+ */
+function climb(ahead, slowing, loads, brakes) {
   /**
    * The speed (with + or −) where a load stops pulling.
    * @param {{pull: number, limit: number}} load - a load
    * @returns {number} that speed
    */
   const edge = (load) => Math.sign(load.pull) * load.limit;
-  const brakeEdges = brakes.flatMap((brake) => (brake.perTurn !== 0 ? [0, -brake.pull / brake.perTurn] : [0]));
-  const edges = [...new Set([...loads.map(edge), ...brakeEdges].filter(Number.isFinite).map((value) => value || 0))].sort((a, b) => a - b);
+  const brakeEdges = brakes.flatMap((brake) => (brake.perTurn !== 0 ? [-brake.pull / brake.perTurn] : []));
+  const edges = [...new Set([...loads.map(edge), ...brakeEdges].filter((value) => Number.isFinite(value) && value > 0))].sort((a, b) => a - b);
   for (let k = 0; k <= edges.length; k++) {
-    const low = k === 0 ? -Infinity : edges[k - 1];
+    const low = k === 0 ? 0 : edges[k - 1];
     const high = k === edges.length ? Infinity : edges[k];
     // Any speed inside this stretch tells us which loads and brakes are working in it.
-    const inside = k === 0 ? (edges.length > 0 ? high - 1 : 0) : (k === edges.length ? low + 1 : (low + high) / 2);
+    const inside = k === edges.length ? low + 1 : (low + high) / 2;
     let pull = 0;
     let fading = slowing;
     for (const load of loads) {
       if (inside * Math.sign(load.pull) < load.limit) pull += load.pull;
     }
     for (const brake of brakes) {
-      if ((brake.pull + brake.perTurn * inside) * inside <= 0) continue; // it would help the turning: a brake never does
+      if (brake.pull + brake.perTurn * inside <= 0) continue; // it would help the turning: a brake never does
       pull -= brake.pull;
       fading += brake.perTurn;
     }
-    // (`fading` is more than 0 in any machine we know of. If some odd mix
-    // of brakes made it 0 or less, there's no balance here: move on.)
+    // The push at the slow end of this stretch. None left (or it pushes
+    // back)? Then the group gets no faster than this: standing still
+    // (null: not turning ↻ at all), or held at the edge it has reached.
+    const push = ahead + pull - fading * low;
+    if (push <= BALANCED) return k === 0 ? null : low;
+    // `fading` is 0 or less when the brakes let go faster than the
+    // sources tire: the push only grows in this stretch, so on we go.
     if (fading <= 0) continue;
     const speed = (ahead + pull) / fading;
-    if (speed > high) continue;     // faster than this stretch: try the next one
-    if (speed < low) return low;    // a load or brake switches off (or on) right at this edge and holds it there
-    return speed;
+    if (speed <= high) return speed;
   }
-  return 0; // (only reached in that odd case: the last stretch has no top)
+  return null; // (never reached: in the last stretch the push always runs out)
 }
 
 /**

@@ -1144,3 +1144,30 @@ test('two water wheels on one shaft work the same in a mirrored build: a wheel w
     assert.ok(below.speed < 0, `${rows.join('/')}: mirrored, the lower wheel wants ${below.speed}`);
   }
 });
+
+test('a battery in a loop with two generators that push against each other never makes the gears run by themselves or lift a weight for free', () => {
+  // The crank turns the left generator the way that ADDS to the battery's
+  // current: far too hard for one crank, so nothing moves at all. (It
+  // used to race at 1.25 turns a second, faster than a crank can go, and
+  // wind the iron weight up with nobody paying.)
+  const rows = ['WBWWW.', 'EGssEZ', 'WR..Wr', 'WWWWWr', '.....r', '.....r', '.....r', '.....r', '.....r', '.....I', '......', '######'];
+  const world = run(rows, 0);
+  const systems = allSystems();
+  for (let i = 0; i < 40; i++) {
+    tick(world, systems, blockInfo);
+    assert.equal(spinAt(world, 1, 2), 0, `the crank on tick ${i}`);
+    assert.equal(getBlock(world, 5, 9), 'ironWeight', `the weight stays down on tick ${i}`);
+  }
+  // No winch: still nothing turns faster than its crank can go (here, not at all).
+  for (const picture of [
+    ['WBWWW.', 'EGssE.', 'WR..W.', 'WWWWW.'],
+    ['WBWWWWWWW', 'EsGs-GssE', 'WR......W', 'WWWWWWWWW'],
+    ['WBWWWWWWW', 'EsGs-GssE', 'WQ......W', 'WWWWWWWWW'],
+  ]) {
+    const free = run(picture, 0);
+    for (let i = 0; i < 40; i++) {
+      tick(free, systems, blockInfo);
+      assert.ok(Math.abs(spinAt(free, 1, 2)) <= CRANK_SPEED + 1e-9, `${picture[1]}: crank at ${spinAt(free, 1, 2)} on tick ${i}`);
+    }
+  }
+});

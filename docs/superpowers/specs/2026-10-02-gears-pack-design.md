@@ -301,3 +301,11 @@ Two holes were left by the `forced` rule above.
 - `wheelLeans(wheel)` (fluids.js) says whether any water goes sideways. `wheelSource` marks a wheel that doesn't as `eitherWay: true`.
 - `solveSpin` adds `eitherWay` sources after the others, pointing the way the group's other sources push. If there are none, the first goes the way it says (↻ for a wheel) and the rest follow.
 - Result: both builds above turn ±0.586 and ±0.233. A lone wheel under a faucet still turns ↻ in both builds (its mirror image is itself). A winch on the shaft still winds in ↻ only, so a mirrored crane lets out instead of lifting: that is the winch's rule, not the wheel's.
+
+## Addendum 2026-10-04 (round 1 review): a group's speed is found by starting from standing still (issue #17 review)
+
+`balance` walked the stretches between the edges from the slowest up and skipped any stretch whose `fading` (slowing + the brakes' `perTurn`) was 0 or less. With a brake whose `perTurn` is negative (a generator in a loop with a battery and a second generator on the same train that pushes against it) the push is no longer always falling as the speed rises, and the skip handed back a speed where nothing balanced: `WBWWW. / EGssEZ / WR..Wr / WWWWWr` + rope and iron weight ran its crank at 1.25 turns a second (a crank's top speed is 1), with no battery current, and lifted the weight 6 cells for −0.78 of work. The speed did not depend on the load at all.
+
+- `balance` now asks which way the group is pushed AT STANDING STILL and `climb`s that way, stretch by stretch, until the push runs out (a real zero of the push, or an edge where a load or brake switches and holds it). Pushed neither way, the group is held at 0.
+- Every speed it returns is one where pushing and pushing back really balance, so no layout of brakes can make a group turn unpaid. Where the push only ever falls (every machine before this one) the answer is the same as before.
+- Result: that build stands still (stalled) and the weight stays down; with the battery taken out it stalls as before. In a sweep of 2640 two-generator trains none runs faster than its crank and none gives out more than it is given.
