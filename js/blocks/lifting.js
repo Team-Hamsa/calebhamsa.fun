@@ -95,8 +95,8 @@ export function refreshLift(world, blockInfo) {
  * lets out (↺) a little rope. Once it has wound a whole cell's worth (two
  * with a pulley hook), the load moves one cell. The part-wound amount is
  * kept while the winch is stopped, so short turns add up. It's only
- * dropped when the rope really can't move (wound right in, or the load
- * resting on the ground). Going down, a load moves one cell a tick at
+ * dropped when the rope is wound right in. A load resting on the ground
+ * keeps the bit of slack it landed with, and gets no more. Going down, a load moves one cell a tick at
  * the very most: that's how fast things fall.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
@@ -134,7 +134,18 @@ export function liftSystem(world, blockInfo) {
       if (before.has(index)) pull.set(index, before.get(index));
       continue;
     }
-    let amount = (before.get(index) ?? 0) + (speed * ROPE_PER_TURN) / TICKS_PER_SECOND;
+    const had = before.get(index) ?? 0;
+    let amount = had + (speed * ROPE_PER_TURN) / TICKS_PER_SECOND;
+    // A load lying on the ground: letting out more rope does nothing (it
+    // just piles up). But a bit of slack it LANDED with is kept: on the
+    // tick it landed, the load was paid for pulling out a whole tick of
+    // rope, a little more than it really came down. So that little bit
+    // has to be wound back in (against the load's weight) before it
+    // lifts off again. Forgetting it would be a tiny gift of energy on
+    // every landing.
+    const rope = traceRope(world, x, y, blockInfo);
+    const load = loadBelow(world, rope, blockInfo);
+    if (load.cells.length > 0 && !canLower(world, rope, load)) amount = Math.max(amount, Math.min(had, 0));
     /**
      * How much rope moves the load one cell: 2 with a pulley hook.
      * @returns {number} cells of rope

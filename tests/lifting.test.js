@@ -432,3 +432,36 @@ test('the guide and the README say plainly that nothing floats here', async () =
   assert.match(readme, /Nothing floats/);
   assert.ok(lifting.guide.rules.some((rule) => /float/.test(rule)));
 });
+
+test('lowering a load onto the ground and lifting it again never pays the crank: slack rope has to be wound back in', () => {
+  for (const [rows, load] of [[['wR.', '|..', 'c..', '...', '###'], 'crate'], [['wR.', '|..', 'c..', '...', '...', '###'], 'crate'], [['Rsw..', '..|..', '..c..', '.....', '#####'], 'crate']]) {
+    for (const lowering of [2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 30]) { // how many ticks the crank lets out for: it lands part way through some
+      const world = make(rows);
+      const systems = allSystems();
+      const crank = world.cells.indexOf('crankCW');
+      const [x, y] = [crank % world.width, Math.floor(crank / world.width)];
+      const column = world.cells.indexOf(load) % world.width;
+      const start = rowOf(world, column, load);
+      let work = 0;
+      /**
+       * One tick, adding up the crank's work (it is paid back when the load turns it faster than its own speed).
+       * @returns {void}
+       */
+      const step = () => {
+        tick(world, systems, blockInfo);
+        const speed = Math.abs(spinAt(world, x, y));
+        work += (2 * (1 - speed) * speed) / 8;
+      };
+      for (let cycle = 0; cycle < 20; cycle++) {
+        setBlock(world, x, y, 'crankCCW');
+        for (let t = 0; t < lowering; t++) step();
+        setBlock(world, x, y, 'crankCW');
+        // Up again, until the load is back AND the rope let out is wound back in.
+        const winch = world.cells.indexOf('winch');
+        for (let t = 0; t < 400 && (rowOf(world, column, load) !== start || (world.signals.lift.pull.get(winch) ?? 0) < 0); t++) step();
+        assert.equal(rowOf(world, column, load), start, 'the load should come back up');
+        assert.ok(work >= -1e-9, `${rows.join('/')} letting out for ${lowering} ticks: after ${cycle + 1} trips the crank is ${-work} ahead`);
+      }
+    }
+  }
+});

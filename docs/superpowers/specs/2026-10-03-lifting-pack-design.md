@@ -226,3 +226,11 @@ The scan-order owner had a hole: with only the NON-owner cranked, it had no load
 - A stopped, stalled or non-owning winch now carries its amount over unchanged. It is zeroed only where the rope really can't move: wound right in, or the load resting.
 - Pulsed lowering now brings the weight down bit by bit; on the ground it is `resting` and gives no more push. The ring with a one-tick kick ends with both irons on the floor and no current.
 - Not done: the amount is not reset when the player swaps the load or re-ropes a winch mid-cell (at most one cell's worth of rope is carried over to the new load).
+
+## Addendum 2026-10-04 (final review): a landed load keeps the slack it landed with (issue #24 review)
+
+On the tick a load lands, `winchLoad` counted it as hanging for the whole tick, so spin.js credited its pull for a whole tick of rope (for example −0.75 → −1.125: 0.375 of rope for the 0.25 it still had to come down). The leftover (−0.125) was kept, but once the load was resting, more letting out ran it to −1, `letOut` failed and the amount was set to 0: the over-credit was forgiven. A crate cycled one cell above the floor paid the crank 0.0625 per trip (40 trips: lifting +20.0, lowering −22.5).
+
+- While the load is resting (`!canLower`), `liftSystem` no longer lets the amount go below `min(amount before, 0)`: letting out more rope does nothing, and the slack it landed with stays. Lifting again has to wind that slack in first, against the load's weight (a resting load pulls back whenever it is wound in), which pays the over-credit back exactly.
+- Result: the same 40 trips net 0.000, at every landing phase tested (2 to 30 ticks of letting out, direct and geared).
+- Still true: one landing that is never lifted again keeps up to one tick of rope's worth of credit (bounded, not repeatable).
