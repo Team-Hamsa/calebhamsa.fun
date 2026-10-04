@@ -354,3 +354,15 @@ A settled water tower joined by a pipe to an open spout one cell up (`#~~#......
 - Result: that scene is drawn level at 2.0 in the tower, the pool and the mouth, with nothing over the mouth and nothing over the ground (mirrored too); 17.40 of its 18.00 cells are drawn. The missing 0.6 is squished in below the brim: the same leftover as under a lid ("looks full, holds a bit more"), now also at a brim.
 - Cost, measured on the 300 random settled stone-and-pipe tanks of the round 1 addendum: 10 are under-drawn by more than half a cell (13.7 cells in all; was 1 and 1.1), none over-drawn. Every one looked at is a pool that is full to a rim it would spill over, with more squished in below; before, that extra was drawn as a slab standing over the rim and over the empty space beside it.
 
+
+## Addendum 2026-10-04 (round 2 review): falling water is drawn as a stream, never as a full cell (issue #20 review)
+
+Rule 1 of the drawing kept the old look "a cell with water standing on it is drawn full". While water moves, that drew every cell under a trickle as a full cell: a 3×8 block of 24 cells let go in a tank was drawn as 29.35 at tick 1; a tower emptying through a spout was drawn as 20.06 for 18.00 (tick 40), with a solid 2-cell block of blue beside the riser holding 0.21 cells; 8 cells falling off a ledge were drawn as 13.02.
+
+- `waterPicture` no longer fills a cell because there is water above it: every wet cell's `shown` is `min(amount, 1)` (plus any extra put back on a surface, as before).
+- It also returns `falling` (0 to 1 for each cell): for water in an open cell (air or rope) with an open cell or block below, `(1 − amount below) ÷ FALL_RANGE` (0.05), kept between 0 and 1. So water over a cell with room in it is falling, water on a full cell or on a floor lies still, and the change-over is smooth (a cell hovering at "full" can't make the picture snap).
+- `drawWaterLayer` draws the lying share as before (a pool across the cell, `shown × (1 − falling)` deep, with its surface line) and the falling share as a stream down the middle of the cell, from the top of the cell to the pool, as wide as it takes to paint exactly that share of the cell. A stream is never drawn thinner than 1⁄16 of a cell (the surface line's thickness) so a faucet's thread can be seen; that is the only place a little more blue is painted than there is water.
+- A moving column can now show hairline gaps for a moment (a cell at 0.97 under a full one). That is what is there.
+- Result (drawn total against real, at every tick): never over, in all five scenes tried (was up to +5.35 cells of 24). 24-cell block in a tank: 23.47 at tick 1, 22.35 at tick 5, 24.00 from tick 24. Tower through a spout: 17.12 at tick 40 for 18.00. Ledge: 7.78 at tick 1, 8.00 from tick 10. What is missing while it rushes is squished-in water with no level surface to be drawn on yet, as documented above.
+- Machine pictures taken again: hydro-dam, power-plant, water-tower.
+

@@ -102,10 +102,12 @@ function fluidCells(world, blockInfo, turbineFlow) {
 export function refreshWater(world, blockInfo) {
   const turbineFlow = world.signals.water?.turbineFlow ?? new Map();
   // Work out afresh how much water to draw in each cell (see waterPicture).
+  const { shown, falling } = waterPicture(world, blockInfo);
   world.signals.water = {
     cells: fluidCells(world, blockInfo, turbineFlow),
     turbineFlow,
-    shown: waterPicture(world, blockInfo).shown,
+    shown,
+    falling,
   };
 }
 
@@ -130,9 +132,9 @@ export function waterSystem(world, blockInfo) {
   });
   // `wheels` is kept for the ⚙️ pack: water flowing through a water wheel
   // turns it, and the energy the water gives up there is its strength.
+  const { shown, falling } = waterPicture(world, blockInfo, sides);
   world.signals.water = {
-    cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow, waterOut, waterWork, wheels,
-    shown: waterPicture(world, blockInfo, sides).shown,
+    cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow, waterOut, waterWork, wheels, shown, falling,
   };
   if (moved > MOVE_EPSILON) world.fluidChanged = true;
   const spinning = [...turbineFlow.values()].some((flow) => flow > MIN_AMOUNT);
@@ -337,6 +339,9 @@ function drawChiller(ctx, info, left, top, size) {
 /**
  * Draw all the water and steam, on top of the blocks. In open air,
  * water fills a cell from the bottom, and steam fills from the top.
+ * Water that is FALLING (the cell under it still has space) is drawn as
+ * a stream down the middle of the cell instead: as wide as there is
+ * water, so a trickle looks like a trickle and never like a full cell.
  * Inside pipes, valves, pumps and turbines it fills the channel, darker
  * when fuller.
  *
@@ -352,6 +357,7 @@ export function drawWaterLayer(ctx, world, size) {
   const { water, steam } = world.fluid;
   const records = world.signals.water?.cells ?? new Map();
   const shown = world.signals.water?.shown;
+  const falling = world.signals.water?.falling;
   for (let index = 0; index < world.cells.length; index++) {
     // How much water to draw here (before the first tick: just what's in the cell).
     const level = shown ? shown[index] : Math.min(water[index], FULL);
@@ -372,10 +378,21 @@ export function drawWaterLayer(ctx, world, size) {
     // shows just like in an empty cell.
     if (!showsWaterLevel(world.cells[index])) continue;
     if (wet) {
-      const height = size * Math.min(level, FULL);
+      // The water lying still: a pool across the cell, as deep as there is of it.
+      const amount = Math.min(level, FULL);
+      const share = falling ? falling[index] : 0; // how much of it is on its way down
+      const lying = amount * (1 - share);
+      const height = size * lying;
       ctx.fillStyle = WATER_COLOR;
-      ctx.fillRect(left, top + size - height, size, height);
-      if (height < size) {
+      if (height > 0) ctx.fillRect(left, top + size - height, size, height);
+      // The water falling: a stream down the middle, from the top of the
+      // cell to the pool, as wide as it takes to show all of it.
+      if (share > 0 && lying < FULL) {
+        // (Never thinner than the line on top of a pool, or a faucet's thread of water couldn't be seen.)
+        const wide = Math.min(size, Math.max(size / 16, 1, (size * amount * share) / (1 - lying)));
+        ctx.fillRect(left + (size - wide) / 2, top, wide, size - height);
+      }
+      if (height > 0 && height < size) {
         ctx.fillStyle = WATER_TOP;
         ctx.fillRect(left, top + size - height, size, Math.max(1, size / 16));
       }
@@ -466,7 +483,7 @@ const guide = {
   rules: [
     'Water and steam are real amounts: a cell can be full, half full or nearly empty. Water never appears or disappears by itself. Build a block in water and the water is pushed out of the way: the level goes UP. Only DIG and drains take water away.',
     'Water falls and spreads out. Deep water pushes UP through pipes and U-tubes.',
-    'Water is drawn as tall as there is water: pour 10 cells into a shaft and it stands 10 cells tall. One tap of DIG takes one scoop, a full cell at the most. You can\'t pour into a cell that already looks full: pour just above the water.',
+    'Water is drawn as tall as there is water: pour 10 cells into a shaft and it stands 10 cells tall. Falling water is a stream as wide as there is water: a trickle looks like a trickle. One tap of DIG takes one scoop, a full cell at the most. You can\'t pour into a cell that already looks full: pour just above the water.',
     'Steam is the opposite: it rises and spreads out under ceilings.',
     'Water has to FALL to give its push. High water can turn a wheel on its way down. Water lying level has no push left.',
     'Lifting water uses up a pump\'s push. The higher the water has to go, the slower the pump lifts it, and at some height it is too heavy and stops. More batteries lift higher AND faster: one battery lifts about 5 blocks.',

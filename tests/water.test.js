@@ -200,3 +200,37 @@ test('turbines side by side in their own chimneys each keep all the push of thei
   assert.ok(Math.abs(turbinePush(world, 2, 2) - one) < 0.1, `left pushes ${turbinePush(world, 2, 2)}, one alone ${one}`);
   assert.ok(Math.abs(turbinePush(world, 4, 2) - turbinePush(world, 2, 2)) < 1e-9);
 });
+
+test('falling water is drawn as a stream as wide as there is water; lying water as a pool as deep as there is water', () => {
+  const world = createWorld(3, 1);
+  const shown = new Float64Array([0.25, 0.25, 0.4]);
+  const falling = new Float64Array([1, 0, 0.5]);
+  world.signals.water = { cells: new Map(), shown, falling };
+  const blue = [];
+  const ctx = {
+    fillStyle: '',
+    globalAlpha: 1,
+    fillRect(...args) { if (String(ctx.fillStyle).startsWith('rgba(47')) blue.push(args); },
+  };
+  water.drawLayer(ctx, world, 40);
+  /**
+   * The blue rectangles drawn in one cell.
+   * @param {number} x - the cell's column
+   * @returns {number[][]} their [left, top, width, height]
+   */
+  const inCell = (x) => blue.filter(([left]) => left >= x * 40 && left < (x + 1) * 40);
+  /**
+   * How much blue was painted in one cell, as a share of the cell.
+   * @param {number} x - the cell's column
+   * @returns {number} 0 to 1
+   */
+  const painted = (x) => inCell(x).reduce((sum, [, , width, height]) => sum + width * height, 0) / 1600;
+  // All falling: one stream from the top of the cell to the bottom, in the middle, a quarter of a cell wide.
+  assert.deepEqual(inCell(0), [[15, 0, 10, 40]]);
+  // All lying: a pool across the cell, a quarter of a cell deep.
+  assert.deepEqual(inCell(1), [[40, 30, 40, 10]]);
+  // Half and half: a shallow pool with a stream coming down onto it.
+  assert.equal(inCell(2).length, 2);
+  // And always as much blue as there is water.
+  for (const x of [0, 1, 2]) assert.ok(Math.abs(painted(x) - shown[x]) < 1e-9, `cell ${x}: ${painted(x)} painted for ${shown[x]} of water`);
+});

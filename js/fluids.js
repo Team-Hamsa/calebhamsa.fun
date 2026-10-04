@@ -332,6 +332,14 @@ export function showsWaterLevel(name) {
 const NEAR = 1;
 
 /**
+ * Water in an open cell is FALLING if the cell under it still has space
+ * for it. It is all falling when that cell is this far from full or
+ * further, and less and less of it counts as falling as that cell fills
+ * right up (so the picture never snaps from one look to the other).
+ */
+const FALL_RANGE = 0.05;
+
+/**
  * Work out how much water to DRAW in every cell, so that water LOOKS
  * as tall as the amount there really is.
  *
@@ -340,7 +348,11 @@ const NEAR = 1;
  * and a half cells. Real water doesn't squish: ten buckets stand ten
  * buckets tall. So the picture puts the squished-in extra back on top:
  *
- *   1. Every wet cell is drawn with what it holds, up to full.
+ *   1. Every wet cell is drawn with what it holds, up to full. Water
+ *      with room to fall into the cell below is marked as FALLING (a
+ *      thin stream from the top of the cell to the bottom, as wide as
+ *      there is water), so a waterfall reads as joined-up streams and
+ *      a trickle is never drawn as a cell full of water.
  *   2. The EXTRA in an over-full cell is drawn on top of the water that
  *      is squishing it: on its own column, and on the other surfaces of
  *      the same connected water that stand at the height that squishes
@@ -375,9 +387,11 @@ const NEAR = 1;
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @param {string[][]} [sides] - open sides by cell index (from allOpenSides), if already worked out
- * @returns {{shown: Float64Array, source: Int32Array}} `shown`: how much
- *   water to draw in each cell (0 to 1). `source`: for cells drawn with
- *   squished-in extra, the index of the real top cell it sits on; else −1
+ * @returns {{shown: Float64Array, source: Int32Array, falling: Float64Array}}
+ *   `shown`: how much water to draw in each cell (0 to 1). `source`: for
+ *   cells drawn with squished-in extra, the index of the real top cell it
+ *   sits on; else −1. `falling`: how much of a cell's drawn water is on
+ *   its way down (0 = it all lies still, 1 = it is all a falling stream)
  */
 export function waterPicture(world, blockInfo, sides = allOpenSides(world, blockInfo)) {
   const { width, height } = world;
@@ -385,6 +399,7 @@ export function waterPicture(world, blockInfo, sides = allOpenSides(world, block
   const size = water.length;
   const shown = new Float64Array(size);
   const source = new Int32Array(size).fill(-1);
+  const falling = new Float64Array(size);
   const pump = world.cells.map((name) => Boolean(blockInfo(name)?.fluid?.pump));
 
   /**
@@ -424,18 +439,19 @@ export function waterPicture(world, blockInfo, sides = allOpenSides(world, block
     if (!wet(index)) continue;
     if (water[index] > FULL) anyExtra = true;
     shown[index] = Math.min(water[index], FULL);
+    // Is it falling? In an open cell, yes, as long as the cell under it has space.
+    const below = joined(index, 'down');
+    if (below >= 0 && showsWaterLevel(world.cells[index])) falling[index] = clamp((FULL - water[below]) / FALL_RANGE, 0, 1);
     const above = joined(index, 'up');
     if (above >= 0 && wet(above)) {
       columnOf[index] = columnOf[above]; // rows go top to bottom, so the cell above is done
-      // A cell with water standing on it is drawn full, so a column reads as solid.
-      if (showsWaterLevel(world.cells[index])) shown[index] = FULL;
       continue;
     }
     columnOf[index] = columns.length;
     columns.push({ top: index, body: -1, surface: floorOf(index) + shown[index], lid: floorOf(index) + shown[index], room: [] });
   }
   // Nothing is squished (a puddle, a stream, a shallow pond): the plain picture is right.
-  if (!anyExtra) return { shown, source };
+  if (!anyExtra) return { shown, source, falling };
 
   // --- 2. Bodies. Wet cells that touch are one body of water.
   const bodyOf = new Int32Array(size).fill(-1);
@@ -692,7 +708,7 @@ export function waterPicture(world, blockInfo, sides = allOpenSides(world, block
       if (shown[index] > 0) source[index] = column.top;
     }
   }
-  return { shown, source };
+  return { shown, source, falling };
 }
 
 /**

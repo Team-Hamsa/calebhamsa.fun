@@ -5,7 +5,8 @@ like dropping a stone in a full glass. (Pipes, valves, wheels, pumps and rope
 just keep the water that was there.) Only DIG and drains take water away.
 
 **Water looks as tall as it is.** Pour 10 cells of water into a shaft and it
-stands 10 cells tall. One tap of DIG takes **one scoop**: a full cell at the
+stands 10 cells tall. Falling water is drawn as a stream, as wide as there is
+water: a faucet's trickle is a thin thread, a waterfall a thick one. One tap of DIG takes **one scoop**: a full cell at the
 most. You can't pour into a cell that already looks full, so pour just above
 the water. (Inside the game, deep water is really *squished* into fewer cells:
 that squish is how the game makes water push up a U-tube. The picture puts the

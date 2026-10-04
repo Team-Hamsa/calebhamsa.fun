@@ -624,3 +624,77 @@ test('a tower joined by a pipe to an open spout: no water is drawn standing in t
     for (let x = 7; x < 15; x++) assert.equal(at(x, 7), 0, 'and nothing floats over the ground');
   }
 });
+
+// ---------------------------------------------------------------
+// Moving water: a trickle is drawn as a trickle
+// ---------------------------------------------------------------
+
+test('water falling off a ledge is never drawn as more water than there is', () => {
+  // Eight cells of water on a ledge, with a wide floor far below. While
+  // it falls there are thin streams in the air and a thin film on the
+  // floor under them. (Every cell with a trickle above it used to be
+  // drawn FULL: 8 cells of water were drawn as 13.)
+  const world = worldFrom([
+    '~~~~......',
+    '~~~~......',
+    '####......',
+    '..........',
+    '..........',
+    '..........',
+    '..........',
+    '#........#',
+    '##########',
+  ]);
+  for (let tick = 0; tick < 300; tick++) {
+    stepFluids(world, blockInfo);
+    const { shown, falling } = waterPicture(world, blockInfo);
+    assert.ok(total(shown) <= total(world.fluid.water) + 1e-9, `tick ${tick}: ${total(world.fluid.water)} cells of water, drawn as ${total(shown)}`);
+    // (While it is still rushing, a little squished-in water has no level surface to be drawn on yet.)
+    assert.ok(total(shown) >= total(world.fluid.water) - 0.3, `tick ${tick}: ${total(world.fluid.water)} cells of water, only ${total(shown)} drawn`);
+    falling.forEach((share) => assert.ok(share >= 0 && share <= 1));
+  }
+  // Once it lies still, nothing is falling.
+  assert.equal(total(waterPicture(world, blockInfo).falling), 0);
+});
+
+test('a trickle falling onto a puddle: the trickle is marked as falling, the puddle under it is drawn as deep as it is', () => {
+  const world = worldFrom([
+    '#...#',
+    '#...#',
+    '#...#',
+    '#####',
+  ]);
+  setFluid(world, 'water', 2, 0, 0.1); // a trickle in mid-air...
+  setFluid(world, 'water', 2, 1, 0.1);
+  for (const x of [1, 2, 3]) setFluid(world, 'water', x, 2, 0.2); // ...over a shallow puddle
+  const { shown, falling } = waterPicture(world, blockInfo);
+  assert.ok(Math.abs(shown[2 * 5 + 2] - 0.2) < 1e-9, `the puddle under the trickle is drawn ${shown[2 * 5 + 2]} deep`);
+  assert.equal(falling[2 * 5 + 2], 0, 'the puddle lies on the floor');
+  assert.ok(Math.abs(shown[1 * 5 + 2] - 0.1) < 1e-9 && Math.abs(shown[2] - 0.1) < 1e-9, 'the trickle is drawn with what it holds');
+  assert.equal(falling[1 * 5 + 2], 1, 'the trickle is falling: the cell under it is far from full');
+  assert.equal(falling[2], 1);
+  assert.ok(Math.abs(total(shown) - total(world.fluid.water)) < 1e-9);
+});
+
+test('water lying on full water is not falling: a settled deep column has no streams in it', () => {
+  const world = shaft(10);
+  run(world, 400);
+  const { falling } = waterPicture(world, blockInfo);
+  assert.equal(total(falling), 0);
+});
+
+test('falling and lying change over smoothly: the fuller the cell below, the less of the water above counts as falling', () => {
+  const shares = [0, 0.5, 0.9, 0.96, 0.98, 0.99, 1, 1.2].map((below) => {
+    const world = worldFrom(['#.#', '#.#', '###']);
+    setFluid(world, 'water', 1, 0, 0.3);
+    setFluid(world, 'water', 1, 1, below);
+    return waterPicture(world, blockInfo).falling[1];
+  });
+  assert.equal(shares[0], 1, 'over an empty cell it is all falling');
+  assert.equal(shares[1], 1);
+  assert.equal(shares[2], 1);
+  for (let k = 3; k < shares.length; k++) assert.ok(shares[k] <= shares[k - 1], `shares ${shares.join(' ')}`);
+  assert.ok(shares[4] > 0 && shares[4] < 1, `part falling, part lying: ${shares[4]}`);
+  assert.equal(shares[6], 0);
+  assert.equal(shares[7], 0);
+});
