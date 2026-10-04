@@ -261,6 +261,9 @@ with no rope.
 But only while it's really going down. A weight lying on the ground pulls on
 nothing (its rope is slack), so it can't turn a winch, it's no free power for a
 generator, and it's no use as a counterweight. A counterweight has to **hang**.
+Rope that has been let out stays let out: lots of short turns add up, the same
+as one long one. So a weight gives its push only by really coming down, and
+when it lands, the push is over.
 
 **The catch (ratchet).** Real winches have a little metal finger that clicks
 over the teeth of a wheel, so the drum can't spin backwards when you let go.

@@ -218,3 +218,11 @@ The scan-order owner had a hole: with only the NON-owner cranked, it had no load
 - `ownsRopeEnd(..., isDriven)`: among the winches sharing an end, those being turned come first; scan order only breaks ties (both turned, or neither).
 - So either crank alone lifts the crate at 0.5 and stalls on iron, mirrored builds included.
 - Still a simplification: with BOTH winches turned (on separate gears), only the first carries the load and the second spins free. A real pair of ropes would have the faster drum take the load.
+
+## Addendum 2026-10-04 (later): a stopped winch keeps its part-wound rope (issue #24 review)
+
+`liftSystem` dropped a winch's part-wound amount whenever its speed was 0 ("forget any half-wound rope"). But while that rope was being let out, the hanging load had already pushed the gears (the hanging branch of `balance`). A winch that stopped before a whole cell was out (a clicker-pulsed motor, or two units taking turns tick by tick) got the weight's push again and again while the weight never came down: a lamp got up to 6× what the battery gave, and a two-winch ring lit lamps forever with no source. A pulsed motor could never lift anything either.
+
+- A stopped, stalled or non-owning winch now carries its amount over unchanged. It is zeroed only where the rope really can't move: wound right in, or the load resting.
+- Pulsed lowering now brings the weight down bit by bit; on the ground it is `resting` and gives no more push. The ring with a one-tick kick ends with both irons on the floor and no current.
+- Not done: the amount is not reset when the player swaps the load or re-ropes a winch mid-cell (at most one cell's worth of rope is carried over to the new load).

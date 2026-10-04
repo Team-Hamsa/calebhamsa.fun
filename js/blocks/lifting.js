@@ -89,8 +89,11 @@ export function refreshLift(world, blockInfo) {
  * The lifting rule that runs every tick, just after the gears (so it
  * knows how fast each winch turns). Each turning winch winds in (↻) or
  * lets out (↺) a little rope. Once it has wound a whole cell's worth (two
- * with a pulley hook), the load moves one cell. Going down, a load moves
- * one cell a tick at the very most: that's how fast things fall.
+ * with a pulley hook), the load moves one cell. The part-wound amount is
+ * kept while the winch is stopped, so short turns add up. It's only
+ * dropped when the rope really can't move (wound right in, or the load
+ * resting on the ground). Going down, a load moves one cell a tick at
+ * the very most: that's how fast things fall.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {boolean} true if any block moved
@@ -112,11 +115,21 @@ export function liftSystem(world, blockInfo) {
   const isDriven = (index) => Boolean(world.signals.spin?.cells?.get(index)?.driven);
   for (const index of winches) {
     const speed = world.signals.spin?.cells?.get(index)?.speed ?? 0;
-    if (Math.abs(speed) < MIN_SPEED) continue; // stopped (or stalled): forget any half-wound rope
+    // Stopped (or stalled): the rope stays just where it is. A part-wound
+    // bit of rope is NOT forgotten: rope let out stays let out, so short
+    // pulls add up, and a weight that gave its push going down a little
+    // really has gone down that little.
+    if (Math.abs(speed) < MIN_SPEED) {
+      if (before.has(index)) pull.set(index, before.get(index));
+      continue;
+    }
     const x = index % world.width;
     const y = Math.floor(index / world.width);
     // Two winches sharing one rope end: only its owner winds it (the other just spins).
-    if (!ownsRopeEnd(world, x, y, traceRope(world, x, y, blockInfo), blockInfo, isDriven)) continue;
+    if (!ownsRopeEnd(world, x, y, traceRope(world, x, y, blockInfo), blockInfo, isDriven)) {
+      if (before.has(index)) pull.set(index, before.get(index));
+      continue;
+    }
     let amount = (before.get(index) ?? 0) + (speed * ROPE_PER_TURN) / TICKS_PER_SECOND;
     /**
      * How much rope moves the load one cell: 2 with a pulley hook.

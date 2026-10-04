@@ -16,7 +16,7 @@ import { spinAt } from '../js/blocks/gears.js';
 const LETTERS = {
   '.': 'air', '#': 'stone', s: 'gearSmall', G: 'gearBig', '-': 'axle', R: 'crankCW', Q: 'crankCCW',
   w: 'winch', '|': 'rope', P: 'pulley', h: 'pulleyHook', c: 'crate', I: 'ironWeight', S: 'sand',
-  f: 'faucet', O: 'waterWheel', D: 'drain', W: 'wire', B: 'battery', M: 'motor', E: 'generator', L: 'lamp', X: 'crankStop',
+  f: 'faucet', O: 'waterWheel', D: 'drain', W: 'wire', B: 'battery', M: 'motor', E: 'generator', L: 'lamp', X: 'crankStop', K: 'clicker',
 };
 
 /**
@@ -349,4 +349,79 @@ test('two winches on one rope end: the one that is cranked stalls on an iron wei
   assert.equal(rowOf(world, 2, 'ironWeight'), 7);
   assert.equal(spinAt(world, 0, 2), 0);
   assert.equal(world.signals.spin.cells.get(2 * 4 + 0).stalled, true);
+});
+
+test('short pulls add up: a motor on a clicker lifts a crate bit by bit, like one that is always on', () => {
+  // Geared down 4 times, the winch winds less than half a cell of rope in each 1 second pulse.
+  for (const part of ['K', 'W']) {
+    const rows = ['WWWW......', `${part}..B......`, 'WWMW......', '..sG-sGw..', '.......|..', '.......|..', '.......|..', '.......c..', '##########'];
+    const world = run(make(rows), 400);
+    assert.equal(rowOf(world, 7, 'crate'), 5, part); // up 2 cells: as far as the rope goes
+  }
+});
+
+/**
+ * The pulsed machine: a battery and a clicker drive a motor, geared down,
+ * that lets out a winch with an iron weight hanging on it; the weight
+ * helps turn a geared-up generator that lights a lamp of its own.
+ * @returns {object} the world
+ */
+function pulsedDrop() {
+  return make([
+    'WWWW............', 'K..B............', 'WWMW......WWW...', '..sGwGs-GsE.L...', '....|.....WWW...', '....I...........',
+    '................', '................', '................', '................', '................', '################',
+  ]);
+}
+
+test('rope let out stays let out: a weight lowered in short pulses comes down bit by bit, and lands', () => {
+  const world = pulsedDrop();
+  run(world, 7);
+  assert.ok(spinAt(world, 4, 3) < -0.2); // the motor lets rope out, less than a cell in each pulse
+  run(world, 57);
+  const part = rowOf(world, 4, 'ironWeight');
+  assert.ok(part > 5 && part < 10, `after 4 pulses the weight is at row ${part}`);
+  run(world, 600);
+  assert.equal(rowOf(world, 4, 'ironWeight'), 10); // on the ground
+});
+
+test('a hanging weight only gives power by really coming down: the lamp never gets more than the battery and the fall put in', () => {
+  const world = pulsedDrop();
+  const systems = allSystems();
+  const battery = world.cells.indexOf('battery');
+  const lamp = 3 * world.width + 12;
+  let batteryEnergy = 0;
+  let lampEnergy = 0;
+  for (let t = 0; t < 1200; t++) {
+    tick(world, systems, blockInfo);
+    batteryEnergy += world.signals.electric.cells.get(battery).current / 8; // 1 volt × current × an eighth of a second
+    lampEnergy += world.signals.electric.cells.get(lamp).current ** 2 / 8;  // current² × resistance 1
+  }
+  const fallen = rowOf(world, 4, 'ironWeight') - 5;
+  assert.equal(fallen, 5);
+  // An iron weight (4) pulls the winch round half a turn for each cell it comes down.
+  assert.ok(lampEnergy <= batteryEnergy + (4 * fallen) / 2, `lamp ${lampEnergy}, battery ${batteryEnergy}`);
+  // And once it has landed, the lamp only gets a small share of what the battery gives.
+  let late = 0;
+  let lateBattery = 0;
+  for (let t = 0; t < 800; t++) {
+    tick(world, systems, blockInfo);
+    lateBattery += world.signals.electric.cells.get(battery).current / 8;
+    late += world.signals.electric.cells.get(lamp).current ** 2 / 8;
+  }
+  assert.ok(late < lateBattery, `lamp ${late}, battery ${lateBattery}`);
+});
+
+test('two winches with hanging weights, each one\'s generator driving the other\'s motor, stop when the weights land', () => {
+  const world = make([
+    '..WWWWLWWWWWWWW.', '..W...........W.', '..W...WWLWW...W.', '..MsswE...MsswE.', '..W..|WWBWW..|W.', '..W..I.......IW.',
+    '..W...........W.', '..W...........W.', '..WWWWWWWWWWWWW.', '................', '................', '################',
+  ]);
+  run(world, 1); // a one-tick kick from a battery...
+  setBlock(world, 8, 4, 'wire'); // ...then no battery, crank, faucet or burner anywhere
+  run(world, 400);
+  assert.equal(rowOf(world, 5, 'ironWeight'), 7);  // both weights came down as far as they can
+  assert.equal(rowOf(world, 13, 'ironWeight'), 7);
+  assert.equal(spinAt(world, 5, 3), 0);
+  assert.equal(spinAt(world, 13, 3), 0);
+  assert.equal(world.signals.electric.flowing, false); // and both lamps are dark
 });
