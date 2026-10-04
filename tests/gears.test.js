@@ -889,3 +889,15 @@ test('a water wheel has one marked paddle, so you can see which way it turns', (
   assert.ok(steps.every((step) => step <= 1e-9 && step > -0.2), `steps: ${steps}`);
   assert.ok(steps.some((step) => step < -0.1), 'the marked paddle never moved');
 });
+
+test('a clicker switching OFF asks for a redraw, so its lamp is not left drawn lit', () => {
+  const world = run(['.WKWW', '.B..L', '.WWWW'], 7);
+  assert.ok(lampLevel(world, 4, 1) > 0.9, 'the lamp is lit on the on beat');
+  world.animating = false;
+  tick(world, allSystems(), blockInfo); // tick 8: the clicker opens
+  assert.equal(lampLevel(world, 4, 1), 0);
+  assert.equal(world.animating, true, 'the tick the lamp goes out must be redrawn');
+  world.animating = false;
+  tick(world, allSystems(), blockInfo); // nothing changes on the next tick
+  assert.equal(world.animating, false);
+});

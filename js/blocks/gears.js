@@ -391,7 +391,10 @@ export function gearsSystem(world, blockInfo) {
   // electricity out again first if its wiring changed. (Otherwise a
   // generator would spin free while its clicker is open, and then give
   // one tick of full-speed electricity that nothing had to push for.)
-  refreshElectric(world, blockInfo);
+  // If that changed anything, the picture must be drawn again: the ⚡ pack
+  // (which runs later) will find the work already done, and a lamp that
+  // has just gone out would stay drawn lit.
+  if (refreshElectric(world, blockInfo)) world.animating = true;
   // The wheels read `wheels` while solveSpin works out the turning.
   const cellsBefore = world.signals.spin?.cells;
   world.signals.spin = { ...world.signals.spin, wheels, wheelFlow, wheelWork };
