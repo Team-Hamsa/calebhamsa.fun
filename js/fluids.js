@@ -29,7 +29,7 @@
  * sides that touch: air lets it through everywhere, solid blocks never
  * do, and pipes only along their open sides (see openSides).
  */
-import { AIR, getBlock, inBounds } from './world.js';
+import { AIR, FLUIDS, getBlock, inBounds, swapBlock } from './world.js';
 import { OPPOSITE, REFERENCE_CURRENT, SIDES } from './circuit.js';
 
 /** A full cell. */
@@ -249,6 +249,67 @@ export function pour(world, kind, x, y, blockInfo) {
   if (world.fluid[kind][index] >= FULL) return false;
   world.fluid[kind][index] = FULL;
   return true;
+}
+
+/**
+ * BUILD a block into a cell without making its water vanish. This is
+ * what BUILD does with every real block.
+ *
+ *   • A block that carries water (a pipe, valve, water wheel, pump,
+ *     turbine, drain or rope) just keeps the water that was there.
+ *   • A solid block (stone, sand, a battery...) PUSHES the water and
+ *     steam out of the way, like a rock dropped in a full glass: up if
+ *     it can, or else out to the sides (half each way if both are open),
+ *     or else down. So the water level goes UP when you build in a tank.
+ *   • Only when the cell is shut in on every side is there nowhere for
+ *     the water to go, and it is lost.
+ *
+ * (This lives here and not in world.js because only the blocks know
+ * which of them carry water.)
+ * @param {object} world - the world
+ * @param {number} x - column
+ * @param {number} y - row
+ * @param {string} name - the block to build
+ * @param {Function} blockInfo - looks up what a block name means
+ * @returns {boolean} true if the cell really changed
+ */
+export function placeBlock(world, x, y, name, blockInfo) {
+  if (!swapBlock(world, x, y, name)) return false;
+  if (name !== AIR && !isFluidBlock(blockInfo(name))) pushFluidOut(world, x, y, blockInfo);
+  return true;
+}
+
+/**
+ * Push all the water and steam out of a cell (a solid block was just
+ * built there) into the cells next to it: up first, then the sides,
+ * then down. A neighbor only takes it through a side it's open on (so
+ * not through a pipe's wall), and never a pump (a one-way door). With
+ * no neighbor to take it, it is lost.
+ * @param {object} world - the world
+ * @param {number} x - column
+ * @param {number} y - row
+ * @param {Function} blockInfo - looks up what a block name means
+ * @returns {void}
+ */
+function pushFluidOut(world, x, y, blockInfo) {
+  const index = y * world.width + x;
+  /**
+   * The neighbor on one side, if fluid can be pushed into it.
+   * @param {string} side - which side
+   * @returns {number[]} its index in a list, or an empty list if it's closed
+   */
+  const room = (side) => {
+    const [dx, dy] = STEP[side];
+    if (blockInfo(getBlock(world, x + dx, y + dy))?.fluid?.pump) return [];
+    return openSides(world, x + dx, y + dy, blockInfo).includes(OPPOSITE[side]) ? [index + dx + dy * world.width] : [];
+  };
+  const choices = [room('up'), [...room('left'), ...room('right')], room('down')];
+  const into = choices.find((cells) => cells.length > 0) ?? [];
+  for (const kind of FLUIDS) {
+    const amounts = world.fluid[kind];
+    for (const cell of into) amounts[cell] += amounts[index] / into.length;
+    amounts[index] = 0;
+  }
 }
 
 /**

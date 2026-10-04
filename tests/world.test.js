@@ -109,7 +109,7 @@ test('a new world is dry: no water or steam anywhere', () => {
   assert.deepEqual([...world.fluid.steam], [0, 0, 0, 0]);
 });
 
-test('building into a wet cell washes the water away; swapBlock keeps it', () => {
+test('setBlock (the plain helper) empties the cell; swapBlock keeps its water. (BUILD pushes water aside instead: see build.test.js)', () => {
   const world = createWorld(2, 1);
   setFluid(world, 'water', 0, 0, 1);
   swapBlock(world, 0, 0, 'valveOpen');

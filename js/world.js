@@ -109,8 +109,10 @@ export function getBlock(world, x, y) {
 
 /**
  * Put a block at this spot. Outside the world, nothing happens.
- * Any water or steam in the cell is washed away (like building into
- * water in the game). To flip a block without spilling, use swapBlock.
+ * Any water or steam in the cell is emptied out. This is the plain
+ * helper for making worlds (loading a save, tests, DIG). BUILD doesn't
+ * use it: it uses placeBlock in fluids.js, which pushes the water out
+ * of the way instead. To flip a block without spilling, use swapBlock.
  * @param {{width: number, height: number, cells: string[]}} world - the world
  * @param {number} x - column, 0 = left
  * @param {number} y - row, 0 = top

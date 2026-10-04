@@ -16,7 +16,7 @@ import { AIR, WORLD_HEIGHT, WORLD_WIDTH, clearFluid, defaultWorld, getBlock, set
 import {
   AIR_INFO, PACKS, allSystems, blockInfo, blocksInPack, drawLayers, isKnownBlock, refreshSignals,
 } from './blocks/registry.js';
-import { pour } from './fluids.js';
+import { placeBlock, pour } from './fluids.js';
 import { blockCanvas, drawWorld } from './block-art.js';
 import { initGuide } from './guide.js';
 import { WORLD_COUNT, loadCurrent, loadThumbnail, loadWorld, saveCurrent, saveWorld, worldKey } from './saves.js';
@@ -147,7 +147,8 @@ export function fitCellSize(boxWidth, boxHeight, columns, rows) {
 
 /**
  * Do what BUILD or DIG does to one cell: build (or pour), or dig (which
- * also scoops out water). (USE is handled by useBlockAt,
+ * also scoops out water). Building into water pushes the water out of
+ * the way (see placeBlock in fluids.js); only DIG takes water away. (USE is handled by useBlockAt,
  * because it makes sounds instead of changing the world.)
  * @param {{width: number, height: number, cells: string[]}} world - the world
  * @param {string} tool - 'build', 'dig' or 'use'
@@ -160,7 +161,8 @@ export function applyTool(world, tool, x, y, selected) {
   if (tool === 'build') {
     const fluid = blockInfo(selected)?.pours; // 💧 and ☁️ pour instead of building
     if (fluid) return pour(world, fluid, x, y, blockInfo);
-    return setBlock(world, x, y, selected);
+    // Building never makes water vanish: it stays in a pipe, and a rock pushes it aside.
+    return placeBlock(world, x, y, selected, blockInfo);
   }
   if (tool === 'dig') {
     const dried = clearFluid(world, x, y); // digging scoops out water too

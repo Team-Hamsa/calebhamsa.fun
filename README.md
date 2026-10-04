@@ -107,7 +107,10 @@ the electricity starts flowing.
 ### 💧 WATER
 
 Water and steam are real **amounts**: a cell can be full, half full, or
-nearly empty, and water never appears or disappears by itself.
+nearly empty, and water never appears or disappears by itself. Build a rock
+into a tank and the water is pushed out of the way, so the level goes **up**,
+like dropping a stone in a full glass. (Pipes, valves, wheels, pumps and rope
+just keep the water that was there.) Only DIG and drains take water away.
 
 **Water has to fall to give its push.** Water up high holds energy, like a
 ball at the top of a slide. It gives that push away on the way down (to a

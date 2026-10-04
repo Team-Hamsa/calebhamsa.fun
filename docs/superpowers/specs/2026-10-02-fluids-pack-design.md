@@ -271,3 +271,13 @@ A pump → water wheels → generator → same pump loop ran forever with 3 or m
 - `DROP_POWER` = 10 turning-work units per (full cell of water × cell of fall). It is the single exchange rate between water energy and work, shared by pump and wheel.
 
 **Not changed:** turbines still count steam flow only (stacked turbines over one burner each get full push). A burner is an endless source, so that is not a closed loop, but it is not head-accurate either.
+
+## Addendum 2026-10-04: building into water (issue #19)
+
+The edge-case row "Building/digging a cell with fluid in it: that cell's fluid disappears" now only holds for **digging**. BUILD calls `placeBlock(world, x, y, name, blockInfo)` in fluids.js (not `setBlock`; world.js has no `blockInfo`):
+
+- a block with a `fluid` setting (pipe, valves, water wheel, pumps, turbine, drain, rope) keeps the cell's water and steam;
+- any other block pushes them into a neighbor: **up** first, else the **sides** (split evenly when both are open, so left and right stay equal), else **down**. A neighbor only counts if it is open on the touching side (`openSides`), and pumps never count (one-way doors);
+- with no such neighbor (shut in on every side), the fluid is lost. This and DIG, faucets and drains are the only ways water is made or lost.
+
+The pushed water may overfill the neighbor for a moment (it is squished); the ordinary flow rules spread it out. `setBlock` still empties the cell: it is the plain helper for loading saves and tests.

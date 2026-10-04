@@ -446,7 +446,7 @@ const blocks = {
  */
 const guide = {
   rules: [
-    'Water and steam are real amounts: a cell can be full, half full or nearly empty. Water never appears or disappears by itself.',
+    'Water and steam are real amounts: a cell can be full, half full or nearly empty. Water never appears or disappears by itself. Build a block in water and the water is pushed out of the way: the level goes UP. Only DIG and drains take water away.',
     'Water falls and spreads out. Deep water gets squished, so it pushes UP through pipes and U-tubes.',
     'Steam is the opposite: it rises and spreads out under ceilings.',
     'Water has to FALL to give its push. High water can turn a wheel on its way down. Water lying level has no push left.',
