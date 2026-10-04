@@ -73,3 +73,10 @@ test('the side menu links to every page', () => {
 test('no wiki page still points at the old docs/ picture folders', () => {
   assert.ok(!ALL_PAGES.includes('docs/blocks/') && !ALL_PAGES.includes('docs/machines/'));
 });
+
+test('the README sends you to the wiki and no longer keeps the block pictures', () => {
+  const readme = readFileSync(new URL('README.md', ROOT), 'utf8');
+  assert.ok(readme.includes('https://github.com/Team-Hamsa/calebhamsa.fun/wiki'), 'README has no link to the wiki');
+  assert.ok(!readme.includes('docs/blocks/') && !readme.includes('docs/machines/'), 'README still points at docs/blocks or docs/machines');
+  assert.ok(readme.split('\n').length < 220, 'README is still long: did the how-to-play sections move?');
+});
