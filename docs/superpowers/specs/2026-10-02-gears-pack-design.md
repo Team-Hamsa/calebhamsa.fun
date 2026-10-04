@@ -58,14 +58,14 @@ Same as phases 1–3:
 | `crankStop` | ✓ | `{ kind: 'hub' }` | no source | → `crankCW` |
 | `crankCW` | hidden | `{ kind: 'hub' }` | source: `+CRANK_SPEED` | → `crankCCW` |
 | `crankCCW` | hidden | `{ kind: 'hub' }` | source: `−CRANK_SPEED` | → `crankStop` |
-| `waterWheel` | ✓ | `{ kind: 'hub' }` | `fluid: { sides: 'all' }`, `wheel: true`; source: smoothed signed water flow × `WHEEL_GAIN`, or none below 0.05 | — |
+| `waterWheel` | ✓ | `{ kind: 'hub' }` | `fluid: { sides: 'all' }`, `wheel: true`; source: speed `WHEEL_SPEED × √fall`, strength `WHEEL_STRENGTH × water × √fall` from the water going through it (see the addenda below; first written as flow × `WHEEL_GAIN`, which is gone), or none below 0.05 | — |
 | `motor` | ✓ | `{ kind: 'hub' }` | `part: { resistance: 1 }`; source: `level × MOTOR_SPEED × direction`, or none when level < 0.05 | — |
 | `generator` | ✓ | `{ kind: 'hub' }` | `part: { resistance: 0.05, pushNow }`: push = `speed × GENERATOR_GAIN` (signed) | — |
 
 **🧪 Values:**
 - `CRANK_SPEED` 1 (turn per second)
 - `MOTOR_SPEED` 1
-- `WHEEL_GAIN` 20 (one faucet's 0.05/tick of water ≈ 1 turn per second)
+- `WHEEL_SPEED` 1 and `WHEEL_STRENGTH` 40 (one faucet's 0.05/tick of water falling one cell = 1 turn per second, strength 2). (Was `WHEEL_GAIN` 20, replaced: see the water wheel addenda below.)
 - `GENERATOR_GAIN` 0.8
 
 Speeds are **signed**: + is clockwise ↻.

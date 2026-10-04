@@ -226,6 +226,7 @@ The scan-order owner had a hole: with only the NON-owner cranked, it had no load
 - A stopped, stalled or non-owning winch now carries its amount over unchanged. It is zeroed only where the rope really can't move: wound right in, or the load resting.
 - Pulsed lowering now brings the weight down bit by bit; on the ground it is `resting` and gives no more push. The ring with a one-tick kick ends with both irons on the floor and no current.
 - Not done: the amount is not reset when the player swaps the load or re-ropes a winch mid-cell (at most one cell's worth of rope is carried over to the new load).
+- Not done: the part-wound amount is not saved. It lives in `world.signals.lift.pull`, and signals are rebuilt when a world is loaded (page reload, switching worlds), so a winch then starts at 0 again: up to one cell of rope (two with a pulley hook) that a hanging weight had already been paid for is given back. It takes a reload to get it, so no machine can use it by itself. Saving it would also mean saving on every tick a winch turns (saves are only made when blocks or fluids change). The same goes for `signals.falling` (water in mid-fall loses the push it carried: a tall waterfall's wheel takes a few seconds to get back to strength) and `signals.used` (steam counts as fresh once); those two only under-credit or are one-offs.
 
 ## Addendum 2026-10-04 (final review): a landed load keeps the slack it landed with (issue #24 review)
 
