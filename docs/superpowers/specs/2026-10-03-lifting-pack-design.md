@@ -164,3 +164,7 @@ At the 8-ticks-a-second clock, rope wound per tick = `speed × ROPE_PER_TURN / 8
 - **`tests/registry.test.js`:** pack order `['basic', 'water', 'gears', 'lift', 'electric']`.
 - **README:** a 🏗️ LIFTING table with pictures, extra `winch-stalled` picture, and machines: crane, gear it down for iron, a well over a pulley.
 - **Browser check (Chromium iPad emulation):** crank → winch lifts a crate; iron stalls with red ⬇; no console errors.
+
+## Addendum 2026-10-04: generator drag (issue #11)
+
+The "Realistic strength" section says the generator's drag uses a current per volt "remembered in `signals.spin.conducts`". That memory went stale (a once-shorted generator stayed stiff forever) and has been removed: the drag is now worked out fresh from last tick's electric record. See the gears spec addendum of the same date.

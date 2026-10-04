@@ -15,7 +15,7 @@
  */
 import { solveSpin, MIN_SPEED } from '../spin.js';
 import { swapBlock } from '../world.js';
-import { REFERENCE_CURRENT } from '../circuit.js';
+import { PUSH_STEP, REFERENCE_CURRENT, plusSide, roundPush } from '../circuit.js';
 
 /**
  * How fast a crank turns, in turns per second.
@@ -59,8 +59,8 @@ export const GENERATOR_GAIN = 0.8;
  * How hard the electricity a generator makes pushes back on its shaft,
  * for each unit of current. Making electricity takes work: that's why a
  * generator lighting lots of lamps is harder to turn. A generator gives
- * back GENERATOR_GAIN ÷ GENERATOR_TORQUE (8 out of 10) of the work that
- * turns it as electricity; the rest is lost as heat, like in a real one.
+ * back at most GENERATOR_GAIN ÷ GENERATOR_TORQUE (8 out of 10) of the work
+ * that turns it as electricity; the rest is lost as heat, like in a real one.
  * So no machine can run forever on its own.
  * 🧪 Try this! 0.5: the generator gives back more than you put in, and a
  * motor powered by its own generator runs faster and faster (real
@@ -127,10 +127,25 @@ export function generatorPush(world, x, y) {
  *
  * Its push makes current flow: how much depends on what it's wired to
  * (more lamps side by side = more current). The current pushes back on
- * the shaft. We learn "how much current for each volt" from the last
- * tick's electricity (that doesn't change unless the wiring does), and
- * remember it in world.signals.spin.conducts, so a slow generator whose
- * push rounds down to 0 still remembers its lamps.
+ * the shaft: GENERATOR_TORQUE for each unit of current. So a generator
+ * with nothing wired to it spins freely, one lighting a lamp is a bit
+ * harder to turn, and one whose ends are joined by plain wire (a short
+ * circuit) is very hard to turn, for as long as the wire is there.
+ *
+ * Nothing is remembered from before: everything comes from the last
+ * tick's electricity (world.signals.electric), which is worked out again
+ * whenever the wiring changes. So fixing the wiring always fixes the
+ * generator.
+ *
+ *   • While it turns, we use the REAL current through it (which the
+ *     circuit worked out from its push): current ÷ push × volts per turn.
+ *     Only current going the way the generator pushes counts. (Current
+ *     forced through it backwards, by a battery, would help turn a real
+ *     generator like a motor. We don't give that help away for free.)
+ *   • While it's stopped (or so slow that it pushes less than PUSH_STEP),
+ *     we use its "load": the current that WOULD flow for each volt (see
+ *     loadOn in circuit.js). And if something else, like a battery, is
+ *     forcing current through it, that holds it still either way.
  * @param {object} world - the world
  * @param {number} x - the generator's column
  * @param {number} y - the generator's row
@@ -138,14 +153,19 @@ export function generatorPush(world, x, y) {
  */
 export function generatorDrag(world, x, y) {
   const index = y * world.width + x;
-  const conducts = world.signals.spin?.conducts;
-  const cell = world.signals.spin?.cells?.get(index);
-  const current = world.signals.electric?.cells?.get(index)?.current;
+  const electric = world.signals.electric?.cells?.get(index);
+  if (!electric) return 0;
+  const speed = world.signals.spin?.cells?.get(index)?.speed ?? 0;
+  // The current coming out of its + end (negative = going in there).
+  const current = electric.arms[plusSide(electric.axis)] ?? 0;
   // Last tick's push, rounded the same way the circuit rounds it (partPush).
-  const push = Math.floor(Math.abs((cell?.speed ?? 0) * GENERATOR_GAIN) * 10 + 1e-9) / 10;
-  if (conducts && push >= 0.1 && current !== undefined) conducts.set(index, current / push);
-  const perVolt = conducts?.get(index) ?? 0;
-  return GENERATOR_TORQUE * perVolt * GENERATOR_GAIN; // volts per turn × current per volt × push-back per current
+  const push = Math.abs(roundPush(speed * GENERATOR_GAIN));
+  if (push > 0) {
+    const perVolt = Math.max(0, current * Math.sign(speed)) / push;
+    return GENERATOR_TORQUE * perVolt * GENERATOR_GAIN; // push-back per current × current per volt × volts per turn
+  }
+  const slowest = PUSH_STEP / GENERATOR_GAIN; // slower than this, it pushes nothing
+  return GENERATOR_TORQUE * ((electric.load ?? 0) * GENERATOR_GAIN + Math.abs(current) / slowest);
 }
 
 /**
@@ -204,8 +224,7 @@ export function refreshSpin(world, blockInfo) {
   const blocks = world.cells.join(',');
   if (world.signals.spin?.blocks === blocks) return;
   const wheelFlow = world.signals.spin?.wheelFlow ?? new Map();
-  const conducts = world.signals.spin?.conducts ?? new Map();
-  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, conducts, blocks };
+  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, blocks };
 }
 
 /**
@@ -225,10 +244,7 @@ export function gearsSystem(world, blockInfo) {
     const last = before.get(index) ?? 0;
     wheelFlow.set(index, last + ((waterOut.get(index) ?? 0) - last) / WHEEL_SMOOTHING);
   });
-  if (!world.signals.spin) world.signals.spin = { cells: new Map() };
-  world.signals.spin.conducts ??= new Map();
-  const conducts = world.signals.spin.conducts;
-  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, conducts, blocks: world.cells.join(',') };
+  world.signals.spin = { ...solveSpin(world, blockInfo), wheelFlow, blocks: world.cells.join(',') };
   if (world.signals.spin.turning) world.animating = true;
   return false;
 }
@@ -518,7 +534,7 @@ const blocks = {
   },
   generator: {
     title: 'Generator', color: '#546e7a',
-    spin: { kind: 'hub' }, part: { resistance: 0.05, pushNow: generatorPush }, spinDrag: generatorDrag, drawSignals: drawGenerator,
+    spin: { kind: 'hub' }, part: { resistance: 0.05, pushNow: generatorPush, feelsLoad: true }, spinDrag: generatorDrag, drawSignals: drawGenerator,
   },
   crankCW: crank(CRANK_SPEED, 'crankCW'),
   crankCCW: crank(-CRANK_SPEED, 'crankCCW'),
@@ -535,7 +551,7 @@ const guide = {
     'Jammed! Three big gears touching in an L can\'t turn: each would have to turn both ways at once. They show a red ❌.',
     'Everything that turns has a top speed and a strength. The harder it pushes, the slower it goes. Two on the same gears add their strength.',
     'Gears change speed, not power: they can make things faster or stronger, never both.',
-    'Generators push back: the more lamps they light, the harder they are to turn.',
+    'Generators push back: the more lamps they light, the harder they are to turn. With nothing wired up they spin freely. Joined by plain wire (a short circuit) they are very hard to turn, until you take the wire away.',
     'Nothing runs forever. A motor powered by its own generator slows down and stops, like a real one.',
   ],
   blocks: {

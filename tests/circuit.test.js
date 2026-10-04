@@ -213,19 +213,41 @@ test('a pushing turbine wired straight back to itself sparks, like a battery', (
 });
 
 test('a turbine pushing almost nothing pushes nothing, so a stopped turbine stops the circuit', () => {
-  // The push is rounded to 0.1 for the solve, the same as the circuit key,
-  // so a dying turbine can't leave a tiny current flowing forever.
+  // The push is rounded down to a hundredth of a volt for the solve, the same
+  // as the circuit key, so a dying turbine can't leave a tiny current flowing forever.
   const world = worldFrom(['WWW', 'T.W', 'WLW']);
-  world.turbinePush = 0.04;
+  world.turbinePush = 0.004;
   const { cells, flowing } = solveCircuit(world, blockInfo);
   assert.equal(cells.get(2 * 3 + 1).level, 0);
   assert.equal(flowing, false);
 });
 
-test('a changing push is rounded toward zero: 0.16 pushes 0.1, -0.16 pushes -0.1, 0.3 stays 0.3', () => {
-  assert.equal(partPush({ pushNow: () => 0.16 }, null, 0, 0), 0.1);
-  assert.equal(partPush({ pushNow: () => -0.16 }, null, 0, 0), -0.1);
+test('a weak push still makes a little electricity: voltage follows the push all the way down', () => {
+  const world = worldFrom(['WWW', 'T.W', 'WLW']);
+  world.turbinePush = 0.04;
+  const lamp = solveCircuit(world, blockInfo).cells.get(2 * 3 + 1);
+  assert.ok(Math.abs(lamp.current - 0.04 / 1.05) < 0.002, `lamp current ${lamp.current}`);
+});
+
+test('a changing push is rounded toward zero, to a hundredth: 0.016 pushes 0.01, -0.016 pushes -0.01, 0.3 stays 0.3', () => {
+  assert.equal(partPush({ pushNow: () => 0.016 }, null, 0, 0), 0.01);
+  assert.equal(partPush({ pushNow: () => -0.016 }, null, 0, 0), -0.01);
+  assert.equal(partPush({ pushNow: () => 0.16 }, null, 0, 0), 0.16);
   assert.equal(partPush({ pushNow: () => 0.1 + 0.2 }, null, 0, 0), 0.3); // 0.30000000000000004
   assert.equal(partPush({ pushNow: () => 0.3 }, null, 0, 0), 0.3);
+  assert.equal(partPush({ pushNow: () => 0.57 }, null, 0, 0), 0.57);
+  assert.equal(partPush({ pushNow: () => 0.004 }, null, 0, 0), 0);
+  assert.equal(Object.is(partPush({ pushNow: () => -0.004 }, null, 0, 0), 0), true); // a plain 0, not −0
   assert.equal(partPush({ push: 1 }, null, 0, 0), 1);
+});
+
+test('a part that feels its load is told the current per volt it would push, even while it pushes nothing', () => {
+  TEST_BLOCKS.dynamo = { part: { resistance: 0.05, pushNow: () => 0, feelsLoad: true } };
+  LETTERS.D = 'dynamo';
+  const loadOf = (rows) => solveCircuit(worldFrom(rows), blockInfo).cells.get(1 * rows[0].length + 0).load;
+  assert.ok(Math.abs(loadOf(['WWW', 'D.W', 'WLW']) - 1 / 1.05) < 0.02, 'one lamp: about 1 amp per volt');
+  assert.ok(Math.abs(loadOf(['WWW', 'D.L', 'WLW']) - 1 / 2.05) < 0.02, 'two lamps in a row: about half');
+  assert.ok(loadOf(['WW', 'DW', 'WW']) > 10, 'joined by plain wire: a huge load');
+  assert.equal(loadOf(['WWW', 'D..', 'WLW']), 0, 'no loop: no load');
+  assert.equal(solveCircuit(worldFrom(['WWW', 'B.W', 'WLW']), blockInfo).cells.get(3).load, undefined, 'batteries are not told');
 });

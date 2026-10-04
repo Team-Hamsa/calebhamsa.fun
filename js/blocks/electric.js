@@ -49,7 +49,8 @@ export function clickerOn(world) {
 /**
  * A short text that changes whenever the circuit could change: the
  * blocks, the clicker beat (only if there's a clicker), and how hard any
- * changing pushers (turbines) push, rounded so tiny wobbles don't count.
+ * changing pushers (turbines, generators) push, rounded down to a
+ * hundredth of a volt (partPush does it) so tiny wobbles don't count.
  * If it's the same as last time, there's no need to do the math again.
  * @param {{cells: string[], ticks: number}} world - the world
  * @param {Function} blockInfo - looks up what a block name means

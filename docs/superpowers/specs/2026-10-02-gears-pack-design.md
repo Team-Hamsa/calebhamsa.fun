@@ -189,3 +189,15 @@ The cell record comes from `signals.spin.cells`. `signalsAt` returns the first p
   - an L of big gears shows red
   - reload and check the crank still turns
   - no console errors
+
+## Addendum 2026-10-04: generator fixes from the physics audit (issue #11)
+
+These override refinement 1 and the "rounded to 0.1" line below.
+
+- **`partPush` rounds a `pushNow` value toward zero to 0.01 V** (`PUSH_STEP`, via `roundPush`), not 0.1. With 0.1 steps a generator slower than 0.125 turns/s made no electricity at all while still being braked, and its lamp was up to 14% too dim. It is still rounded **toward zero**, never to nearest, so a self-powered motor still winds down (tested, also with two generators in series).
+- **The generator remembers nothing.** `signals.spin.conducts` is gone: it only updated while the rounded push was ≥ 0.1 V, so a generator that had been short-circuited stayed stiff forever, even after the wire, the battery or the generator itself was replaced. Now `generatorDrag` reads only last tick's `signals.electric` record:
+  - turning (rounded push > 0): drag = `GENERATOR_TORQUE` × (current out of its + end, counted only in the direction it pushes) ÷ rounded push × `GENERATOR_GAIN`. This uses the real current, so generators in series each feel the whole current.
+  - stopped, or pushing less than one step: drag = `GENERATOR_TORQUE` × (`load` × `GENERATOR_GAIN` + |current| ÷ (`PUSH_STEP` ÷ `GENERATOR_GAIN`)). `load` is a new field on the electric record of parts marked `part.feelsLoad`: the current per volt the part would push if it alone pushed (one extra solve per generator, in `loadOn`). The second term means a current forced through a stopped generator by something else (a battery) holds it still unless the source is stronger than that current's push-back.
+- **A shorted generator shows its current** (about 1.6 A for one crank: dots flow), and recovers the moment the wiring is fixed.
+- **Efficiency** is 0.8 × (rounded push ÷ exact push)²: 0.75 to 0.8 in practice, never above 0.8. The README says "at most 8 tenths".
+- **Known simplification:** a generator is never a motor. Current pushed backwards through a turning generator by a battery would help turn a real one; here it gives no help (and no push-back). A battery wired straight across a generator holds it almost still.

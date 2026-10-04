@@ -16,6 +16,7 @@
  * fields blocks have: `conducts`, `part`, `partWhen`, `electric`. A part
  * pushes with `part.push` volts, or, if it has `part.pushNow`, with
  * whatever that says right now (a turbine pushes harder with more steam).
+ * A part with `part.feelsLoad` (a generator) is also told its "load".
  */
 import { getBlock, inBounds } from './world.js';
 
@@ -53,6 +54,12 @@ const SHORT_PATH_RESISTANCE = 0.01;
  * make a loop with no current, which is safe.)
  */
 const SHORT_CURRENT = 2 * REFERENCE_CURRENT;
+
+/**
+ * A changing push (a turbine's, a generator's) is counted in steps this
+ * big, in volts. Less than one step counts as no push at all.
+ */
+export const PUSH_STEP = 0.01;
 
 /** Less current than this counts as "nothing is flowing". */
 export const FLOW_MIN = 0.01;
@@ -145,13 +152,26 @@ function halfResistance(point) {
 }
 
 /**
+ * Round a changing push DOWN (toward zero) to a whole number of PUSH_STEPs.
+ * @param {number} push - the push, in volts (+ or −)
+ * @returns {number} the rounded push: 0.016 → 0.01, −0.016 → −0.01
+ */
+export function roundPush(push) {
+  // The tiny 1e-9 stops 0.3 (which computers store as 0.29999...) rounding down to 0.29.
+  const perVolt = Math.round(1 / PUSH_STEP); // dividing by a whole number keeps 0.57 exactly 0.57
+  return Math.sign(push) * Math.floor(Math.abs(push) * perVolt + 1e-9) / perVolt || 0; // "|| 0" turns −0 into a plain 0
+}
+
+/**
  * How hard a part pushes right now, in volts: `pushNow` if it has one
  * (a turbine), otherwise its fixed `push` (a battery), otherwise 0.
- * A changing push is rounded DOWN (toward zero) to 0.1, the same as the
- * circuit key does (see circuitKey in electric.js), so the math always
- * matches the key: a turbine that has almost stopped pushes exactly 0,
- * not a tiny bit forever. Rounding toward zero also makes a motor that
- * powers its own generator wind down instead of getting stuck.
+ * A changing push is rounded DOWN (toward zero) to PUSH_STEP (a hundredth
+ * of a volt), the same as the circuit key does (see circuitKey in
+ * electric.js), so the math always matches the key: a turbine that has
+ * almost stopped pushes exactly 0, not a tiny bit forever. Rounding toward
+ * zero (never up) also means a motor that powers its own generator winds
+ * down instead of getting stuck. The steps are small, so a slowly turned
+ * generator still makes a little electricity, like a real one.
  * @param {object|null} part - the part settings
  * @param {object} world - the world
  * @param {number} x - the part's column
@@ -162,8 +182,7 @@ export function partPush(part, world, x, y) {
   if (!part) return 0;
   if (part.pushNow) {
     const push = part.pushNow(world, x, y);
-    // The tiny 1e-9 stops 0.3 (which computers store as 0.29999...) rounding down to 0.2.
-    return Math.sign(push) * Math.floor(Math.abs(push) * 10 + 1e-9) / 10;
+    return roundPush(push);
   }
   return part.push ?? 0;
 }
@@ -183,6 +202,34 @@ function pushOut(point, side) {
   if (side === plus) return push / 2;
   if (side === OPPOSITE[plus]) return -push / 2;
   return 0;
+}
+
+/**
+ * How much current flows through a part for each volt IT pushes, if it
+ * were the only thing pushing in its circuit: its "load". Lots of lamps
+ * side by side = a big load; nothing wired to it = no load. A generator
+ * uses this to know how hard its lamps make it to turn, even before it
+ * has started turning.
+ * @param {number} index - the part's cell index
+ * @param {{axis: string|null}} point - the part's point
+ * @param {number[]} members - the cell indexes in its circuit
+ * @param {object[]} links - that circuit's connections
+ * @returns {number} current per volt (0 if it isn't in a loop)
+ */
+function loadOn(index, point, members, links) {
+  const alone = { push: 1, axis: point.axis };
+  const unit = links.map((link) => ({
+    ...link,
+    push: (link.a === index ? pushOut(alone, link.side) : 0) - (link.b === index ? pushOut(alone, OPPOSITE[link.side]) : 0),
+  }));
+  const voltages = solveVoltages(members, unit);
+  if (!voltages) return 0;
+  let most = 0;
+  for (const link of unit) {
+    if (link.a !== index && link.b !== index) continue;
+    most = Math.max(most, Math.abs((voltages.get(link.a) - voltages.get(link.b) + link.push) / link.resistance));
+  }
+  return most < 1e-9 ? 0 : most;
 }
 
 /**
@@ -341,6 +388,8 @@ function shortedByShape(battery, point, points, touching, width) {
  *   current  for parts: the real current through it, with no limit
  *          (a motor's strength and a generator's push-back use this)
  *   spark  true for a short-circuited battery
+ *   load   only for parts marked `part.feelsLoad` (generators): the current
+ *          that flows through it for each volt it pushes (see loadOn)
  *   group  which separate circuit it's in (a number), or null if it's a gap
  *
  * @param {object} world - the world
@@ -395,9 +444,13 @@ export function solveCircuit(world, blockInfo) {
   for (const members of groupsOf([...points.keys()], links)) {
     groupNumber += 1;
     for (const index of members) cells.get(index).group = groupNumber; // which separate circuit it's in
-    if (!members.some((index) => points.get(index).push !== 0)) continue;
     const inside = new Set(members);
     const groupLinks = links.filter((link) => inside.has(link.a));
+    for (const index of members) {
+      const point = points.get(index);
+      if (point.part?.feelsLoad) cells.get(index).load = loadOn(index, point, members, groupLinks);
+    }
+    if (!members.some((index) => points.get(index).push !== 0)) continue;
     const voltages = solveVoltages(members, groupLinks);
     if (!voltages) {
       console.warn('A circuit could not be solved, so it gets no current.');

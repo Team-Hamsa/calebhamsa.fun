@@ -221,3 +221,9 @@ Each connection is a resistor:
   - Build a short and look at the sparks in a screenshot.
   - Check the dots move: compare two screenshots of a wire cell a few ticks apart.
   - No console errors.
+
+## Addenda 2026-10-04: fixes from the physics audit
+
+### Generators (issue #11)
+- A changing push (`part.pushNow`) is rounded toward zero to 0.01 V (`PUSH_STEP`), not 0.1.
+- New optional part field `feelsLoad`: such a part's record gets `load`, the current per volt it would push if it alone pushed (`loadOn` in circuit.js). The generator uses it to know how hard its lamps make it to turn before it has started turning. Details in the gears spec addendum.

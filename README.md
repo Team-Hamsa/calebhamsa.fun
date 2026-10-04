@@ -180,10 +180,14 @@ faster, but it gets harder to turn, so the crank slows down: you never get out
 more than you put in.
 
 **Generators push back.** Making electricity takes work. The more lamps a
-generator lights, the harder it is to turn.
+generator lights, the harder it is to turn. With nothing wired to it, it spins
+freely. Join its two ends with plain wire (a short circuit) and it gets very
+hard to turn, because a big current flows: watch the dots race. Take the wire
+away and it's easy again. Turn it slowly and it still makes a little
+electricity: a dim lamp, not a dark one.
 
-**Nothing runs forever.** A generator only turns 8 tenths of the work you put
-in into electricity (the rest becomes heat, like in a real one), so a motor
+**Nothing runs forever.** A generator turns at most 8 tenths of the work you
+put in into electricity (the rest becomes heat, like in a real one), so a motor
 powered by a generator on its own gears slows down and stops. (The same goes
 for a pump pushing water through a water wheel that turns the pump's own
 generator.)
