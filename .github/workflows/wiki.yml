@@ -1,0 +1,52 @@
+# Copies the wiki/ folder to the repo's wiki
+# (https://github.com/Team-Hamsa/calebhamsa.fun/wiki) every time a push to
+# main changes it. The wiki is a little git repo of its own, so "copying"
+# means: fetch it, make its files match wiki/ exactly, and push it back.
+# It mirrors: a page deleted from wiki/ is deleted from the wiki, and
+# anything typed with the wiki's own Edit button is replaced.
+name: Publish the wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'wiki/**'
+      - '.github/workflows/wiki.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One at a time, so two quick pushes can't trip over each other.
+concurrency:
+  group: wiki
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy wiki/ to the wiki
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          wiki="$RUNNER_TEMP/wiki"
+          if ! git clone "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" "$wiki"; then
+            echo "::error::The wiki doesn't exist yet. Open the repo's Wiki tab, click 'Create the first page', save it, then run this workflow again."
+            exit 1
+          fi
+          rsync -a --delete --exclude .git wiki/ "$wiki/"
+          cd "$wiki"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The wiki already matches wiki/. Nothing to publish."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "${MESSAGE:-Publish the wiki}"
+          git push
