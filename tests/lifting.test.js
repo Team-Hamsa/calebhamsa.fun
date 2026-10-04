@@ -293,10 +293,10 @@ test('the winch\'s catch: with no crank a hanging weight stays up, even with a g
   assert.equal(rowOf(pair, 4, 'crate'), 2);
 });
 
-test('the guide and the README tell you about the winch\'s catch', async () => {
+test('the guide and the wiki tell you about the winch\'s catch', async () => {
   const { readFileSync } = await import('node:fs');
-  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
-  assert.match(readme, /ratchet/);
+  const wiki = readFileSync(new URL('../wiki/Lifting.md', import.meta.url), 'utf8');
+  assert.match(wiki, /ratchet/);
   assert.match(lifting.guide.blocks.winch.does, /catch/);
   assert.ok(lifting.guide.rules.some((rule) => /catch/.test(rule) && /ratchet/.test(rule)));
 });
@@ -426,10 +426,10 @@ test('two winches with hanging weights, each one\'s generator driving the other\
   assert.equal(world.signals.electric.flowing, false); // and both lamps are dark
 });
 
-test('the guide and the README say plainly that nothing floats here', async () => {
+test('the guide and the wiki say plainly that nothing floats here', async () => {
   const { readFileSync } = await import('node:fs');
-  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
-  assert.match(readme, /Nothing floats/);
+  const wiki = readFileSync(new URL('../wiki/Lifting.md', import.meta.url), 'utf8');
+  assert.match(wiki, /Nothing floats/);
   assert.ok(lifting.guide.rules.some((rule) => /float/.test(rule)));
 });
 
@@ -668,12 +668,12 @@ test('the winch at the top is drawn with an orange ⬆, and a stalled one keeps 
   assert.ok(!other.includes('#fb8c00') && !other.includes('#e53935'));
 });
 
-test('the guide and the README explain the orange ⬆', async () => {
+test('the guide and the wiki explain the orange ⬆', async () => {
   const { existsSync, readFileSync } = await import('node:fs');
-  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
-  assert.match(readme, /orange ⬆/);
-  assert.ok(readme.includes('(docs/blocks/winch-top.png)'));
-  assert.ok(existsSync(new URL('../docs/blocks/winch-top.png', import.meta.url)));
+  const wiki = readFileSync(new URL('../wiki/Lifting.md', import.meta.url), 'utf8');
+  assert.match(wiki, /orange ⬆/);
+  assert.ok(wiki.includes('(blocks/winch-top.png)'));
+  assert.ok(existsSync(new URL('../wiki/blocks/winch-top.png', import.meta.url)));
   assert.match(lifting.guide.blocks.winch.does, /orange ⬆/);
   assert.ok(lifting.guide.rules.some((rule) => /orange ⬆/.test(rule) && /top/.test(rule)));
 });

@@ -1,7 +1,7 @@
 /**
  * make-block-pictures.cjs — draws a picture of every Build page block
- * (docs/blocks/*.png) and of some little machines running
- * (docs/machines/*.png), for the README.
+ * (wiki/blocks/*.png) and of some little machines running
+ * (wiki/machines/*.png), for the wiki.
  *
  * It opens tools/block-pictures.html in a real browser, which uses the
  * game's own drawing code, so the pictures always match the game. Run it
@@ -262,11 +262,11 @@ async function main() {
   });
   const pictures = [...names.map((name) => [name, name, undefined]), ...EXTRA_PICTURES];
   for (const [file, name, cell] of pictures) {
-    savePng(await page.evaluate(([n, s, c]) => window.blockPicture(n, s, c), [name, BLOCK_PX, cell]), `docs/blocks/${file}.png`);
+    savePng(await page.evaluate(([n, s, c]) => window.blockPicture(n, s, c), [name, BLOCK_PX, cell]), `wiki/blocks/${file}.png`);
   }
   for (const [name, scene] of Object.entries(SCENES)) {
     const dataUrl = await page.evaluate(([s, px]) => window.scenePicture(s, px), [{ ...scene, letters: LETTERS }, SCENE_CELL_PX]);
-    savePng(dataUrl, `docs/machines/${name}.png`);
+    savePng(dataUrl, `wiki/machines/${name}.png`);
   }
 
   await browser.close();
