@@ -8,7 +8,7 @@
  * world changes, and draws the results: glowing lamps, humming buzzers,
  * sparking batteries, and little dots flowing along the wires.
  */
-import { FLOW_MIN, partPush, solveCircuit } from '../circuit.js';
+import { FLOW_MIN, circuitPorts, partPush, solveCircuit } from '../circuit.js';
 import { setBlock } from '../world.js';
 
 /**
@@ -64,10 +64,10 @@ export function wiringKey(world) {
 
 /**
  * A short text that changes whenever the circuit could change: the
- * blocks, the clicker beat (only if there's a clicker), and how hard any
- * changing pushers (generators) push, rounded down to a
- * hundredth of a volt (partPush does it) so tiny wobbles don't count.
- * If it's the same as last time, there's no need to do the math again.
+ * wiring (see wiringKey), and exactly how hard every changing pusher (a
+ * motor or generator) pushes right now. If it's the same as last time,
+ * there's no need to do the math again: a machine turning steadily
+ * costs no circuit work at all.
  * @param {{cells: string[], ticks: number}} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {string} the key
@@ -82,28 +82,52 @@ export function circuitKey(world, blockInfo) {
 }
 
 /**
+ * Work out the WIRING again, if it changed since last time (a block, a
+ * switch, or a clicker's beat): who is joined to whom, and what every
+ * motor and generator needs to know about its circuit (see circuitPorts
+ * in circuit.js). It is kept in world.signals.electric.net. No speed or
+ * current is needed for it, so the ⚙️ pack asks for it BEFORE it works
+ * out the turning.
+ * @param {object} world - the world
+ * @param {Function} blockInfo - looks up what a block name means
+ * @returns {boolean} true if the wiring had changed
+ */
+export function refreshWiring(world, blockInfo) {
+  const old = world.signals.electric;
+  const wiring = wiringKey(world);
+  if (old && old.wiring === wiring) return false;
+  // The old currents stay for a moment (refreshElectric swaps them for
+  // the new ones before anybody looks); `key` is wiped so that it does.
+  world.signals.electric = {
+    cells: new Map(), flowing: false, hum: 0, wasOn: new Set(), solves: 0, ...old,
+    key: null, wiring, net: circuitPorts(world, blockInfo),
+  };
+  return true;
+}
+
+/**
  * Work out the electricity again, if anything changed since last time,
  * and keep the results in world.signals.electric for drawing:
  *   cells    each electric cell's record (see solveCircuit in circuit.js)
  *   flowing  true if current flows anywhere
  *   hum      how loud buzzers should hum (the loudest buzzer's level)
  *   wasOn    the note blocks that have current, so each plays once when it starts
+ *   net      the wiring (see refreshWiring)
  * Note blocks that just got current add a 'note' event to world.events.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {boolean} true if it did the math (something changed)
  */
 export function refreshElectric(world, blockInfo) {
+  refreshWiring(world, blockInfo);
   const old = world.signals.electric;
   const key = circuitKey(world, blockInfo);
-  if (old && old.key === key) return false;
+  if (old.key === key) return false;
 
-  // Same wiring as last time (only a generator pushes harder
-  // or softer)? Then the circuit can keep what it worked out about the
-  // wiring, which is most of the work when there are lots of generators.
-  const wiring = wiringKey(world);
-  const { cells, flowing } = solveCircuit(world, blockInfo, old?.wiring === wiring ? old.cells : null);
-  const wasOn = old?.wasOn ?? new Set();
+  // The wiring's sums are done already. This is the quick half: one
+  // answer for each circuit, with the pushes as they are right now.
+  const { cells, flowing } = solveCircuit(world, blockInfo, old.net);
+  const wasOn = old.wasOn;
   const nowOn = new Set();
   let hum = 0;
   for (const [index, cell] of cells) {
@@ -116,7 +140,7 @@ export function refreshElectric(world, blockInfo) {
       }
     }
   }
-  world.signals.electric = { key, wiring, cells, flowing, hum, wasOn: nowOn, solves: (old?.solves ?? 0) + 1 };
+  world.signals.electric = { key, wiring: old.wiring, net: old.net, cells, flowing, hum, wasOn: nowOn, solves: old.solves + 1 };
   return true;
 }
 
@@ -412,7 +436,7 @@ const guide = {
     'Parts turn to face their wires: wires on the left and right, or above and below. The gray metal ends show which way. Lamps side by side between two wires each get their own path, however many there are.',
     'A battery\'s + end is always its top or its right: it can\'t be turned round. Two batteries on opposite sides of a loop push against each other and nothing flows. Put them next to each other in a row instead.',
     'Note blocks need enough electricity to sing. One battery can make 4 in a row sing. With 5 in one loop each gets too little and they stay quiet, even though the dots still crawl. Add a battery, or give each note block its own path side by side.',
-    'Short circuit! A battery wired straight back to itself sparks and smokes, however long the wire. A stopped generator is just wire too. Never try that with a real battery.',
+    'Short circuit! A battery wired straight back to itself sparks and smokes, however long the wire. Never try that with a real battery.',
   ],
   blocks: {
     battery: { does: 'Pushes electricity out of its + end. Two batteries in a row push twice as hard.' },

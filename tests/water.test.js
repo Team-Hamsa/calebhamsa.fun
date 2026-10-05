@@ -10,7 +10,7 @@ import { createWorld, getBlock, getFluid, setBlock, setFluid, tick } from '../js
 import { allSystems, blockInfo, blocksInPack, isKnownBlock } from '../js/blocks/registry.js';
 import { BOIL_RATE, DROP_POWER, RISE_POWER, openSides } from '../js/fluids.js';
 import water, * as waterPack from '../js/blocks/water.js';
-import { GENERATOR_GAIN, GENERATOR_TORQUE, spinAt } from '../js/blocks/gears.js';
+import { MACHINE_DRAG, spinAt } from '../js/blocks/gears.js';
 
 const { TURBINE_SPEED, TURBINE_STRENGTH, turbineSource } = waterPack;
 
@@ -190,12 +190,14 @@ test('a turbine wired straight to a lamp lights nothing: it needs a generator', 
   assert.ok(spinAt(world, 3, 2) > 0.5, 'the turbine still spins in the steam');
 });
 
-test('more lamps are harder to turn: the turbine slows, each lamp is dimmer, and the lamps never get more than 8 tenths of what the steam gave up', () => {
+test('more lamps are harder to turn: the turbine slows, each lamp is dimmer, and all the heat made is exactly the work the turbine does on its shaft, never more than the steam gave up', () => {
   /**
    * The plant with some lamps side by side.
    * @param {number} lamps - how many
-   * @returns {{speed: number, level: number, power: number, steam: number}} the turbine's speed, one
-   *   lamp's level, all the lamps' power, and the work the steam gives up at the turbine each tick × RISE_POWER
+   * @returns {{speed: number, level: number, power: number, steam: number, shaft: number, heat: number}} the
+   *   turbine's speed, one lamp's level, all the lamps' power, the work the steam gives up at the turbine each
+   *   tick × RISE_POWER, the work the turbine does on its shaft (how hard it pushes × how fast it turns), and
+   *   ALL the heat made: in every joint of the circuit (lamps, the generator's coil, wires) and in its bearings
    */
   const plant = (lamps) => {
     const world = run(worldFrom([
@@ -206,7 +208,14 @@ test('more lamps are harder to turn: the turbine slows, each lamp is dimmer, and
       `##~W${'WW'.repeat(lamps)}.`,
       `##F#${'##'.repeat(lamps)}.`,
     ]), 400);
-    return { speed: spinAt(world, 2, 3), level: levelAt(world, 5, 3), power: lampPower(world), steam: RISE_POWER * countAt(world, 2, 3).work };
+    const speed = spinAt(world, 2, 3);
+    const source = turbineSource(world, 2, 3);
+    const shaft = source.strength * (1 - speed / source.speed) * speed;
+    let heat = MACHINE_DRAG * spinAt(world, 3, 3) ** 2;
+    for (const circuit of world.signals.electric.net.circuits) {
+      for (const link of circuit.links) heat += (world.signals.electric.cells.get(link.a).arms[link.side] ?? 0) ** 2 * link.resistance;
+    }
+    return { speed, level: levelAt(world, 5, 3), power: lampPower(world), steam: RISE_POWER * countAt(world, 2, 3).work, shaft, heat };
   };
   let last = { speed: Infinity, level: Infinity };
   for (const lamps of [1, 2, 4, 8]) {
@@ -214,7 +223,8 @@ test('more lamps are harder to turn: the turbine slows, each lamp is dimmer, and
     const what = `${lamps} lamps: ${JSON.stringify(now)}`;
     assert.ok(now.speed > 0.1 && now.speed < last.speed - 0.05, `${what} is not slower than ${last.speed}`);
     assert.ok(now.level > 0.1 && now.level < last.level - 0.05, `${what} is not dimmer than ${last.level}`);
-    assert.ok(now.power <= (GENERATOR_GAIN / GENERATOR_TORQUE) * now.steam + 1e-9, `${what}: the lamps got more than 8 tenths of the steam's work`);
+    assert.ok(now.power < now.shaft && now.shaft <= now.steam + 1e-9, `${what}: the lamps got more than the turbine's work, or the turbine more than the steam's`);
+    assert.ok(Math.abs(now.heat - now.shaft) < 1e-9, `${what}: the heat is not the work`);
     assert.ok(Math.abs(now.steam - 1) < 0.01, `${what}: the steam gives the same however many lamps there are`);
     last = now;
   }

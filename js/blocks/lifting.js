@@ -21,7 +21,6 @@
  */
 import { getFluid } from '../world.js';
 import { DROP_POWER, RISE_POWER } from '../fluids.js';
-import { MIN_SPEED } from '../spin.js';
 import { canLower, canWindIn, letOut, loadBelow, ownsRopeEnd, ropeArms, traceRope, windIn } from '../lift.js';
 import { TICKS_PER_SECOND, turned } from './gears.js';
 
@@ -301,7 +300,11 @@ export function liftSystem(world, blockInfo) {
     // pulls add up, and a weight that gave its push going down a little
     // really has gone down that little.
     // Two winches sharing one rope end: only its owner winds it (the other just spins).
-    if (Math.abs(speed) < MIN_SPEED || !ownsRopeEnd(world, x, y, traceRope(world, x, y, blockInfo), blockInfo, isDriven)) {
+    // (spin.js reports a speed of exactly 0 for a group too slow to see.
+    // A winch geared right down on gears that DO turn creeps, and its
+    // rope creeps with it: its load was counted in the turning, so the
+    // rope must really move, however slowly.)
+    if (speed === 0 || !ownsRopeEnd(world, x, y, traceRope(world, x, y, blockInfo), blockInfo, isDriven)) {
       if (before.has(index)) pull.set(index, before.get(index));
       if (asideBefore.has(index)) aside.set(index, asideBefore.get(index));
       if (weighedBefore.has(index)) weighed.set(index, weighedBefore.get(index));

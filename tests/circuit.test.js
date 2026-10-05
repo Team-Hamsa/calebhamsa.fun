@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, setBlock } from '../js/world.js';
-import { factorLinear, partAxis, partPush, plusSide, solveCircuit, solveFactored, solveLinear, work } from '../js/circuit.js';
+import { circuitPorts, factorLinear, partAxis, partPush, plusSide, solveCircuit, solveFactored, solveLinear, work } from '../js/circuit.js';
 
 /**
  * Stand-in blocks, with the same electric settings as the real ones in
@@ -276,77 +276,92 @@ test('parallel batteries DO spark when a plain wire really joins + to −', () =
   assert.equal(cells.get(7).spark, true);
 });
 
-test('a battery wired straight across a STOPPED generator sparks: its coil is just wire', () => {
-  TEST_BLOCKS.pusher = { part: { resistance: 0.05, pushNow: (world) => world.pusherPush } };
+test('a 0.45 coil is never plain wire: a battery across a stopped machine does not spark, two batteries in a row wired back still do', () => {
+  TEST_BLOCKS.pusher = { part: { resistance: 0.45, pushNow: (world) => world.pusherPush, port: true } };
   LETTERS.T = 'pusher';
   const world = worldFrom(['WWW', 'B.T', 'WWW']);
   world.pusherPush = 0;
   const battery = solveCircuit(world, blockInfo).cells.get(3);
-  assert.ok(battery.current > 9, `only ${battery.current} flows`);
-  assert.equal(battery.spark, true);
-  // With a lamp beside it too: the stopped pusher steals nearly all the current.
-  const beside = worldFrom(['WWWWW', 'B.T.L', 'WWWWW']);
-  beside.pusherPush = 0;
-  const cells = solveCircuit(beside, blockInfo).cells;
-  assert.equal(cells.get(5).spark, true);
-  assert.ok(cells.get(9).level < 0.6);
-  // Mirror image: the same thing happens the other way round.
+  // A stalled motor: 1 volt ÷ (coil 0.45 + battery 0.05), a little less for the wire.
+  assert.ok(Math.abs(battery.current - 2) < 0.03, `${battery.current} flows`);
+  assert.equal(battery.spark, false);
+  // Mirror image: the same.
   const mirror = worldFrom(['WWW', 'T.B', 'WWW']);
   mirror.pusherPush = 0;
-  assert.equal(solveCircuit(mirror, blockInfo).cells.get(5).spark, true);
+  assert.equal(solveCircuit(mirror, blockInfo).cells.get(5).spark, false);
+  // Even pushed along by the machine (lots of current), the battery's own ends are not joined by plain wire.
+  world.pusherPush = -3;
+  const pushed = solveCircuit(world, blockInfo).cells;
+  assert.ok(pushed.get(3).current > 5, `only ${pushed.get(3).current} flows`);
+  assert.equal(pushed.get(3).spark, false);
+  assert.equal(pushed.get(5).spark, false, 'the machine is not shorted either: a battery on its path is not plain wire');
+  // Two batteries in a row, wired straight back: still a short circuit, with a machine beside them or not.
+  for (const rows of [['WWW', 'B.W', 'B.W', 'WWW'], ['WWWWW', 'B.W.T', 'B.W.W', 'WWWWW']]) {
+    const short = worldFrom(rows);
+    short.pusherPush = 0;
+    const cells = solveCircuit(short, blockInfo).cells;
+    assert.equal(cells.get(rows[0].length).spark, true, rows.join('/'));
+    assert.equal(cells.get(2 * rows[0].length).spark, true, rows.join('/'));
+  }
 });
 
-test('a battery beside a generator that pushes the same way does not spark; one overpowering a weak generator does', () => {
+test('a battery beside a machine that pushes the same way shares the lamp; a weaker machine is driven backwards, with no sparks', () => {
   const world = worldFrom(['WWWWW', 'B.T.L', 'WWWWW']);
   world.pusherPush = 1; // as strong as the battery: they share the lamp
   let cells = solveCircuit(world, blockInfo).cells;
   assert.equal(cells.get(5).spark, false);
-  assert.equal(cells.get(7).spark, false);
+  assert.ok(cells.get(9).level > 0.9);
   world.pusherPush = 0.3; // much weaker: the battery forces current backwards through it
   cells = solveCircuit(world, blockInfo).cells;
-  assert.ok(cells.get(5).current > 5, `only ${cells.get(5).current} flows`);
-  assert.equal(cells.get(5).spark, true);
-  assert.equal(cells.get(7).spark, false, 'the weak pusher is not the one pushing too hard');
+  assert.ok(cells.get(7).arms.up < -1, `the machine's current: ${JSON.stringify(cells.get(7).arms)}`);
+  assert.equal(cells.get(5).spark, false);
+  assert.equal(cells.get(7).spark, false);
 });
 
-test('a generator pushing almost nothing pushes nothing, so a stopped generator stops the circuit', () => {
-  // The push is rounded down to a hundredth of a volt for the solve, the same
-  // as the circuit key, so a dying generator can't leave a tiny current flowing forever.
+test('a part with pushNow pushes exactly as hard as it says: nothing is rounded, however small', () => {
+  assert.equal(partPush({ pushNow: () => 0.016 }, null, 0, 0), 0.016);
+  assert.equal(partPush({ pushNow: () => -0.016 }, null, 0, 0), -0.016);
+  assert.equal(partPush({ pushNow: () => 0.1 + 0.2 }, null, 0, 0), 0.1 + 0.2);
+  assert.equal(Object.is(partPush({ pushNow: () => -0 }, null, 0, 0), 0), true); // a plain 0, not −0
+  assert.equal(partPush({ push: 1 }, null, 0, 0), 1);
+  assert.equal(partPush(null, null, 0, 0), 0);
+  // And the circuit uses it just like that: 4 thousandths of a volt light a lamp 4 thousandths' worth.
   const world = worldFrom(['WWW', 'T.W', 'WLW']);
   world.pusherPush = 0.004;
-  const { cells, flowing } = solveCircuit(world, blockInfo);
-  assert.equal(cells.get(2 * 3 + 1).level, 0);
-  assert.equal(flowing, false);
+  const lamp = solveCircuit(world, blockInfo).cells.get(2 * 3 + 1);
+  assert.ok(Math.abs(lamp.current - 0.004 / 1.45) < 1e-4, `lamp current ${lamp.current}`);
+  world.pusherPush = 0;
+  assert.equal(solveCircuit(world, blockInfo).flowing, false, 'a stopped machine stops the circuit');
 });
 
 test('a weak push still makes a little electricity: voltage follows the push all the way down', () => {
   const world = worldFrom(['WWW', 'T.W', 'WLW']);
   world.pusherPush = 0.04;
   const lamp = solveCircuit(world, blockInfo).cells.get(2 * 3 + 1);
-  assert.ok(Math.abs(lamp.current - 0.04 / 1.05) < 0.002, `lamp current ${lamp.current}`);
+  assert.ok(Math.abs(lamp.current - 0.04 / 1.45) < 0.002, `lamp current ${lamp.current}`);
 });
 
-test('a changing push is rounded toward zero, to a hundredth: 0.016 pushes 0.01, -0.016 pushes -0.01, 0.3 stays 0.3', () => {
-  assert.equal(partPush({ pushNow: () => 0.016 }, null, 0, 0), 0.01);
-  assert.equal(partPush({ pushNow: () => -0.016 }, null, 0, 0), -0.01);
-  assert.equal(partPush({ pushNow: () => 0.16 }, null, 0, 0), 0.16);
-  assert.equal(partPush({ pushNow: () => 0.1 + 0.2 }, null, 0, 0), 0.3); // 0.30000000000000004
-  assert.equal(partPush({ pushNow: () => 0.3 }, null, 0, 0), 0.3);
-  assert.equal(partPush({ pushNow: () => 0.57 }, null, 0, 0), 0.57);
-  assert.equal(partPush({ pushNow: () => 0.004 }, null, 0, 0), 0);
-  assert.equal(Object.is(partPush({ pushNow: () => -0.004 }, null, 0, 0), 0), true); // a plain 0, not −0
-  assert.equal(partPush({ push: 1 }, null, 0, 0), 1);
-});
-
-test('a part that feels its load is told the current per volt it would push, even while it pushes nothing', () => {
-  TEST_BLOCKS.dynamo = { part: { resistance: 0.05, pushNow: () => 0, feelsLoad: true } };
-  LETTERS.D = 'dynamo';
-  const loadOf = (rows) => solveCircuit(worldFrom(rows), blockInfo).cells.get(1 * rows[0].length + 0).load;
-  assert.ok(Math.abs(loadOf(['WWW', 'D.W', 'WLW']) - 1 / 1.05) < 0.02, 'one lamp: about 1 amp per volt');
-  assert.ok(Math.abs(loadOf(['WWW', 'D.L', 'WLW']) - 1 / 2.05) < 0.02, 'two lamps in a row: about half');
-  assert.ok(loadOf(['WW', 'DW', 'WW']) > 10, 'joined by plain wire: a huge load');
-  assert.equal(loadOf(['WWW', 'D..', 'WLW']), 0, 'no loop: no load');
-  assert.equal(solveCircuit(worldFrom(['WWW', 'B.W', 'WLW']), blockInfo).cells.get(3).load, undefined, 'batteries are not told');
+test('only ports are told how their current is made up: the current per volt of each port, and what the batteries send', () => {
+  /**
+   * What the port at the left of row 1 is told.
+   * @param {string[]} rows - the picture
+   * @returns {{fixed: number, perVolt: Map<number, number>}} its record
+   */
+  const told = (rows) => solveCircuit(worldFrom(rows), blockInfo).cells.get(rows[0].length);
+  const own = (rows) => told(rows).perVolt.get(rows[0].length);
+  assert.ok(Math.abs(own(['WWW', 'T.W', 'WLW']) - 1 / 1.45) < 0.01, 'one lamp: 1 volt ÷ (lamp 1 + coil 0.45)');
+  assert.ok(Math.abs(own(['WWW', 'T.L', 'WLW']) - 1 / 2.45) < 0.01, 'two lamps in a row: less');
+  assert.ok(Math.abs(own(['WW', 'TW', 'WW']) - 1 / 0.45) < 0.03, 'joined by plain wire: only its own coil is in the way');
+  assert.equal(own(['WWW', 'T..', 'WLW']), 0, 'no loop: no current');
+  assert.equal(told(['WWW', 'T.W', 'WLW']).fixed, 0, 'no battery: nothing when it stands still');
+  // A battery in the loop, + end up, sends its current DOWN through the port (in at the top): −2 amps.
+  assert.ok(Math.abs(told(['WWW', 'T.B', 'WWW']).fixed + 2) < 0.03, `fixed ${told(['WWW', 'T.B', 'WWW']).fixed}`);
+  // Nobody else is told: not the lamp, not the battery.
+  const cells = solveCircuit(worldFrom(['WWW', 'T.B', 'WLW']), blockInfo).cells;
+  for (const index of [5, 7]) {
+    assert.equal(cells.get(index).perVolt, undefined);
+    assert.equal(cells.get(index).fixed, undefined);
+  }
 });
 
 test('equations can be cleared out ONCE and then answered for many right-hand sides', () => {
@@ -366,9 +381,10 @@ test('equations can be cleared out ONCE and then answered for many right-hand si
   assert.equal(factorLinear([[1, 2], [2, 4]]), null, 'no single answer');
 });
 
-test('a circuit with many generators costs ONE big sum, not one for each generator', () => {
-  // Twenty stand-in generators and a battery in one loop with a lamp.
-  const blocks = { ...TEST_BLOCKS, maker: { part: { resistance: 0.05, pushNow: () => 0.5, feelsLoad: true } } };
+test('a circuit with many ports costs ONE big sum, the shares are the same both ways round, and they add up to the real current', () => {
+  // Twenty stand-in machines and a battery in one loop with a lamp.
+  const pushes = new Map();
+  const blocks = { ...TEST_BLOCKS, maker: { part: { resistance: 0.45, pushNow: (world, x, y) => pushes.get(y * world.width + x) ?? 0, port: true } } };
   const world = createWorld(24, 3);
   for (let x = 0; x < 24; x++) {
     setBlock(world, x, 0, x >= 2 && x < 22 ? 'maker' : 'wire');
@@ -376,30 +392,34 @@ test('a circuit with many generators costs ONE big sum, not one for each generat
   }
   setBlock(world, 0, 1, 'wire');
   setBlock(world, 23, 1, 'wire');
+  const info = (name) => blocks[name];
   const before = work.factorings;
-  const solved = solveCircuit(world, (name) => blocks[name]);
+  const net = circuitPorts(world, info);
   assert.equal(work.factorings - before, 1);
-  // The shares still add up to the real current: fixed + each generator's share × its push.
-  const lamp = solved.cells.get(2 * 24 + 10);
-  let sum = lamp.fixed;
-  for (const share of lamp.perVolt.values()) sum += share * 0.5;
-  assert.equal(lamp.perVolt.size, 20);
-  assert.ok(Math.abs(Math.abs(sum) - lamp.current) < 1e-9, `shares add up to ${sum}, the current is ${lamp.current}`);
-  assert.ok(lamp.current > 1, `the lamp only gets ${lamp.current}`);
-
-  // The generators push harder, the wiring stays the same: told so, the
-  // circuit keeps its shares and does only two quick sums, and gets the
-  // very same answer as working everything out afresh.
-  blocks.maker = { part: { resistance: 0.05, pushNow: () => 0.75, feelsLoad: true } };
-  const fresh = solveCircuit(world, (name) => blocks[name]);
-  const answers = work.answers;
-  const again = solveCircuit(world, (name) => blocks[name], solved.cells);
-  assert.equal(work.answers - answers, 2);
-  for (const [index, cell] of fresh.cells) {
-    const other = again.cells.get(index);
-    assert.equal(other.current, cell.current);
-    assert.equal(other.fixed, cell.fixed);
-    assert.equal(other.load, cell.load);
-    assert.deepEqual(other.perVolt && [...other.perVolt], cell.perVolt && [...cell.perVolt]);
+  assert.equal(net.ports.size, 20);
+  for (const [a, port] of net.ports) {
+    assert.equal(port.perVolt.size, 20);
+    for (const [b, share] of port.perVolt) assert.equal(share, net.ports.get(b).perVolt.get(a), `${a} and ${b}`);
+  }
+  // The finished circuit's current through every port equals fixed + Σ perVolt × push,
+  // whatever the pushes are. And finishing it is ONE quick sum, with no new big one.
+  for (const round of [0, 1, 2]) {
+    for (let x = 2; x < 22; x++) pushes.set(x, round === 0 ? 0 : Math.sin(x * (round + 1.5)) * round);
+    const factorings = work.factorings;
+    const answers = work.answers;
+    const { cells } = solveCircuit(world, info, net);
+    assert.equal(work.factorings, factorings);
+    assert.equal(work.answers - answers, 1);
+    for (const [index, port] of net.ports) {
+      let sum = port.fixed;
+      for (const [other, share] of port.perVolt) sum += share * pushes.get(other);
+      const cell = cells.get(index);
+      const out = cell.arms.right ?? -cell.arms.left;
+      assert.ok(Math.abs(sum - out) < 1e-9, `round ${round}, port ${index}: shares add up to ${sum}, the current is ${out}`);
+      assert.equal(cell.perVolt, port.perVolt);
+    }
+    // And it is the very same answer as working everything out afresh.
+    const fresh = solveCircuit(world, info).cells;
+    for (const [index, cell] of fresh) assert.ok(Math.abs(cells.get(index).current - cell.current) < 1e-12);
   }
 });

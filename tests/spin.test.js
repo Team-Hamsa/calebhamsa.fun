@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, setBlock } from '../js/world.js';
-import { solveSpin, spinAxis } from '../js/spin.js';
+import { solveSpin, spinAxis, spinWork } from '../js/spin.js';
 
 /**
  * Stand-in blocks, with the same spin settings as the real ones in
@@ -38,10 +38,11 @@ const TEST_BLOCKS = {
   stuck: { spin: { kind: 'hub' }, spinLoad: () => ({ pull: -0.5, lifting: -2.5 }) },
   // Like a generator: pushes back 2 for every turn per second.
   dynamo: { spin: { kind: 'hub' }, spinDrag: () => 2 },
-  // Like a generator with a battery in its loop: it pushes back 3 standing still and
-  // 2 more for every turn per second, but only while that works against the turning.
-  brake: { spin: { kind: 'hub' }, spinBrake: () => ({ pull: 3, perTurn: 2 }) },
-  lightBrake: { spin: { kind: 'hub' }, spinBrake: () => ({ pull: 1, perTurn: 2 }) },
+  // Like a motor or generator: its push depends on how fast other blocks turn
+  // (see spinLink in spin.js). Each test says how, in `world.links`.
+  linked: { spin: { kind: 'hub' }, spinLink: (world, x, y) => world.links?.get(y * world.width + x) ?? null },
+  // Like a turbine: it will turn either way (↻ if nobody says otherwise).
+  either: { spin: { kind: 'hub' }, spinSource: () => ({ speed: 1, strength: 2, eitherWay: true }) },
   // Like a winch whose load has reached the top: it can't turn ↻ any more.
   topped: { spin: { kind: 'hub' }, spinStop: () => 1 },
   stone: {},
@@ -57,17 +58,33 @@ const blockInfo = (name) => TEST_BLOCKS[name];
 /** What each letter means. */
 const LETTERS = {
   '.': 'air', s: 'gearSmall', G: 'gearBig', '-': 'axle', H: 'hub', R: 'crankCW', Q: 'crankCCW',
-  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light', g: 'grounded', f: 'falling', Z: 'racer', Y: 'strongCCW', D: 'dynamo', b: 'brake', l: 'lightBrake', T: 'topped', S: 'steamy', U: 'stuck',
+  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light', g: 'grounded', f: 'falling', Z: 'racer', Y: 'strongCCW', D: 'dynamo', N: 'linked', e: 'either', T: 'topped', S: 'steamy', U: 'stuck',
 };
 
 /**
  * Build a world from a picture and work out the spinning.
  * @param {string[]} rows - the picture
+ * @param {object} [setUp] - extras: `links` (for the N blocks: "x,y" →
+ *   {still, perTurn: {"x,y": number}}, see spinLink in spin.js) and
+ *   `before` ("x,y" → the speed that block had on the last tick)
  * @returns {Function} (x, y) => that block's record
  */
-function spin(rows) {
+function spin(rows, setUp = {}) {
   const world = createWorld(rows[0].length, rows.length);
   rows.forEach((row, y) => [...row].forEach((letter, x) => setBlock(world, x, y, LETTERS[letter])));
+  /**
+   * The cell index of a place written "x,y".
+   * @param {string} place - like "1,0"
+   * @returns {number} its cell index
+   */
+  const indexOf = (place) => Number(place.split(',')[1]) * world.width + Number(place.split(',')[0]);
+  world.links = new Map(Object.entries(setUp.links ?? {}).map(([place, link]) => [
+    indexOf(place),
+    { still: link.still ?? 0, perTurn: new Map(Object.entries(link.perTurn ?? {}).map(([other, amount]) => [indexOf(other), amount])) },
+  ]));
+  if (setUp.before) {
+    world.signals.spin = { cells: new Map(Object.entries(setUp.before).map(([place, speed]) => [indexOf(place), { speed }])) };
+  }
   const { cells } = solveSpin(world, blockInfo);
   return (x, y) => cells.get(y * world.width + x);
 }
@@ -354,21 +371,6 @@ test('a winch, generator, crank or loose axle beside the end of a shaft doesn\'t
   }
 });
 
-test('a brake only works against the turning: it can hold a group still, but never drives it', () => {
-  // The crank (strength 2) pushes ↻ into a brake that pushes back 3 standing still: held at exactly 0.
-  assert.equal(spin(['Rb'])(0, 0).speed, 0);
-  // A lighter brake (1 standing still, 2 more per turn): 2 − 2×speed = 1 + 2×speed, so a quarter turn a second.
-  assert.equal(spin(['Rl'])(0, 0).speed, 0.25);
-  // Turned the other way, the brake would HELP: so it does nothing, right up to the speed
-  // where its push-back is used up (−1.5 for the heavy one). The crank just turns at its own speed.
-  assert.equal(spin(['Qb'])(0, 0).speed, -1);
-  // Faster than that it pushes back again: a ↺ crank of top speed 6 is slowed to where
-  // 2 × (1 − speed ÷ 6) = 2 × (speed − 1.5), which is 15 ÷ 7.
-  assert.ok(Math.abs(spin(['Zb'])(0, 0).speed + 15 / 7) < 1e-9, `turns ${spin(['Zb'])(0, 0).speed}`);
-  // With no source, a brake turns nothing.
-  assert.equal(spin(['sb'])(0, 0).speed, 0);
-});
-
 test('a block that can\'t turn one way is a hard stop for its whole group, that way only', () => {
   const at = spin(['RsT']); // no two gears touch here, so all three share a shaft and turn ↻
   for (const x of [0, 1, 2]) {
@@ -393,4 +395,171 @@ test('with nothing driving, nothing is being stopped', () => {
   const at = spin(['sT']);
   assert.equal(at(1, 0).blocked, false);
   assert.equal(at(1, 0).stopper, false);
+});
+
+// =============================================================
+// Links: blocks whose push depends on how fast OTHER blocks turn
+// (motors and generators), and groups that are settled together.
+// =============================================================
+
+test('a linked block on one group: speed = (the sources\' push + its push standing still) ÷ (their fading + its own push-back)', () => {
+  // Crank: pushes 2 standing still, fading 2 for each turn a second.
+  assert.equal(spin(['RN'], { links: { '1,0': { perTurn: { '1,0': 2 } } } })(0, 0).speed, 0.5);          // 2 ÷ (2 + 2)
+  assert.equal(spin(['RN'], { links: { '1,0': { still: 1, perTurn: { '1,0': 1 } } } })(0, 0).speed, 1);  // (2 + 1) ÷ (2 + 1)
+  assert.equal(spin(['RN'], { links: { '1,0': { still: -4, perTurn: { '1,0': 2 } } } })(0, 0).speed, -0.5); // it can drive, too
+  // All by itself (like a battery's motor): still ÷ its own push-back. And it counts as driven.
+  const alone = spin(['sN'], { links: { '1,0': { still: 3, perTurn: { '1,0': 2 } } } });
+  assert.equal(alone(0, 0).speed, 1.5);
+  assert.equal(alone(0, 0).driven, true);
+  // Geared up ×2 (the other way round): its push counts double, its push-back four times.
+  const geared = spin(['RGsN'], { links: { '3,0': { perTurn: { '3,0': 1 } } } });
+  assert.equal(geared(0, 0).speed, 2 / (2 + 4));
+  // A link with nothing in it changes nothing.
+  assert.equal(spin(['RN'])(0, 0).speed, 1);
+});
+
+/**
+ * Solve a small set of straight-line equations the slow, sure way (Cramer's rule is too slow: plain elimination).
+ * @param {number[][]} grid - the left-hand side
+ * @param {number[]} sums - the right-hand side
+ * @returns {number[]} the answer
+ */
+function solveGrid(grid, sums) {
+  const n = sums.length;
+  const rows = grid.map((row, k) => [...row, sums[k]]);
+  for (let col = 0; col < n; col++) {
+    let best = col;
+    for (let row = col + 1; row < n; row++) if (Math.abs(rows[row][col]) > Math.abs(rows[best][col])) best = row;
+    [rows[col], rows[best]] = [rows[best], rows[col]];
+    for (let row = 0; row < n; row++) {
+      if (row === col) continue;
+      const factor = rows[row][col] / rows[col][col];
+      for (let k = col; k <= n; k++) rows[row][k] -= factor * rows[col][k];
+    }
+  }
+  return rows.map((row, k) => row[n] / row[k]);
+}
+
+test('two, three and four groups that lean on each other settle together: exactly where a direct solve puts them, in two goes', () => {
+  // Each group is a crank (R or Q) with a linked block beside it, on its own row.
+  for (const cranks of ['RR', 'RQ', 'RQR', 'QQR', 'RQRR', 'RRQQ']) {
+    const n = cranks.length;
+    // A made-up link that keeps its promise: lean = a grid times itself turned over
+    // (the same both ways round, and never helping), and it leans HARD.
+    const half = Array.from({ length: n }, (unused, i) => Array.from({ length: n }, (unused2, j) => Math.sin(1 + 3 * i + 5 * j + n) * 3));
+    const lean = half.map((row, i) => half.map((unused, j) => half.reduce((sum, line) => sum + line[i] * line[j], 0)));
+    const still = Array.from({ length: n }, (unused, i) => Math.cos(i * 2 + n));
+    const links = {};
+    for (let i = 0; i < n; i++) links[`1,${2 * i}`] = { still: still[i], perTurn: Object.fromEntries(lean[i].map((amount, j) => [`1,${2 * j}`, amount])) };
+    const rows = [...cranks].flatMap((crank) => [`${crank}N`, '..']);
+    const passes = spinWork.passes;
+    const sweeps = spinWork.sweeps;
+    const at = spin(rows, { links });
+    assert.ok(spinWork.passes - passes <= 3, `${cranks}: took ${spinWork.passes - passes} goes`);
+    assert.equal(spinWork.sweeps, sweeps);
+    // (crank's fading 2 + lean) × speeds = the cranks' pushes (±2) + still
+    const want = solveGrid(lean.map((row, i) => row.map((amount, j) => amount + (i === j ? 2 : 0))), still.map((amount, i) => amount + (cranks[i] === 'R' ? 2 : -2)));
+    for (let i = 0; i < n; i++) assert.ok(Math.abs(at(0, 2 * i).speed - want[i]) < 1e-9, `${cranks}: group ${i} turns ${at(0, 2 * i).speed}, should turn ${want[i]}`);
+  }
+});
+
+test('a group with only a linked block is turned by the group it is linked to (like a generator feeding a motor), and counts as driven', () => {
+  // lean: 1 between them (the same both ways), 1 each on itself.
+  const links = { '1,0': { perTurn: { '1,0': 1, '1,2': -1 } }, '1,2': { perTurn: { '1,0': -1, '1,2': 1 } } };
+  const at = spin(['RN', '..', 'sN'], { links });
+  // 2 − 2a − a + b = 0 and a − b = 0: the second group has nothing to push against, so it keeps up.
+  assert.ok(Math.abs(at(0, 0).speed - 1) < 1e-9 && Math.abs(at(0, 2).speed - 1) < 1e-9, `${at(0, 0).speed}, ${at(0, 2).speed}`);
+  assert.equal(at(0, 2).driven, true);
+  // With no crank anywhere, nothing starts, and nothing counts as driven.
+  const dead = spin(['sN', '..', 'sN'], { links });
+  assert.equal(dead(0, 0).speed, 0);
+  assert.equal(dead(0, 2).speed, 0);
+  assert.equal(dead(0, 2).driven, false);
+});
+
+test('in a cluster, a group with a load too heavy for it stalls, and the others are balanced around it standing still', () => {
+  const links = { '1,0': { perTurn: { '1,0': 1, '1,2': -1 } }, '1,2': { perTurn: { '1,0': -1, '1,2': 1 } } };
+  // The second group is pushed ↻ by the first, against a load of 3 it cannot lift.
+  const at = spin(['RN.', '...', 'KN.'], { links });
+  assert.equal(at(1, 2).speed, 0);
+  assert.equal(at(1, 2).stalled, true);
+  // The first group feels only its own push-back: 2 ÷ (2 + 1).
+  assert.ok(Math.abs(at(0, 0).speed - 2 / 3) < 1e-9, `turns ${at(0, 0).speed}`);
+  assert.equal(at(0, 0).stalled, false);
+  // Turned the other way, the second group is pushed the let-out way, and its load helps:
+  // −2 − 3a + b = 0 and a − b − 3 = 0.
+  const down = spin(['QN.', '...', 'KN.'], { links });
+  assert.ok(Math.abs(down(0, 0).speed + 2.5) < 1e-9 && Math.abs(down(1, 2).speed + 5.5) < 1e-9, `${down(0, 0).speed}, ${down(1, 2).speed}`);
+  assert.equal(down(1, 2).stalled, false);
+});
+
+test('in a cluster, a hard stop, a jam and a load on the ground each hold their own group, and the rest still balance', () => {
+  const links = { '1,0': { perTurn: { '1,0': 1, '1,2': -1 } }, '1,2': { perTurn: { '1,0': -1, '1,2': 1 } } };
+  // A hard stop ↻ on the second group: it would be turned ↻, so it is blocked.
+  const stopped = spin(['RN', '..', 'TN'], { links });
+  assert.equal(stopped(1, 2).speed, 0);
+  assert.equal(stopped(1, 2).blocked, true);
+  assert.equal(stopped(0, 2).stopper, true);
+  assert.ok(Math.abs(stopped(0, 0).speed - 2 / 3) < 1e-9);
+  assert.equal(stopped(0, 0).blocked, false);
+  // Turned the other way it is free again.
+  const free = spin(['QN', '..', 'TN'], { links });
+  assert.ok(Math.abs(free(1, 2).speed + 1) < 1e-9, `turns ${free(1, 2).speed}`);
+  // A jammed second group (three big gears in an L, the linked block on their shaft).
+  const jammedLinks = { '1,0': { perTurn: { '1,0': 1, '1,3': -1 } }, '1,3': { perTurn: { '1,0': -1, '1,3': 1 } } };
+  const jam = spin(['RN.', '...', 'GG.', 'GN.'], { links: jammedLinks });
+  assert.equal(jam(1, 3).jammed, true);
+  assert.equal(jam(1, 3).speed, 0);
+  assert.ok(Math.abs(jam(0, 0).speed - 2 / 3) < 1e-9, `turns ${jam(0, 0).speed}`);
+  // A heavy load lying on the ground under the second group: it can't be lifted, so that group stays put.
+  const resting = spin(['RN', '..', 'gN'], { links });
+  assert.equal(resting(1, 2).speed, 0);
+  assert.ok(Math.abs(resting(0, 0).speed - 2 / 3) < 1e-9);
+});
+
+test('a link that breaks its promise can never make the sums blow up: groups that will not settle are held still, and whatever turns is balanced', () => {
+  // A winch's catch lets go with a jump, and this made-up link is NOT the
+  // same both ways round, so there is no answer at all: with the load
+  // held, the crank's group turns ↻ and frees it; with the load coming
+  // down, the link drives the crank's group ↺, which holds the load again.
+  const links = { '1,0': { perTurn: { '1,0': 1, '1,2': 2 } }, '1,2': { perTurn: { '1,0': -2, '1,2': 1 } } };
+  const holds = spinWork.holds;
+  const at = spin(['KN', '..', 'RN'], { links });
+  assert.ok(spinWork.holds > holds, 'something had to be held still');
+  const a = at(0, 0).speed;
+  const b = at(0, 2).speed;
+  assert.ok(Number.isFinite(a) && Number.isFinite(b), `${a}, ${b}`);
+  // Each group either stands still or has its pushes balanced at the speeds reported.
+  assert.ok(a === 0 || Math.abs(-3 - a - 2 * b) < 1e-9, `the load's group turns ${a} unbalanced`);
+  assert.ok(b === 0 || Math.abs(2 - 2 * b - b + 2 * a) < 1e-9, `the crank's group turns ${b} unbalanced`);
+  assert.ok(a === 0 || b === 0);
+  assert.ok(at(0, 0).stalled || at(0, 2).stalled, 'a group that was held shows as stalled');
+  // A link that HELPS its own turning (the more it turns, the more it is pushed): held still, not sent to infinity.
+  const helped = spin(['RN'], { links: { '1,0': { perTurn: { '1,0': -5 } } } });
+  assert.equal(helped(0, 0).speed, 0);
+});
+
+test('a source that turns either way follows a push that is there standing still, and keeps its own way when only linked turning pushes on it', () => {
+  // By itself: ↻, at full speed.
+  assert.equal(spin(['e'])(0, 0).speed, 1);
+  // A link's push standing still (a battery's current in a motor on its shaft) points it ↺.
+  const pointed = spin(['eN'], { links: { '1,0': { still: -1, perTurn: { '1,0': 1 } } } });
+  assert.ok(Math.abs(pointed(0, 0).speed + 1) < 1e-9, `turns ${pointed(0, 0).speed}`); // (−2 − 1) ÷ (2 + 1)
+  // Linked to a strong ↺ crank's group so that the crank's turning pushes it ↺: that push comes
+  // from turning, so it gets no say. The source stays ↻ and is only slowed.
+  const links = { '1,0': { perTurn: { '1,0': 1, '1,2': -1 } }, '1,2': { perTurn: { '1,0': -1, '1,2': 1 } } };
+  const kept = spin(['eN', '..', 'YN'], { links });
+  assert.ok(Math.abs(kept(0, 0).speed - 0.4) < 1e-9 && Math.abs(kept(0, 2).speed + 0.8) < 1e-9, `${kept(0, 0).speed}, ${kept(0, 2).speed}`);
+  // It was turning ↺ on the last tick: it keeps going that way.
+  const going = spin(['eN', '..', 'YN'], { links, before: { '0,0': -0.5 } });
+  assert.ok(going(0, 0).speed < -0.5, `turns ${going(0, 0).speed}`);
+});
+
+test('a group too slow to see stands still, and its neighbors are balanced around it standing still', () => {
+  // The second group would creep at 0.0005: under MIN_SPEED. It is held, so the first feels no push from it.
+  const links = { '1,0': { perTurn: { '1,0': 1, '1,2': -0.001 } }, '1,2': { perTurn: { '1,0': -0.001, '1,2': 1 } } };
+  const at = spin(['RN', '..', 'DN'], { links });
+  assert.equal(at(1, 2).speed, 0);
+  assert.equal(at(1, 2).stalled, false);
+  assert.equal(at(0, 0).speed, 2 / 3);
 });

@@ -11,7 +11,8 @@ import { allSystems, blockInfo, blocksInPack } from '../js/blocks/registry.js';
 import { drawWorld } from '../js/block-art.js';
 import lifting, { ROPE_PER_TURN, STEAM_PUSH, WATER_WEIGHT, winchLoad } from '../js/blocks/lifting.js';
 import { DROP_POWER, RISE_POWER } from '../js/fluids.js';
-import { TICKS_PER_SECOND, spinAt } from '../js/blocks/gears.js';
+import { MACHINE_DRAG, TICKS_PER_SECOND, spinAt } from '../js/blocks/gears.js';
+import { OPPOSITE, plusSide } from '../js/circuit.js';
 
 /** What each letter in a test picture means. */
 const LETTERS = {
@@ -157,11 +158,59 @@ test('more batteries make a motor stronger: five batteries lift the iron weight 
   const world = run(make(['.....G--w.', 'WBBBBMBW|.', 'W......W|.', 'W......W|.', 'WWWWWWWWI.']), 24);
   assert.equal(world.signals.spin.cells.get(8).stalled, false);
   assert.ok(rowOf(world, 8, 'ironWeight') < 4, 'the iron weight did not move');
+  // Five volts into a 0.7 loop push 7 standing still; the weight takes 4 of it: about 2 turns a second.
+  const lifting = run(make(['.....G--w.', 'WBBBBMBW|.', 'W......W|.', 'W......W|.', 'WWWWWWWWI.']), 2);
+  assert.ok(spinAt(lifting, 8, 0) > 1.9 && spinAt(lifting, 8, 0) < 2.1, `the winch turns ${spinAt(lifting, 8, 0)}`);
 });
 
 test('one battery\'s motor is only as strong as a crank: it can\'t lift the iron weight', () => {
   const world = run(make(['.....G--w.', 'WWWWWMBW|.', 'W......W|.', 'W......W|.', 'WWWWWWWWI.']), 24);
   assert.equal(world.signals.spin.cells.get(8).stalled, true);
+  // Stalled, it is just a coil across the battery: it draws all the current it ever can, and only gets hot.
+  const current = world.signals.electric.cells.get(world.width + 5).current;
+  assert.ok(current > 1.9 && current < 2, `the stalled motor draws ${current}`);
+});
+
+/**
+ * The power going in and out of every circuit and machine right now
+ * (energy per second): what the batteries give (1 volt × the current out
+ * of each one's + end), and all the heat: current² × resistance in every
+ * joint of every circuit, and the motors' and generators' bearings.
+ * @param {object} world - the world
+ * @returns {{battery: number, heat: number}} the two sums
+ */
+function powerBooks(world) {
+  const electric = world.signals.electric;
+  let battery = 0;
+  let heat = 0;
+  for (const circuit of electric.net.circuits) {
+    for (const link of circuit.links) heat += (electric.cells.get(link.a).arms[link.side] ?? 0) ** 2 * link.resistance;
+  }
+  world.cells.forEach((name, index) => {
+    if (blockInfo(name)?.machine) heat += MACHINE_DRAG * spinAt(world, index % world.width, Math.floor(index / world.width)) ** 2;
+    if (name !== 'battery') return;
+    const cell = electric.cells.get(index);
+    const plus = plusSide(cell.axis);
+    battery += cell.arms[plus] ?? -(cell.arms[OPPOSITE[plus]] ?? 0);
+  });
+  return { battery, heat };
+}
+
+test('a motor lifting a heavier load draws more current, and the battery pays for exactly the lifting and the heat', () => {
+  // Three batteries' motor on a winch: with nothing on the rope, a crate (1), and an iron weight (4).
+  const seen = [];
+  for (const [load, weight] of [['.', 0], ['c', 1], ['I', 4]]) {
+    const world = make(['.....G--w.', 'WBBWWMBW|.', 'W......W|.', 'W......W|.', `WWWWWWWW${load}.`]);
+    run(world, 2);
+    const { battery, heat } = powerBooks(world);
+    const speed = spinAt(world, 8, 0);
+    // What the battery gives = the heat + the load's weight × how fast the winch winds it up.
+    assert.ok(Math.abs(battery - heat - weight * speed) < 1e-9, `load ${weight}: battery ${battery}, heat ${heat}, lifting ${weight * speed}`);
+    seen.push({ current: world.signals.electric.cells.get(world.width + 5).current, speed, battery });
+  }
+  assert.ok(seen[0].current < seen[1].current && seen[1].current < seen[2].current, `currents ${seen.map((one) => one.current)}`);
+  assert.ok(seen[0].speed > seen[1].speed && seen[1].speed > seen[2].speed, `speeds ${seen.map((one) => one.speed)}`);
+  assert.ok(seen[0].battery < seen[1].battery && seen[1].battery < seen[2].battery);
 });
 
 test('heavier loads go up slower', () => {
@@ -385,46 +434,58 @@ test('rope let out stays let out: a weight lowered in short pulses comes down bi
   assert.equal(rowOf(world, 4, 'ironWeight'), 10); // on the ground
 });
 
-test('a hanging weight only gives power by really coming down: the lamp never gets more than the battery and the fall put in', () => {
+test('a hanging weight only gives power by really coming down: all the heat made is exactly what the battery and the fall put in', () => {
   const world = pulsedDrop();
   const systems = allSystems();
-  const battery = world.cells.indexOf('battery');
   const lamp = 3 * world.width + 12;
+  const winch = 3 * world.width + 4;
   let batteryEnergy = 0;
   let lampEnergy = 0;
+  let heat = 0;
   for (let t = 0; t < 1200; t++) {
     tick(world, systems, blockInfo);
-    batteryEnergy += world.signals.electric.cells.get(battery).current / 8; // 1 volt × current × an eighth of a second
+    const now = powerBooks(world);
+    batteryEnergy += now.battery / 8; // 1 volt × current × an eighth of a second
+    heat += now.heat / 8;
     lampEnergy += world.signals.electric.cells.get(lamp).current ** 2 / 8;  // current² × resistance 1
+    // An iron weight (4) pulls the winch round half a turn for each cell it comes down. Rope
+    // it has pulled out without coming down a whole cell yet counts too: it is owed (see liftSystem).
+    const fallen = rowOf(world, 4, 'ironWeight') - 5;
+    const owed = -(world.signals.lift.pull.get(winch) ?? 0);
+    const fall = (4 * (fallen + owed)) / 2;
+    assert.ok(Math.abs(heat - batteryEnergy - fall) < 1e-9, `tick ${t}: heat ${heat}, battery ${batteryEnergy}, fall ${fall}`);
   }
-  const fallen = rowOf(world, 4, 'ironWeight') - 5;
-  assert.equal(fallen, 5);
-  // An iron weight (4) pulls the winch round half a turn for each cell it comes down.
-  assert.ok(lampEnergy <= batteryEnergy + (4 * fallen) / 2, `lamp ${lampEnergy}, battery ${batteryEnergy}`);
+  assert.equal(rowOf(world, 4, 'ironWeight') - 5, 5);
+  assert.ok(lampEnergy > 5 && lampEnergy < heat, `lamp ${lampEnergy} of ${heat}`);
   // And once it has landed, the lamp only gets a small share of what the battery gives.
   let late = 0;
   let lateBattery = 0;
   for (let t = 0; t < 800; t++) {
     tick(world, systems, blockInfo);
-    lateBattery += world.signals.electric.cells.get(battery).current / 8;
+    lateBattery += powerBooks(world).battery / 8;
     late += world.signals.electric.cells.get(lamp).current ** 2 / 8;
   }
   assert.ok(late < lateBattery, `lamp ${late}, battery ${lateBattery}`);
 });
 
-test('two winches with hanging weights, each one\'s generator driving the other\'s motor, stop when the weights land', () => {
+test('two winches with hanging weights, each one\'s generator wired to the other\'s motor, don\'t run by themselves: with the battery gone the catches hold', () => {
   const world = make([
     '..WWWWLWWWWWWWW.', '..W...........W.', '..W...WWLWW...W.', '..MsswE...MsswE.', '..W..|WWBWW..|W.', '..W..I.......IW.',
     '..W...........W.', '..W...........W.', '..WWWWWWWWWWWWW.', '................', '................', '################',
   ]);
-  run(world, 1); // a one-tick kick from a battery...
+  run(world, 8); // a kick from a battery: its motor lets rope out, and the weight helps...
+  assert.ok(Math.abs(spinAt(world, 13, 3)) > 0.1, 'the battery should turn its winch');
   setBlock(world, 8, 4, 'wire'); // ...then no battery, crank, faucet or burner anywhere
-  run(world, 400);
-  assert.equal(rowOf(world, 5, 'ironWeight'), 7);  // both weights came down as far as they can
-  assert.equal(rowOf(world, 13, 'ironWeight'), 7);
-  assert.equal(spinAt(world, 5, 3), 0);
-  assert.equal(spinAt(world, 13, 3), 0);
-  assert.equal(world.signals.electric.flowing, false); // and both lamps are dark
+  const rows = [rowOf(world, 5, 'ironWeight'), rowOf(world, 13, 'ironWeight')];
+  // (The weights used to come all the way down by themselves, each one's
+  // generator driving the other's motor on last tick's electricity.)
+  for (let t = 0; t < 400; t++) {
+    run(world, 1);
+    assert.equal(spinAt(world, 5, 3), 0, `tick ${t}`);
+    assert.equal(spinAt(world, 13, 3), 0, `tick ${t}`);
+    assert.equal(world.signals.electric.flowing, false, `tick ${t}: a lamp is lit`);
+  }
+  assert.deepEqual([rowOf(world, 5, 'ironWeight'), rowOf(world, 13, 'ironWeight')], rows); // nothing came down
 });
 
 // =============================================================

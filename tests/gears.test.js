@@ -11,9 +11,9 @@ import { drawWorld } from '../js/block-art.js';
 import { DROP_POWER, PUMP_HEAD, PUMP_RATE, RISE_POWER } from '../js/fluids.js';
 import { TURBINE_SPEED, TURBINE_STRENGTH, turbineSource } from '../js/blocks/water.js';
 import gears, {
-  CRANK_SPEED, CRANK_STRENGTH, GENERATOR_GAIN, GENERATOR_TORQUE, WHEEL_SPEED, WHEEL_STRENGTH, spinAt, turned, wheelSource,
+  CRANK_SPEED, CRANK_STRENGTH, MACHINE_DRAG, MACHINE_K, MACHINE_RESISTANCE, WHEEL_SPEED, WHEEL_STRENGTH, spinAt, turned, wheelSource,
 } from '../js/blocks/gears.js';
-import { REFERENCE_CURRENT, plusSide } from '../js/circuit.js';
+import { OPPOSITE, REFERENCE_CURRENT, plusSide } from '../js/circuit.js';
 
 /** What each letter in a test picture means. */
 const LETTERS = {
@@ -45,6 +45,76 @@ function run(rows, ticks) {
  * @returns {number} its level
  */
 const lampLevel = (world, x, y) => world.signals.electric.cells.get(y * world.width + x)?.level ?? 0;
+
+/**
+ * How fast one crank turns one motor or generator with nothing wired to
+ * it: not quite the crank's top speed, because the machine's bearings rub.
+ */
+const FREE_SPIN = CRANK_STRENGTH / (CRANK_STRENGTH / CRANK_SPEED + MACHINE_DRAG);
+
+/**
+ * The current coming OUT of a part's + end (its right or top end) right now.
+ * @param {object} world - the world
+ * @param {number} index - the part's cell index
+ * @returns {number} the current (negative = it goes in there)
+ */
+function currentOut(world, index) {
+  const cell = world.signals.electric.cells.get(index);
+  if (!cell?.axis) return 0;
+  const plus = plusSide(cell.axis);
+  return cell.arms[plus] ?? -(cell.arms[OPPOSITE[plus]] ?? 0);
+}
+
+/**
+ * The energy books of the world as it stands after a tick, each as
+ * power (energy per second):
+ *   battery  what the batteries give: 1 volt × the current out of each one's + end (less than 0 = being charged)
+ *   crank    the work the cranks do: how hard each pushes × how fast it turns
+ *   heat     current² × resistance, in every joint of every circuit (lamps, coils, batteries, wires)
+ *   rub      the heat in the machines' bearings: MACHINE_DRAG × speed²
+ *   made     the electricity the machines put into the circuit: their volts × their current
+ *   taken    the work their coils take from their shafts: push × speed (the law says: the very same)
+ * With no loads on the gears:  battery + crank = heat + rub,  exactly.
+ * @param {object} world - the world
+ * @returns {{battery: number, crank: number, heat: number, rub: number, made: number, taken: number}} the books
+ */
+function books(world) {
+  const sums = { battery: 0, crank: 0, heat: 0, rub: 0, made: 0, taken: 0 };
+  const electric = world.signals.electric;
+  for (const circuit of electric.net.circuits) {
+    for (const link of circuit.links) sums.heat += (electric.cells.get(link.a).arms[link.side] ?? 0) ** 2 * link.resistance;
+  }
+  world.cells.forEach((name, index) => {
+    const speed = spinAt(world, index % world.width, Math.floor(index / world.width));
+    const way = blockInfo(name)?.machine;
+    if (name === 'battery') sums.battery += currentOut(world, index);
+    if (name === 'crankCW' || name === 'crankCCW') sums.crank += CRANK_STRENGTH * (1 - Math.abs(speed) / CRANK_SPEED) * speed * (name === 'crankCW' ? 1 : -1);
+    if (way) {
+      sums.made += way * MACHINE_K * speed * currentOut(world, index);  // volts × amps
+      sums.taken += way * MACHINE_K * currentOut(world, index) * speed; // push on the shaft × speed
+      sums.rub += MACHINE_DRAG * speed * speed;
+    }
+  });
+  return sums;
+}
+
+/**
+ * Check the books balance right now: everything put in (batteries,
+ * cranks, and `extra`: a load coming down) is exactly the heat made plus
+ * the work done on loads (`extra` less than 0: a load going up).
+ * @param {object} world - the world
+ * @param {string} what - the build's name, for messages
+ * @param {number} [extra] - power put in by loads (+ coming down, − being lifted)
+ * @returns {{battery: number, crank: number, heat: number, rub: number}} the books (see `books`)
+ */
+function assertBooksBalance(world, what, extra = 0) {
+  const sums = books(world);
+  const put = sums.battery + sums.crank + extra;
+  const got = sums.heat + sums.rub;
+  assert.ok(Math.abs(put - got) < 1e-9 * Math.max(1, Math.abs(got)), `${what}: ${put} put in (battery ${sums.battery}, crank ${sums.crank}, loads ${extra}), ${got} came out (heat ${sums.heat}, bearings ${sums.rub})`);
+  assert.ok(Math.abs(sums.made - sums.taken) < 1e-12 * Math.max(1, Math.abs(sums.made)), `${what}: the machines made ${sums.made} of electricity from ${sums.taken} of work`);
+  return sums;
+}
 
 test('the gears tab shows one of each block (the crank is shown stopped)', () => {
   assert.deepEqual(blocksInPack('gears'), ['gearSmall', 'gearBig', 'axle', 'crankStop', 'waterWheel', 'motor', 'generator']);
@@ -141,7 +211,8 @@ test('gears don\'t make power: a geared-up generator is harder to turn, and the 
   for (const [world, x] of [[direct, 1], [gearedUp, 2]]) {
     const current = lampLevel(world, x, 3) * REFERENCE_CURRENT;
     const lampPower = current * current * 1; // a lamp's resistance is 1
-    assert.ok(lampPower <= crankBest * (GENERATOR_GAIN / GENERATOR_TORQUE), `lamp gets ${lampPower}`);
+    assert.ok(lampPower <= crankBest, `lamp gets ${lampPower}`);
+    assert.ok(lampPower < assertBooksBalance(world, 'geared generator').crank, 'some of the crank\'s work is always lost as heat in the coil and bearings');
     assert.ok(lampPower > 0.05, 'the lamp should still light');
   }
 });
@@ -171,9 +242,10 @@ test('a generator lighting more lamps is harder to turn: the crank slows down', 
  */
 const currentAt = (world, x, y) => world.signals.electric.cells.get(y * world.width + x)?.current ?? 0;
 
-test('a generator joined by plain wire is very hard to turn, and you can SEE its big current', () => {
+test('a generator joined by plain wire is hard to turn (the crank drops to under half speed), and you can SEE its big current', () => {
   const world = run(['.R.', 'WEW', 'W.W', 'WWW'], 10);
-  assert.ok(spinAt(world, 1, 0) > 0.05 && spinAt(world, 1, 0) < 0.2, `crank ${spinAt(world, 1, 0)}`);
+  // Only its own coil (0.45) is in the current's way: speed = 2 ÷ (2 + 0.1 + 1 ÷ 0.45), a little more for the wire.
+  assert.ok(spinAt(world, 1, 0) > 0.45 && spinAt(world, 1, 0) < 0.48, `crank ${spinAt(world, 1, 0)}`);
   // Hard to turn BECAUSE lots of current flows: more than a lamp would ever take.
   assert.ok(currentAt(world, 1, 1) > 1, `current ${currentAt(world, 1, 1)}`);
   assert.equal(world.signals.electric.flowing, true);
@@ -193,22 +265,29 @@ test('a generator that was short-circuited is fine again once the wiring is fixe
   const cut = run(['.R.', 'WEW', 'W.W', 'WWW'], 10);
   setBlock(cut, 1, 3, 'air');
   for (let i = 0; i < 10; i++) tick(cut, systems, blockInfo);
-  assert.equal(spinAt(cut, 1, 0), CRANK_SPEED);
+  assert.equal(spinAt(cut, 1, 0), FREE_SPIN);
 });
 
 test('a generator that had a battery wired straight across it spins freely again when the battery and wires are gone', () => {
   const world = run(['.Q.', 'WEW', 'W.W', 'WBW'], 10);
+  // The battery pushes its current the way the crank's turning does: together they push the shaft as hard, opposite ways.
   assert.ok(Math.abs(spinAt(world, 1, 0)) < 0.05, `held nearly still, but turns ${spinAt(world, 1, 0)}`);
   for (const [x, y] of [[0, 1], [2, 1], [0, 2], [2, 2], [0, 3], [1, 3], [2, 3]]) setBlock(world, x, y, 'air');
   const systems = allSystems();
   for (let i = 0; i < 10; i++) tick(world, systems, blockInfo);
-  assert.equal(spinAt(world, 1, 0), -CRANK_SPEED);
+  assert.equal(spinAt(world, 1, 0), -FREE_SPIN);
 });
 
 test('a battery straight across a generator: one answer, whichever was there first, the battery or the crank', () => {
-  // [crank, what happens]: turned AGAINST the battery it spins freely (a real one would be helped along);
-  // turned the way that ADDS to the battery's current, a crank is too weak to move it at all.
-  for (const [crank, speed, current, spark] of [['crankCW', 1, 1.887, false], ['crankCCW', 0, 9.434, true]]) {
+  // The loop: the coil, the battery, and eight joints of wire.
+  const loop = MACHINE_RESISTANCE + 0.05 + 0.006;
+  // The shaft's balance:  crank 2 × (1 ∓ speed)  −  K × current  −  drag × speed = 0,
+  // with the current the law gives:  (K × speed − the battery's 1 volt) ÷ loop.
+  // Turned ↻ the generator pushes AGAINST the battery, and the battery helps the crank along.
+  // Turned ↺ they push the same way round, and the battery holds the crank almost still.
+  for (const [crank, way] of [['crankCW', 1], ['crankCCW', -1]]) {
+    const speed = (way * CRANK_STRENGTH + MACHINE_K / loop) / (CRANK_STRENGTH / CRANK_SPEED + MACHINE_DRAG + MACHINE_K ** 2 / loop);
+    const current = Math.abs(MACHINE_K * speed - 1) / loop;
     const ends = [];
     for (const order of ['crank first', 'battery first', 'crank changed']) {
       const world = run(['...', 'WEW', 'W.W', 'WWW'], 0);
@@ -220,22 +299,26 @@ test('a battery straight across a generator: one answer, whichever was there fir
       setBlock(world, 1, 3, 'battery');
       for (let i = 0; i < 40; i++) tick(world, systems, blockInfo);
       ends.push([spinAt(world, 1, 0), currentAt(world, 1, 1)]);
-      assert.equal(world.signals.electric.cells.get(3 * 3 + 1).spark, spark, `${crank}, ${order}`);
+      // A coil is never plain wire: lots of current, but no sparks.
+      assert.equal(world.signals.electric.cells.get(3 * 3 + 1).spark, false, `${crank}, ${order}`);
+      assertBooksBalance(world, `${crank}, ${order}`);
     }
     for (const [turns, amps] of ends) {
-      assert.ok(Math.abs(turns - speed) < 1e-9, `${crank}: turns ${ends.map((end) => end[0])}`);
-      assert.ok(Math.abs(amps - current) < 0.001, `${crank}: currents ${ends.map((end) => end[1])}`);
+      assert.ok(Math.abs(turns - speed) < 1e-9, `${crank}: turns ${ends.map((end) => end[0])}, should turn ${speed}`);
+      assert.ok(Math.abs(amps - current) < 1e-9, `${crank}: currents ${ends.map((end) => end[1])}, should be ${current}`);
     }
   }
 });
 
-test('a battery never turns a generator into free turning: with a lamp in the loop it only ever makes the crank\'s job harder or the same', () => {
-  const free = CRANK_SPEED;
-  const against = run(['.R..', 'WEWW', 'W..L', 'WBWW'], 20); // turned against the battery: no help, no hindrance
+test('a battery in a cranked generator\'s loop turns it too, and pays for it: pushing against the crank\'s electricity it helps the crank, pushing with it it makes the crank\'s job harder', () => {
+  const against = run(['.R..', 'WEWW', 'W..L', 'WBWW'], 20); // the generator pushes against the battery: the battery wins a little, and helps
   const adding = run(['.Q..', 'WEWW', 'W..L', 'WBWW'], 20);  // turned so its push adds to the battery's: harder
-  assert.equal(spinAt(against, 1, 0), free);
+  assert.ok(spinAt(against, 1, 0) > FREE_SPIN && spinAt(against, 1, 0) < CRANK_SPEED, `turns ${spinAt(against, 1, 0)}`);
   assert.ok(Math.abs(spinAt(adding, 1, 0)) < 0.5 && Math.abs(spinAt(adding, 1, 0)) > 0.3, `turns ${spinAt(adding, 1, 0)}`);
   assert.ok(lampLevel(adding, 3, 2) > lampLevel(against, 3, 2)); // battery and generator together: a brighter lamp
+  // Nothing is free: the battery gives energy in both, and every bit of it and of the crank's work is heat.
+  assert.ok(assertBooksBalance(against, 'against').battery > 0);
+  assert.ok(assertBooksBalance(adding, 'adding').battery > 0);
 });
 
 test('a slowly turned generator still makes a little electricity: a dim lamp, not a dark one', () => {
@@ -244,11 +327,11 @@ test('a slowly turned generator still makes a little electricity: a dim lamp, no
   const lit = run(['RsG-sG-sG.', '.......WEW', '.......W.W', '.......WLW'], 10);
   const speed = Math.abs(spinAt(lit, 8, 1));
   assert.ok(speed > 0.1 && speed < 0.13, `generator turns ${speed}`);
-  const ideal = (speed * GENERATOR_GAIN) / 1.05; // volts ÷ (lamp 1 + generator 0.05)
-  assert.ok(currentAt(lit, 8, 3) > ideal * 0.85 && currentAt(lit, 8, 3) <= ideal + 1e-9, `lamp current ${currentAt(lit, 8, 3)}, ideal ${ideal}`);
+  const ideal = (speed * MACHINE_K) / (1 + MACHINE_RESISTANCE); // volts ÷ (lamp + the generator's coil)
+  assert.ok(currentAt(lit, 8, 3) > ideal * 0.99 && currentAt(lit, 8, 3) <= ideal + 1e-9, `lamp current ${currentAt(lit, 8, 3)}, ideal ${ideal}`);
 });
 
-test('a generator gives back close to 8 tenths of the work that turns it, and never more', () => {
+test('a generator turns work into exactly as much electricity, and every bit of the crank\'s work ends up as heat: lamp + coil + bearings', () => {
   for (const rows of [['.R.', 'WEW', 'W.W', 'WLW'], ['RGs.', '.WEW', '.W.W', '.WLW'], ['.R.', 'WEW', 'WLW', 'WLW']]) {
     const world = run(rows, 10);
     const crankX = rows[0].indexOf('R');
@@ -256,10 +339,15 @@ test('a generator gives back close to 8 tenths of the work that turns it, and ne
     const speed = spinAt(world, crankX, 0);
     const workIn = CRANK_STRENGTH * (1 - speed / CRANK_SPEED) * speed; // how hard the crank pushes × how fast
     const current = currentAt(world, generatorX, 1);
-    const workOut = Math.abs(spinAt(world, generatorX, 1)) * GENERATOR_GAIN * current; // volts × current
-    const share = workOut / workIn;
-    assert.ok(share <= GENERATOR_GAIN / GENERATOR_TORQUE + 1e-9, `${rows.join('/')}: gives back ${share}`);
-    assert.ok(share > 0.75, `${rows.join('/')}: only gives back ${share}`);
+    const made = Math.abs(spinAt(world, generatorX, 1)) * MACHINE_K * current; // volts × current
+    const rub = MACHINE_DRAG * spinAt(world, generatorX, 1) ** 2;
+    // What the crank puts in = what the generator makes + what its bearings rub away.
+    assert.ok(Math.abs(workIn - made - rub) < 1e-9, `${rows.join('/')}: crank ${workIn}, electricity ${made}, bearings ${rub}`);
+    const sums = assertBooksBalance(world, rows.join('/'));
+    assert.ok(Math.abs(sums.crank - workIn) < 1e-12);
+    // And the lamps get less than that: the coil's heat comes out of it too.
+    const lamps = world.cells.reduce((sum, name, index) => sum + (name === 'lamp' ? world.signals.electric.cells.get(index).current ** 2 : 0), 0);
+    assert.ok(lamps < made && lamps > 0.4 * workIn, `${rows.join('/')}: lamps ${lamps} of ${workIn}`);
   }
 });
 
@@ -270,7 +358,8 @@ test('two generators in a row, each with its own crank, both feel ALL the curren
   for (const [y, crankY] of [[1, 0], [3, 4]]) {
     const speed = Math.abs(spinAt(world, 1, crankY));
     const push = CRANK_STRENGTH * (1 - speed / CRANK_SPEED); // how hard this crank is pushing
-    assert.ok(Math.abs(push - GENERATOR_TORQUE * current) < 0.05, `row ${y}: crank pushes ${push}, current ${current}`);
+    // That push holds up the current (MACHINE_K for each amp) and the generator's own bearings.
+    assert.ok(Math.abs(push - MACHINE_K * current - MACHINE_DRAG * speed) < 1e-9, `row ${y}: crank pushes ${push}, current ${current}`);
   }
 });
 
@@ -300,14 +389,22 @@ test('a generator with a steady load does not flicker', () => {
   }
 });
 
-test('a battery wired straight across a stopped generator sparks (a short circuit through its coil)', () => {
+test('a battery wired straight across a generator does not spark: it runs it as a motor, and held still it is a stalled motor', () => {
   const world = run(['WWW', 'B.E', 'WWW'], 3);
   const battery = world.signals.electric.cells.get(3);
-  assert.ok(battery.current > 9, `only ${battery.current} flows`);
-  assert.equal(battery.spark, true);
-  // And it keeps sparking while a crank tries (and fails) to turn the generator.
-  const cranked = run(['.Q.', 'WEW', 'W.W', 'WBW'], 20);
-  assert.equal(cranked.signals.electric.cells.get(3 * 3 + 1).spark, true);
+  assert.equal(battery.spark, false);
+  // It spins up until its own push nearly cancels the battery's: only a whisper of current is left.
+  assert.ok(Math.abs(Math.abs(spinAt(world, 2, 1)) - 0.952) < 0.005, `turns ${spinAt(world, 2, 1)}`);
+  assert.ok(battery.current > 0.09 && battery.current < 0.1, `${battery.current} flows`);
+  assertBooksBalance(world, 'battery across a generator');
+  // Jammed gears on its shaft hold it still: now it is just a 0.45 coil across the battery. 2 amps, and still no sparks.
+  const held = run(['WWW.', 'B.EG', 'WWWG', '..GG'], 3);
+  assert.equal(spinAt(held, 2, 1), 0);
+  assert.ok(Math.abs(held.signals.electric.cells.get(4).current - 2) < 0.03, `${held.signals.electric.cells.get(4).current} flows`);
+  assert.equal(held.signals.electric.cells.get(4).spark, false);
+  // Two batteries in a row wired straight back to themselves still spark, generator or no generator.
+  const short = run(['WWWW', 'B.WE', 'B.WW', 'WWW.'], 3);
+  assert.equal(short.signals.electric.cells.get(4).spark, true);
 });
 
 test('water power cannot loop forever either: the energy books balance at every step', () => {
@@ -327,8 +424,13 @@ test('water power cannot loop forever either: the energy books balance at every 
   const turbineBest = ((TURBINE_STRENGTH * flow) / 2) * (TURBINE_SPEED / 2);
   assert.ok(Math.abs(turbineBest - RISE_POWER * flow) < 1e-12);
   assert.equal(RISE_POWER, DROP_POWER);
-  // 4. A generator gives back less electricity than the work that turns it.
-  assert.ok(GENERATOR_GAIN / GENERATOR_TORQUE < 1);
+  // 4. A motor or generator uses ONE number both ways, so the electricity it
+  //    makes is exactly the work its coil takes (see `books`), and it always
+  //    loses some as heat on top: its coil and its bearings are never free.
+  assert.ok(MACHINE_RESISTANCE > 0 && MACHINE_DRAG > 0);
+  const plant = run(['.R.', 'WEW', 'W.W', 'WLW'], 3);
+  assert.ok(Math.abs(books(plant).made - books(plant).taken) < 1e-12);
+  assert.ok(books(plant).made > 0.1);
 });
 
 // =============================================================
@@ -526,9 +628,38 @@ test('a mirrored water wheel machine turns just as fast, the other way', () => {
 // =============================================================
 
 /**
- * Check a loop machine: with its batteries in, water really goes round;
- * with every battery swapped for plain wire, it all stops, and no water
- * was made or lost.
+ * Get a pump → wheels → generators loop running as hard as it ever
+ * could: full flow through the wheels. (A battery just wired in a row
+ * with the generators won't do that any more: the generators are motors
+ * too, so they spin up, push back, and can leave the pump only a
+ * trickle, like real motors wired in a row with it. So to prime the loop
+ * we take the generators out for a while, plain wire in their place,
+ * and let the battery run the pump alone.)
+ * @param {object} world - the world, batteries placed
+ * @param {number} ticks - how long to run it like that
+ * @param {Function} [each] - called after every tick
+ * @returns {Function} call it to put the generators back
+ */
+function primeLoop(world, ticks, each = () => {}) {
+  const generators = [];
+  world.cells.forEach((name, index) => {
+    if (name !== 'generator') return;
+    generators.push(index);
+    setBlock(world, index % world.width, Math.floor(index / world.width), 'wire');
+  });
+  for (let i = 0; i < ticks; i++) {
+    more(world, 1);
+    each();
+  }
+  return () => generators.forEach((index) => setBlock(world, index % world.width, Math.floor(index / world.width), 'generator'));
+}
+
+/**
+ * Check a loop machine. It runs for a moment as built, then it is primed
+ * (see primeLoop) so that water really goes round at full flow. Then the
+ * generators go back in and every battery is swapped for plain wire: the
+ * loop is on its own, at full flow, and it all stops; no water was made
+ * or lost.
  * @param {string} what - the machine's name, for messages
  * @param {object} world - the world, batteries placed
  * @param {number[]} pump - the pump's [x, y]
@@ -537,10 +668,12 @@ test('a mirrored water wheel machine turns just as fast, the other way', () => {
  */
 function assertWindsDown(what, world, pump, wheels) {
   const water = allWater(world);
-  more(world, 300);
+  more(world, 40); // as built
+  const putBack = primeLoop(world, 300);
   assert.ok(amps(world, ...pump) > 0.15, `${what}: the battery should run the pump (${amps(world, ...pump)})`);
   const flowing = Math.abs(world.signals.spin.wheelFlow.get(wheels[0][1] * world.width + wheels[0][0]));
   assert.ok(flowing > 0.005, `${what}: water should flow through the wheels while the battery is in (${flowing})`);
+  putBack();
   world.cells.forEach((name, index) => {
     if (name === 'battery') setBlock(world, index % world.width, Math.floor(index / world.width), 'wire');
   });
@@ -672,7 +805,7 @@ test('a tall loop (pump up one side, stacked wheels down the other) winds down w
   }
 });
 
-test('a clicker (or a tapped switch) in a generator\'s loop gives no free electricity: the lamps never get more than 8 tenths of the crank\'s work', () => {
+test('a clicker (or a tapped switch) in a generator\'s loop gives no free electricity: on every tick, the crank\'s work is exactly the heat made, and the lamps get less', () => {
   for (const gate of ['K', '/']) {
     for (const chain of ['', 'Gs', 'Gs-Gs']) { // the generator geared ×1, ×2, ×4
       for (const lamps of [1, 3, 6]) {
@@ -692,18 +825,22 @@ test('a clicker (or a tapped switch) in a generator\'s loop gives no free electr
           const speed = spinAt(world, 0, 1);
           crankWork += CRANK_STRENGTH * (1 - speed / CRANK_SPEED) * speed;
           for (let i = 0; i < lamps; i++) lampEnergy += amps(world, at + 3 + i, 1) ** 2;
+          // On every tick, the ticks the gate flips too: nothing is owed from the tick before.
+          assertBooksBalance(world, `${gate} gears "${chain}" ${lamps} lamps, tick ${t}`);
+          assert.ok(lampEnergy <= crankWork + 1e-9, `${gate} gears "${chain}" ${lamps} lamps, tick ${t}: lamps ${lampEnergy}, crank ${crankWork}`);
         }
         const what = `${gate} gears "${chain}" ${lamps} lamps: lamps ${lampEnergy}, crank ${crankWork}`;
         assert.ok(lampEnergy > 1, what); // (it does light)
-        assert.ok(lampEnergy <= (GENERATOR_GAIN / GENERATOR_TORQUE) * crankWork, what);
+        assert.ok(lampEnergy < crankWork, what);
       }
     }
   }
 });
 
 /**
- * Check a loop machine that has a clicker in its wiring: take every
- * battery away part way through, and soon nothing runs any more.
+ * Check a loop machine that has a clicker in its wiring: prime it (see
+ * primeLoop), put its generators back and take every battery away, and
+ * soon nothing runs any more.
  * @param {string} what - the machine's name, for messages
  * @param {object} world - the world, batteries placed
  * @param {number[]} pump - the pump's [x, y]
@@ -715,11 +852,9 @@ function assertClickerWindsDown(what, world, pump, wheels) {
   assert.equal(getBlock(world, 2, 0), 'wire');
   setBlock(world, 2, 0, 'clicker');
   let most = 0;
-  for (let t = 0; t < 326; t++) {
-    more(world, 1);
-    most = Math.max(most, amps(world, ...pump));
-  }
+  const putBack = primeLoop(world, 326, () => { most = Math.max(most, amps(world, ...pump)); });
   assert.ok(most > 0.15, `${what}: the battery should run the pump (${most})`);
+  putBack();
   world.cells.forEach((name, index) => {
     if (name === 'battery') setBlock(world, index % world.width, Math.floor(index / world.width), 'wire');
   });
@@ -752,12 +887,11 @@ test('a crank turning a generator that powers a motor pushing back does not flic
   const seen = [];
   for (let i = 0; i < 70; i++) {
     tick(world, systems, blockInfo);
-    if (i >= 60) seen.push(`${spinAt(world, 1, 1).toFixed(6)}/${world.signals.spin.cells.get(4).jammed}`);
+    seen.push(`${spinAt(world, 1, 1).toFixed(9)}/${world.signals.spin.cells.get(4).jammed}`);
   }
-  // (To six places, after 60 ticks: the motor takes up more current a
-  // quarter of the way at a time, so the speed creeps the last millionths
-  // of the way instead of landing at once.)
+  // From the very first tick: the gears and the circuit are worked out together, so there is nothing to creep toward.
   assert.equal(new Set(seen).size, 1, `it flickers: ${seen.join(' ')}`);
+  assertBooksBalance(world, 'generator and motor on one shaft');
 });
 
 test('redrawing does not move the gears on: refreshing twice changes nothing', () => {
@@ -975,7 +1109,7 @@ function crankWorkAt(world, x, y) {
   return (CRANK_STRENGTH * (1 - speed / CRANK_SPEED) * speed) / 8;
 }
 
-test('any number of generators on one crank, wired in a row: the lamp never gets more than 8 tenths of the crank\'s work, and nothing flickers', () => {
+test('any number of generators on one crank, wired in a row: the lamp never gets more than the crank\'s work, the books balance, and nothing flickers', () => {
   for (const train of ['R', 'RGs', 'Q']) {
     for (const count of [1, 2, 3, 4, 6, 8]) {
       const { world, generators, busY, busX } = generatorsInARow(count, train);
@@ -987,11 +1121,12 @@ test('any number of generators on one crank, wired in a row: the lamp never gets
         more(world, 1);
         work += crankWorkAt(world, 0, 2);
         heat += amps(world, busX + 1, busY) ** 2 / 8;
-        if (t >= 2) seen.add(`${spinAt(world, generators[0], 2).toFixed(9)}/${amps(world, busX + 1, busY).toFixed(9)}`);
+        seen.add(`${spinAt(world, generators[0], 2).toFixed(9)}/${amps(world, busX + 1, busY).toFixed(9)}`); // from the very first tick
       }
       const what = `${count} generators, train ${train}: lamp heat ${heat}, crank work ${work}`;
       assert.ok(heat > 0.05, what); // (it does light)
-      assert.ok(heat <= (GENERATOR_GAIN / GENERATOR_TORQUE) * work + 1e-9, what);
+      assert.ok(heat < work, what);
+      assertBooksBalance(world, what);
       assert.equal(seen.size, 1, `${what}: it flickers: ${[...seen].slice(0, 4).join(' ')}`);
     }
   }
@@ -1042,13 +1177,14 @@ test('generators with a crank each, all wired in a row, settle and never give mo
       for (let t = 0; t < 120; t++) {
         more(world, 1);
         for (let x = 1; x < width; x += 2) work += crankWorkAt(world, x, 0);
-        // All the heat: the lamp (resistance 1) and every generator's coil (0.05).
-        heat += amps(world, 1, 1) ** 2 * ((load === 'L' ? 1 : 0) + 0.05 * count) / 8;
-        if (t >= 100) seen.add(spinAt(world, 1, 1).toFixed(6));
+        // All the heat: the lamp (resistance 1) and every generator's coil.
+        heat += amps(world, 1, 1) ** 2 * ((load === 'L' ? 1 : 0) + MACHINE_RESISTANCE * count) / 8;
+        seen.add(spinAt(world, 1, 1).toFixed(9)); // from the very first tick
       }
       const what = `${count} cranked generators, load ${load}: heat ${heat}, work ${work}`;
       assert.ok(heat > 0.1, what);
-      assert.ok(heat <= (GENERATOR_GAIN / GENERATOR_TORQUE) * work + 1e-6, what);
+      assert.ok(heat < work, what);
+      assertBooksBalance(world, what);
       assert.equal(seen.size, 1, `${what}: it swings: ${[...seen].join(' ')}`);
       assert.ok(Math.abs(spinAt(world, 1, 1) - spinAt(world, width - 2, 1)) < 1e-6, `${what}: the same machines should turn alike`);
     }
@@ -1161,11 +1297,12 @@ test('two water wheels on one shaft work the same in a mirrored build: a wheel w
   }
 });
 
-test('a battery in a loop with two generators that push against each other never makes the gears run by themselves or lift a weight for free', () => {
-  // The crank turns the left generator the way that ADDS to the battery's
-  // current: far too hard for one crank, so nothing moves at all. (It
-  // used to race at 1.25 turns a second, faster than a crank can go, and
-  // wind the iron weight up with nobody paying.)
+test('a battery in a loop with two generators that push against each other never turns anything for free: whatever turns, the battery and the crank pay for exactly', () => {
+  // Two generators on one train, one geared ×2, wired so that they push
+  // against each other, with a battery in their loop. The battery drives
+  // them as motors, one against the other: the ×2 one wins. With a crank
+  // helping, that is still far too little to wind the iron weight up.
+  // (It used to race at 1.25 turns a second and lift it with nobody paying.)
   const rows = ['WBWWW.', 'EGssEZ', 'WR..Wr', 'WWWWWr', '.....r', '.....r', '.....r', '.....r', '.....r', '.....I', '......', '######'];
   const world = run(rows, 0);
   const systems = allSystems();
@@ -1173,19 +1310,26 @@ test('a battery in a loop with two generators that push against each other never
     tick(world, systems, blockInfo);
     assert.equal(spinAt(world, 1, 2), 0, `the crank on tick ${i}`);
     assert.equal(getBlock(world, 5, 9), 'ironWeight', `the weight stays down on tick ${i}`);
+    assertBooksBalance(world, `stalled, tick ${i}`); // the battery's current is all heat
   }
-  // No winch: still nothing turns faster than its crank can go (here, not at all).
+  // No winch: the train turns, crank or no crank, and every bit of it is paid for.
   for (const picture of [
     ['WBWWW.', 'EGssE.', 'WR..W.', 'WWWWW.'],
+    ['WBWWW.', 'EGssE.', 'W...W.', 'WWWWW.'],
     ['WBWWWWWWW', 'EsGs-GssE', 'WR......W', 'WWWWWWWWW'],
     ['WBWWWWWWW', 'EsGs-GssE', 'WQ......W', 'WWWWWWWWW'],
   ]) {
     const free = run(picture, 0);
     for (let i = 0; i < 40; i++) {
       tick(free, systems, blockInfo);
-      assert.ok(Math.abs(spinAt(free, 1, 2)) <= CRANK_SPEED + 1e-9, `${picture[1]}: crank at ${spinAt(free, 1, 2)} on tick ${i}`);
+      const sums = assertBooksBalance(free, `${picture[1]}, tick ${i}`);
+      assert.ok(sums.battery > 0, `${picture[1]}: the battery pays (${sums.battery})`);
     }
+    assert.ok(Math.abs(spinAt(free, 0, 1)) > 0.1, `${picture[1]}: it does turn`);
   }
+  // And with the battery swapped for plain wire and no crank: nothing.
+  const dead = run(['WWWWW.', 'EGssE.', 'W...W.', 'WWWWW.'], 20);
+  assert.equal(spinAt(dead, 0, 1), 0);
 });
 
 test('a motor on the same gears as the generators that feed it settles to one steady speed: no flicker from tick to tick', () => {
@@ -1198,11 +1342,12 @@ test('a motor on the same gears as the generators that feed it settles to one st
   ];
   const systems = allSystems();
   for (const rows of pictures) {
-    const world = run(rows, 200);
+    const world = run(rows, 0);
     const seen = [];
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 12; i++) { // from the very first tick
       tick(world, systems, blockInfo);
-      seen.push([...world.signals.spin.cells.values()].map((cell) => cell.speed.toFixed(6)).join(' '));
+      seen.push([...world.signals.spin.cells.values()].map((cell) => cell.speed.toFixed(9)).join(' '));
+      assertBooksBalance(world, rows.join(' / '));
     }
     assert.equal(new Set(seen).size, 1, `${rows.join(' / ')} flickers:\n${[...new Set(seen)].join('\n')}`);
   }
@@ -1250,52 +1395,42 @@ test('two cranks alike, each geared up into a generator, the two generators join
 });
 
 test('a clicker gives a motor no burst of battery current that a generator in the loop is holding back', () => {
-  // The crank turns a generator ×4 (3.2 volts) AGAINST three batteries
-  // (3 volts): hardly any current flows, and it flows backwards through
-  // the batteries. The motor in that loop turns a second generator with
-  // a lamp. Every time the clicker closed, the motor used to get a burst
-  // as if the batteries had the loop to themselves: current that never
-  // flowed and that nobody paid for.
+  // The crank turns a generator ×4 AGAINST three batteries: when it wins,
+  // current flows backwards through the batteries. The motor in that loop
+  // turns a second generator with a lamp. Every time the clicker closed,
+  // the motor used to get a burst as if the batteries had the loop to
+  // themselves: current that never flowed and that nobody paid for. Now
+  // every tick stands by itself: what goes in is exactly the heat that comes out.
   const world = build([
     '......WKBBBW.WW',
     'QGs-GsE....M-EL',
     '......WWWWWW.WW',
     '...............',
   ]);
-  const motor = world.width + 11;
   let crankWork = 0;
   let batteryWork = 0;
   let lampHeat = 0;
-  let before = 0; // the current through the motor as the tick starts...
-  const batteryBefore = {};
   setBlock(world, 0, 1, 'crankStop'); // nobody is turning the crank yet: the batteries run the motor, and pay for it
   for (let t = 0; t < 3200; t++) {
     if (t === 16) setBlock(world, 0, 1, 'crankCCW');
     more(world, 1);
-    crankWork += crankWorkAt(world, 0, 1);
-    for (const x of [8, 9, 10]) {
-      // What a battery gives out in a tick: the most it sent the right way, as the tick started or ended.
-      const cell = world.signals.electric.cells.get(x);
-      const out = cell.arms.right ?? -(cell.arms.left ?? 0);
-      batteryWork += Math.max(0, out, batteryBefore[x] ?? 0) / 8;
-      batteryBefore[x] = out;
-    }
+    const sums = assertBooksBalance(world, `tick ${t}`);
+    crankWork += sums.crank / 8;
+    batteryWork += sums.battery / 8; // less than 0 while the generator charges the batteries
     lampHeat += amps(world, 14, 1) ** 2 / 8;
-    const after = Math.abs(world.signals.electric.cells.get(motor)?.current ?? 0); // ...and as it ends
-    const current = Math.max(before, after);
-    before = after;
-    const speed = Math.abs(spinAt(world, 11, 1));
-    // (Not in the first ticks after the crank starts: the motor takes up the change a quarter at a time.)
-    if (t > 48) assert.ok(speed <= current / REFERENCE_CURRENT + 1e-9, `tick ${t}: the motor turns ${speed} on a current of ${current}`);
+    // The motor's shaft: the current's push (MACHINE_K for each amp) is all there is to turn it, the second generator and their bearings.
+    const push = MACHINE_K * currentOut(world, world.width + 11); // current out of a motor's right end turns it ↻
+    assert.ok(push * spinAt(world, 11, 1) >= 0, `tick ${t}: the motor turns ${spinAt(world, 11, 1)} against its current's push ${push}`);
     assert.ok(lampHeat <= crankWork + batteryWork + 1e-9, `tick ${t}: lamp heat ${lampHeat} from crank work ${crankWork} and battery work ${batteryWork}`);
   }
   assert.ok(crankWork > 1, `the crank does turn (${crankWork})`);
+  assert.ok(lampHeat > 1, `the lamp does light (${lampHeat})`);
 });
 
-test('a motor never turns against the current that really flows through it when a clicker closes', () => {
+test('a motor always turns the way the current that flows through it on THAT tick pushes it, even on the tick a clicker closes', () => {
   // One battery, and a cranked generator that out-pushes it: the current
   // goes the generator's way. On each beat the motor used to start off
-  // the battery's way, backwards.
+  // the battery's way, backwards, because it went by last tick's current.
   const world = build([
     '....WKBW.',
     'RGs-E..M.',
@@ -1303,32 +1438,25 @@ test('a motor never turns against the current that really flows through it when 
     '.........',
   ]);
   more(world, 40);
-  /**
-   * The current out of the motor's right end right now.
-   * @returns {number} the current (+ turns the motor ↻)
-   */
-  const flowing = () => {
-    const cell = world.signals.electric.cells.get(world.width + 7);
-    return cell?.arms[plusSide(cell.axis)] ?? 0;
-  };
-  let before = flowing(); // the current as the tick starts...
+  let turned = 0;
   for (let t = 0; t < 160; t++) {
     more(world, 1);
-    const after = flowing(); // ...and as it ends
+    const current = currentOut(world, world.width + 7); // current out of a motor's top end turns it ↻
     const speed = spinAt(world, 7, 1);
-    assert.ok(speed * before >= 0 || speed * after >= 0, `tick ${t}: the motor turns ${speed} with a current of ${before}, then ${after}`);
-    // (0.02 to spare: the circuit rounds a generator's push down a little, the motor uses it exactly.)
-    assert.ok(Math.abs(speed) <= Math.max(Math.abs(before), Math.abs(after)) / REFERENCE_CURRENT + 0.02, `tick ${t}: the motor turns ${speed} on a current of ${before}, then ${after}`);
-    before = after;
+    // Nothing but its own bearings on its shaft: the current's push is exactly what they rub away.
+    assert.ok(Math.abs(MACHINE_K * current - MACHINE_DRAG * speed) < 1e-9, `tick ${t}: the motor turns ${speed} with a current of ${current}`);
+    assertBooksBalance(world, `tick ${t}`);
+    turned = Math.max(turned, Math.abs(speed));
   }
+  assert.ok(turned > 0.5, `the motor does turn (${turned})`);
 });
 
 test('tapping a crank on and off never gets more out of a battery\'s motor than the battery and the crank put in', () => {
   // The same loop on plain wire: three batteries, a generator that
   // out-pushes them when the crank turns, and a motor turning a second
   // generator with a lamp. A hand starts and stops the crank again and
-  // again. The motor takes up each change a bit late, but what it has too
-  // much of after a start it has too little of after a stop.
+  // again. Each tick's books balance by themselves, so there is nothing
+  // to gain from good timing.
   for (const beat of [1, 2, 3, 5, 8]) {
     const world = build([
       '......WWBBBW.WW',
@@ -1336,77 +1464,70 @@ test('tapping a crank on and off never gets more out of a battery\'s motor than 
       '......WWWWWW.WW',
       '...............',
     ]);
-    let crankWork = 0;
-    let batteryWork = 0;
+    let put = 0;
     let lampHeat = 0;
-    const batteryBefore = {};
     for (let t = 0; t < 1600; t++) {
       setBlock(world, 0, 1, Math.floor(t / beat) % 2 === 0 ? 'crankStop' : 'crankCCW');
       more(world, 1);
-      crankWork += crankWorkAt(world, 0, 1);
-      for (const x of [8, 9, 10]) {
-        const cell = world.signals.electric.cells.get(x);
-        const out = cell.arms.right ?? -(cell.arms.left ?? 0);
-        batteryWork += Math.max(0, out, batteryBefore[x] ?? 0) / 8;
-        batteryBefore[x] = out;
-      }
+      const sums = assertBooksBalance(world, `beat ${beat}, tick ${t}`);
+      put += (sums.crank + sums.battery) / 8;
       lampHeat += amps(world, 14, 1) ** 2 / 8;
+      assert.ok(lampHeat <= put + 1e-9, `beat ${beat}, tick ${t}: lamp heat ${lampHeat} from ${put} of crank and battery work`);
     }
     assert.ok(lampHeat > 0.1, `beat ${beat}: the lamp does light (${lampHeat})`);
-    assert.ok(lampHeat <= crankWork + batteryWork, `beat ${beat}: lamp heat ${lampHeat} from crank work ${crankWork} and battery work ${batteryWork}`);
   }
 });
 
-test('a motor with hardly any current hardly holds its gears back: no flicker around the point where it fades out', () => {
+test('a generator and a motor on one shaft, wired head to tail through any number of lamps, push against each other exactly: no current, no flicker', () => {
   // A crank, a generator and a motor on one shaft, the generator wired to
-  // the motor through a ring of lamps. More lamps, less current. The
-  // motor's push AND its holding-back both fade away smoothly, so there
-  // is no number of lamps where it switches on and off tick by tick.
-  // (It used to: with 23 lamps the shaft went 0.500 0.984 0.500 0.984...)
+  // the motor through a ring of lamps. They are the same machine fitted
+  // opposite ways, turning at the same speed, so their pushes cancel
+  // exactly: no current flows, however many lamps, and the crank only
+  // feels the two machines' bearings.
+  // (The motor used to switch on and off tick by tick around the point
+  // where its current faded out: with 23 lamps the shaft went 0.500 0.984 0.500 0.984...)
   const systems = allSystems();
   /**
-   * Run a build for 400 ticks and return its speeds over the next 50.
+   * Run a build for 20 ticks and return its speeds over all of them.
    * @param {string[]} rows - the picture
    * @returns {number[][]} every spinning block's speed, tick by tick
    */
-  const lastSpeeds = (rows) => {
-    const world = run(rows, 400);
+  const speedsOf = (rows) => {
+    const world = run(rows, 0);
     const seen = [];
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 20; i++) {
       tick(world, systems, blockInfo);
       seen.push([...world.signals.spin.cells.values()].map((cell) => cell.speed));
+      assertBooksBalance(world, rows.join('/'));
     }
     return seen;
   };
   /**
    * The most any block's speed changed from one tick to the next.
-   * @param {number[][]} seen - from lastSpeeds
+   * @param {number[][]} seen - from speedsOf
    * @returns {number} the biggest change
    */
   const wobble = (seen) => Math.max(...seen.slice(1).map((speeds, t) => Math.max(...speeds.map((speed, k) => Math.abs(speed - seen[t][k])))));
-  let before = 0;
+  const free = CRANK_STRENGTH / (CRANK_STRENGTH / CRANK_SPEED + 2 * MACHINE_DRAG);
   for (const crank of ['R', 'Q']) {
     for (let lamps = 0; lamps <= 40; lamps++) {
       const top = `W${'L'.repeat(Math.min(lamps, 22))}`.padEnd(24, 'W');
       const bottom = `${`W${'L'.repeat(Math.max(0, lamps - 22))}`.padEnd(21, 'W')}EMW`;
-      const seen = lastSpeeds([top, `W${'.'.repeat(22)}W`, bottom, `${'.'.repeat(21)}${crank}..`]);
-      assert.ok(wobble(seen) < 1e-6, `${crank} with ${lamps} lamps: the shaft wobbles by ${wobble(seen)}`);
-      // From 8 lamps on the motor is fading out: each lamp more, it holds the crank back a little less.
-      const speed = Math.abs(seen[49][0]);
-      if (lamps > 8) assert.ok(speed > before, `${crank} with ${lamps} lamps turns ${speed}, no faster than with one fewer (${before})`);
-      before = speed;
+      const seen = speedsOf([top, `W${'.'.repeat(22)}W`, bottom, `${'.'.repeat(21)}${crank}..`]);
+      assert.equal(wobble(seen), 0, `${crank} with ${lamps} lamps: the shaft wobbles by ${wobble(seen)}`);
+      assert.ok(Math.abs(Math.abs(seen[19][0]) - free) < 1e-9, `${crank} with ${lamps} lamps turns ${seen[19][0]}`);
     }
   }
   // And with no lamps or battery at all: two cranked generators feeding a
   // motor that sits on a third cranked generator's shaft.
-  const seen = lastSpeeds([
+  const seen = speedsOf([
     'WWWWWWWWWWWWW',
     'E.RE........W',
     'WWWWW.....WWW',
     '..REM.....W..',
     '...WWWWWWWW..',
   ]);
-  assert.ok(wobble(seen) < 1e-6, `the three-generator build wobbles by ${wobble(seen)}`);
+  assert.equal(wobble(seen), 0, `the three-generator build wobbles by ${wobble(seen)}`);
 });
 
 test('two rungs exactly alike among four generators in one loop turn exactly alike from the very first tick', () => {
@@ -1435,38 +1556,26 @@ test('two rungs exactly alike among four generators in one loop turn exactly ali
   assert.ok(Math.abs(spinAt(world, 12, 3) - first[0]) < 1e-6, `the first tick gave ${first[0]}, the second ${spinAt(world, 12, 3)}`);
 });
 
-test('generators that exactly balance the batteries in their loop send no current: free cranks light no lamp and charge no battery', () => {
-  // Six cranked generators and two batteries in one loop. The pushes add
-  // up to exactly nothing, so no current flows and every crank turns
-  // freely. (The gears settle a hair under full speed, 0.9999999998, and
-  // rounding each push DOWN to a hundredth of a volt then turned that
-  // hair into a phantom 0.004 amps through the lamps and batteries, with
-  // nobody turning anything harder for it.)
-  const world = run([
-    '............WWW.',
-    '..........QGE.W.',
-    '............B.W.',
-    '..........MsE.W.',
-    '............L.W.',
-    '......RGs-GsE.W.',
-    '............L.W.',
-    '.........QsGE.W.',
-    '............W.W.',
-    '..........RsE.W.',
-    '............W.W.',
-    '...RGs-Gs-GsE.W.',
-    '............B.W.',
-    '...........RE.W.',
-    '............W.W.',
-    '............WWW.',
-    '................',
-  ], 60);
-  let crankWork = 0;
-  world.cells.forEach((name, index) => {
-    if (name.startsWith('crank')) crankWork += crankWorkAt(world, index % world.width, Math.floor(index / world.width));
-  });
-  assert.ok(crankWork < 1e-6, `the cranks turn freely (work ${crankWork})`);
-  assert.ok(Math.abs(amps(world, 12, 4)) < 1e-6, `yet ${amps(world, 12, 4)} amps flow through the lamp`);
+test('machines whose pushes exactly cancel send no current: twin cranked generators wired head to head light no lamp, and each crank only feels its own bearings', () => {
+  // Two builds exactly alike, their generators pushing against each other
+  // through a lamp: the pushes add up to exactly nothing. (Each push used
+  // to be rounded down to a hundredth of a volt, and a hair of difference
+  // in the rounding turned into a phantom current that nobody paid for.)
+  for (const train of ['R', 'RGs', 'RsG', 'RGs-Gs']) {
+    const gap = '.'.repeat(train.length);
+    // (The bottom crank turns the other way, so the two generators push against each other round the loop.)
+    const world = run([`${gap}WWW`, `${train}E.L`, `${gap}W.W`, `${gap}W.W`, `${train.replace('R', 'Q')}E.W`, `${gap}WWW`], 60);
+    const ratio = Math.abs(spinAt(world, train.length, 1) / spinAt(world, 0, 1)); // how many times faster the generator turns
+    const free = CRANK_STRENGTH / (CRANK_STRENGTH / CRANK_SPEED + MACHINE_DRAG * ratio * ratio);
+    for (const y of [1, 4]) assert.ok(Math.abs(Math.abs(spinAt(world, 0, y)) - free) < 1e-12, `${train}: crank ${y} turns ${spinAt(world, 0, y)}, free is ${free}`);
+    assert.equal(amps(world, train.length + 2, 1), 0, `${train}: yet ${amps(world, train.length + 2, 1)} amps flow through the lamp`);
+    assert.equal(world.signals.electric.flowing, false);
+  }
+  // And a battery nearly balanced by its motor: a crank turns the motor almost as fast as the battery would, so hardly any current is left.
+  const helped = run(['.R.', 'WMW', 'B.W', 'WWW'], 10);
+  assert.ok(spinAt(helped, 1, 1) > FREE_SPIN, `the motor turns ${spinAt(helped, 1, 1)}`);
+  assert.ok(amps(helped, 0, 2) < 0.06, `the battery still gives ${amps(helped, 0, 2)}`);
+  assertBooksBalance(helped, 'a motor helped by a crank');
 });
 
 // =============================================================
@@ -1573,4 +1682,179 @@ test('no steam machine runs without its fire: plant → generator → pump → w
     assert.ok(amps(world, 8, 1) < 0.01, `tick ${i}: the lamp still gets ${amps(world, 8, 1)}`);
   }
   assert.ok(Math.abs(fluid() - start) < 1e-6, `water and steam went from ${start} to ${fluid()}`);
+});
+
+// =============================================================
+// ONE machine, one law (issues #14 and #15): voltage follows speed,
+// push follows current, with the same number both ways.
+// =============================================================
+
+/**
+ * The picture from issue #15: one battery's motor, a gear and an axle
+ * over to a winch, with rope down to a load.
+ * @param {string} load - 'c' (a crate), 'I' (an iron weight) or '.' (no rope at all)
+ * @param {string} [beside] - what sits in the loop beside the battery: 'W' (wire) or 'L' (a lamp)
+ * @returns {string[]} the picture
+ */
+const motorCrane = (load, beside = 'W') => {
+  const rope = load === '.' ? '.' : 'r';
+  return ['.s-Z', `WMW${rope}`, `B.${beside}${rope}`, `WWW${load}`, '....', '####'];
+};
+
+test('a motor draws the most current stalled, less lifting, and hardly any with nothing to turn', () => {
+  const free = run(motorCrane('.'), 2);
+  const lifting = run(motorCrane('c'), 2);
+  const stalled = run(motorCrane('I'), 2);
+  // [speed, current]: worked out from the law for a battery of 1 volt and 0.05, a coil of 0.45 (and a little wire).
+  for (const [what, world, speed, current] of [['free', free, 0.952, 0.095], ['lifting a crate', lifting, 0.476, 1.048], ['stalled under an iron weight', stalled, 0, 2]]) {
+    assert.ok(Math.abs(spinAt(world, 1, 1) - speed) < 0.01, `${what}: the motor turns ${spinAt(world, 1, 1)}`);
+    assert.ok(Math.abs(currentAt(world, 1, 1) - current) < 0.03, `${what}: the motor draws ${currentAt(world, 1, 1)}`);
+  }
+  assert.equal(spinCell(stalled, 1, 1).stalled, true);
+  assert.equal(stalled.signals.electric.cells.get(2 * 4).spark, false); // a stalled motor is not a short circuit
+  // Free and stalled, nothing is lifted: every bit the battery gives is heat. Lifting, the rest is the crate going up
+  // (its weight, 1, × how fast the winch turns).
+  assertBooksBalance(free, 'free');
+  assertBooksBalance(stalled, 'stalled');
+  assertBooksBalance(lifting, 'lifting', -1 * spinAt(lifting, 3, 0));
+  // The battery pays for the lifting: it gives ten times what it gives the free motor.
+  assert.ok(books(lifting).battery > 10 * books(free).battery);
+});
+
+test('a lamp in a row with a motor is bright when the motor is stalled and nearly dark when it runs free', () => {
+  const free = run(motorCrane('.', 'L'), 2);
+  const stalled = run(motorCrane('I', 'L'), 2);
+  assert.ok(Math.abs(currentAt(free, 2, 2) - 0.087) < 0.005, `free: the lamp gets ${currentAt(free, 2, 2)}`);
+  assert.ok(Math.abs(currentAt(stalled, 2, 2) - 0.667) < 0.01, `stalled: the lamp gets ${currentAt(stalled, 2, 2)}`);
+  assert.ok(lampLevel(free, 2, 2) < 0.1 && lampLevel(stalled, 2, 2) > 0.6);
+});
+
+test('a battery spins a generator just as fast as it spins a motor, the other way round', () => {
+  const motor = run(['WMW', 'B.W', 'WWW'], 2);
+  const generator = run(['WEW', 'B.W', 'WWW'], 2);
+  assert.ok(spinAt(motor, 1, 0) > 0.9);
+  assert.equal(spinAt(generator, 1, 0), -spinAt(motor, 1, 0));
+  assert.equal(currentAt(generator, 1, 0), currentAt(motor, 1, 0));
+  assert.equal(generator.signals.electric.cells.get(3).spark, false);
+});
+
+test('a battery pushing against a cranked generator helps the crank; two drive it faster than the crank alone could go; pushing with the crank holds it still', () => {
+  const alone = run(['.R.', 'WEW', 'W.W', 'WWW'], 0);
+  setBlock(alone, 1, 3, 'air');
+  more(alone, 2);
+  assert.equal(spinAt(alone, 1, 0), FREE_SPIN);
+  const one = run(['.R.', 'WEW', 'W.W', 'WBW'], 2);
+  assert.ok(spinAt(one, 1, 0) > FREE_SPIN && spinAt(one, 1, 0) < CRANK_SPEED, `one battery: ${spinAt(one, 1, 0)}`);
+  assert.ok(Math.abs(spinAt(one, 1, 0) - 0.976) < 0.002);
+  const two = run(['.R..', 'WEWW', 'W..W', 'WBBW'], 2);
+  assert.ok(Math.abs(spinAt(two, 1, 0) - 1.438) < 0.01, `two batteries: ${spinAt(two, 1, 0)}`);
+  // Faster than its top speed, the crank is being pulled round: the hand is holding it BACK, and takes work in.
+  assert.ok(books(two).crank < 0);
+  const held = run(['.Q.', 'WEW', 'W.W', 'WBW'], 2);
+  assert.ok(Math.abs(spinAt(held, 1, 0)) < 0.01, `held: ${spinAt(held, 1, 0)}`);
+  assert.ok(Math.abs(currentAt(held, 1, 1) - 2) < 0.03, `held: ${currentAt(held, 1, 1)} amps`);
+  for (const [what, world] of [['alone', alone], ['one battery', one], ['two batteries', two], ['held', held]]) assertBooksBalance(world, what);
+});
+
+test('a motor turned by a crank lights a lamp just like a generator, with its + end on the other side', () => {
+  const generator = run(['.R.', 'WEW', 'W.W', 'WLW'], 2);
+  const motor = run(['.R.', 'WMW', 'W.W', 'WLW'], 2);
+  assert.ok(lampLevel(generator, 1, 3) > 0.3);
+  assert.equal(spinAt(motor, 1, 0), spinAt(generator, 1, 0));
+  assert.equal(lampLevel(motor, 1, 3), lampLevel(generator, 1, 3));
+  assert.ok(currentOut(generator, 4) > 0, 'turned ↻, a generator pushes current out of its right end');
+  assert.equal(currentOut(motor, 4), -currentOut(generator, 4));
+});
+
+test('swap every motor for a generator and every generator for a motor: with no battery the build turns just the same, with every current the other way round', () => {
+  for (const rows of [
+    ['.R.', 'WEW', 'WMW'],
+    ['.R..', 'WEWW', 'L..W', 'WEWW', '.Q..'],
+    ['.WWW.', 'RE.Ms', '.WLW.'],
+    ['..WWWWW.', 'RGsEsGM.', '..WWWWW.'],
+    ['WWWWWWWWWWWWW', 'E.RE........W', 'WWWWW.....WWW', '..REM.....W..', '...WWWWWWWW..'],
+  ]) {
+    const swapped = rows.map((row) => row.replace(/[EM]/g, (letter) => (letter === 'E' ? 'M' : 'E')));
+    const a = run(rows, 3);
+    const b = run(swapped, 3);
+    let turning = 0;
+    for (const [index, cell] of a.signals.spin.cells) {
+      assert.ok(Math.abs(cell.speed - b.signals.spin.cells.get(index).speed) < 1e-12, `${rows.join('/')}: ${cell.speed} against ${b.signals.spin.cells.get(index).speed}`);
+      turning = Math.max(turning, Math.abs(cell.speed));
+    }
+    assert.ok(turning > 0.1);
+    for (const index of a.signals.electric.cells.keys()) {
+      assert.ok(Math.abs(currentOut(a, index) + currentOut(b, index)) < 1e-12, `${rows.join('/')}: currents ${currentOut(a, index)} and ${currentOut(b, index)}`);
+    }
+  }
+  // With a battery and nothing else, the swapped build runs the other way round with the same currents.
+  const a = run(['.s.', 'WMW', 'B.L', 'WWW'], 3);
+  const b = run(['.s.', 'WEW', 'B.L', 'WWW'], 3);
+  assert.equal(spinAt(b, 1, 0), -spinAt(a, 1, 0));
+  assert.equal(currentOut(b, 4), currentOut(a, 4));
+});
+
+test('one battery\'s motor is one crank: it stalls on the same loads and lifts the others a little slower (its bearings rub)', () => {
+  // The crank: pushes 2 standing still, tops out at 1. The motor, from the law: 1 volt ÷ (0.45 + 0.05) × MACHINE_K = 2, and 1 volt ÷ MACHINE_K = 1.
+  assert.equal((1 / (MACHINE_RESISTANCE + 0.05)) * MACHINE_K, CRANK_STRENGTH);
+  assert.equal(1 / MACHINE_K, CRANK_SPEED);
+  for (const [load, weight] of [['.', 0], ['c', 1], ['I', 4]]) {
+    const rope = load === '.' ? '.' : 'r';
+    const crank = run(['R-Z', `..${rope}`, `..${rope}`, `..${load}`, '...', '###'], 2);
+    const motor = run(motorCrane(load), 2);
+    const byHand = spinAt(crank, 2, 0);
+    const byMotor = spinAt(motor, 3, 0);
+    assert.equal(byHand, Math.max(0, CRANK_SPEED * (1 - weight / CRANK_STRENGTH)));
+    assert.ok(byMotor <= byHand && byMotor > byHand - 0.06, `load ${load}: the crank turns the winch ${byHand}, the motor ${byMotor}`);
+  }
+});
+
+test('the books balance on every tick: battery energy + crank work = the heat in every resistance + the bearings\' heat, exactly', () => {
+  const builds = [
+    ['a lamp', ['.R.', 'WEW', 'W.W', 'WLW']],
+    ['plain wire', ['.R.', 'WEW', 'W.W', 'WWW']],
+    ['a battery against the crank', ['.R.', 'WEW', 'W.W', 'WBW']],
+    ['a battery with the crank', ['.Q.', 'WEW', 'W.W', 'WBW']],
+    ['a generator feeding a motor on a second shaft', ['.WWW.', 'RE.Ms', '.WLW.']],
+    // The build from the turbine pass: a motor geared to HELP the train its own generator is on. It
+    // used to give 1.28 times as much heat as the work put in. Now: exactly as much.
+    ['a motor geared to help its own generator', ['..WWWWW.', 'RGsEsGM.', '..WWWWW.']],
+    ['the same through a lamp', ['..WLWWW.', 'RGsEsGM.', '..WWWWW.']],
+    ['the same, the motor geared the other way', ['..WWWWWW.', 'RGsEsGsM.', '..WWWWWW.']],
+    ['three generators in a row', generatorsInARow(3, 'RGs').world],
+    ['two generators against each other, and a battery', ['WBWWW.', 'EGssE.', 'WR..W.', 'WWWWW.']],
+    ['a battery, a motor, a generator and a clicker', ['.WKWW.WWW', '.B..MsE.L', '.WWWW.WWW']],
+    ['a cranked generator and a battery\'s motor on one shaft, through a clicker', ['WKWWW', 'B.R.W', 'WMsEW', 'W.L.W', 'WWWWW']],
+  ];
+  for (const [what, rows] of builds) {
+    const world = Array.isArray(rows) ? build(rows) : rows;
+    let work = 0;
+    let heat = 0;
+    for (let t = 0; t < 40; t++) { // two and a half beats of a clicker: the ticks it flips are checked like any other
+      more(world, 1);
+      const sums = assertBooksBalance(world, `${what}, tick ${t}`);
+      work += sums.crank + sums.battery;
+      heat += sums.heat + sums.rub;
+    }
+    assert.ok(work > 0.5, `${what}: something does happen (${work})`);
+    assert.ok(Math.abs(heat / work - 1) < 1e-9, `${what}: heat ÷ work is ${heat / work}`);
+  }
+});
+
+test('a generator-fed motor is at full speed on the very first tick', () => {
+  const world = build(['.WWW.', 'RE.Ms', '.WWW.']);
+  more(world, 1);
+  const first = spinAt(world, 4, 1);
+  assert.ok(Math.abs(first) > 0.4, `the motor's gear turns ${first}`);
+  more(world, 30);
+  assert.equal(spinAt(world, 4, 1), first);
+});
+
+test('with no battery, crank, faucet or burner, nothing ever starts: motors and generators wired every which way stand still', () => {
+  for (const rows of [['WMEW', 'W..W', 'WWWW'], ['.WWW.', 'sE.Ms', '.WLW.'], ['..WWWWW.', 'sGsEsGM.', '..WWWWW.'], ['WWWWW', 'W.s.W', 'WMsEW', 'W.L.W', 'WWWWW']]) {
+    const world = run(rows, 20);
+    for (const cell of world.signals.spin.cells.values()) assert.equal(cell.speed, 0, rows.join('/'));
+    assert.equal(world.signals.electric.flowing, false);
+    assert.equal(world.signals.spin.turning, false);
+  }
 });

@@ -14,11 +14,21 @@
  *
  * This file knows nothing about which blocks exist. It only reads the
  * fields blocks have: `conducts`, `part`, `partWhen`, `electric`. A part
- * pushes with `part.push` volts, or, if it has `part.pushNow`, with
- * whatever that says right now (a generator pushes harder the faster it turns).
- * A part with `part.feelsLoad` (a generator) is also told its "load", and
- * every part in its circuit is told how much of its current comes from
- * each generator (see shareOut).
+ * pushes with `part.push` volts (a battery), or, if it has
+ * `part.pushNow`, with exactly what that says right now (a motor or
+ * generator pushes harder the faster it turns).
+ *
+ * A part marked `part.port` (a motor or generator) is a PORT: a place
+ * where the circuit and the gears meet. How hard a port pushes depends
+ * on how fast it turns, and how fast it turns depends on the current
+ * through it. So the gears need to know, BEFORE any speed is worked
+ * out, what current would flow through each port for any pushes at all.
+ * A circuit is "linear" (the current anywhere is just the currents each
+ * pusher would make by itself, added up), so that takes only a few
+ * numbers for each port, and they depend on the WIRING alone (see
+ * circuitPorts). The gears and the circuit are then worked out together
+ * (see solveSpin in spin.js), and solveCircuit finishes the picture
+ * with the pushes that came out.
  */
 import { getBlock, inBounds } from './world.js';
 
@@ -58,12 +68,6 @@ const SHORT_PATH_RESISTANCE = 0.01;
  * every bit of its current goes through a lamp.
  */
 const SHORT_CURRENT = 2 * REFERENCE_CURRENT;
-
-/**
- * A changing push (a generator's) is counted in steps this
- * big, in volts. Less than one step counts as no push at all.
- */
-export const PUSH_STEP = 0.01;
 
 /** Less current than this counts as "nothing is flowing". */
 export const FLOW_MIN = 0.01;
@@ -168,29 +172,9 @@ function halfResistance(point) {
 }
 
 /**
- * Round a changing push DOWN (toward zero) to a whole number of PUSH_STEPs.
- * @param {number} push - the push, in volts (+ or −)
- * @returns {number} the rounded push: 0.016 → 0.01, −0.016 → −0.01
- */
-export function roundPush(push) {
-  // The tiny 1e-6 stops 0.3 (which computers store as 0.29999...) rounding down to
-  // 0.29. It is bigger than the hair by which spin.js may leave a speed short of
-  // where it settles (SETTLED), so a generator turning 0.9999999998 pushes
-  // the same as one turning 1.
-  const perVolt = Math.round(1 / PUSH_STEP); // dividing by a whole number keeps 0.57 exactly 0.57
-  return Math.sign(push) * Math.floor(Math.abs(push) * perVolt + 1e-6) / perVolt || 0; // "|| 0" turns −0 into a plain 0
-}
-
-/**
  * How hard a part pushes right now, in volts: `pushNow` if it has one
- * (a generator), otherwise its fixed `push` (a battery), otherwise 0.
- * A changing push is rounded DOWN (toward zero) to PUSH_STEP (a hundredth
- * of a volt), the same as the circuit key does (see circuitKey in
- * electric.js), so the math always matches the key: a generator that has
- * almost stopped pushes exactly 0, not a tiny bit forever. Rounding toward
- * zero (never up) also means a motor that powers its own generator winds
- * down instead of getting stuck. The steps are small, so a slowly turned
- * generator still makes a little electricity, like a real one.
+ * (a motor or generator: exactly what it says, nothing rounded),
+ * otherwise its fixed `push` (a battery), otherwise 0.
  * @param {object|null} part - the part settings
  * @param {object} world - the world
  * @param {number} x - the part's column
@@ -199,23 +183,20 @@ export function roundPush(push) {
  */
 export function partPush(part, world, x, y) {
   if (!part) return 0;
-  if (part.pushNow) {
-    const push = part.pushNow(world, x, y);
-    return roundPush(push);
-  }
+  if (part.pushNow) return part.pushNow(world, x, y) || 0; // "|| 0" turns −0 into a plain 0
   return part.push ?? 0;
 }
 
 /**
- * How hard a battery pushes current OUT through one of its sides:
+ * How hard a pusher pushes current OUT through one of its sides:
  * half its push out of the + end, half pulled in at the − end.
  * Anything that isn't pushing pushes 0.
- * @param {{push: number, axis: string|null}} point - a point
+ * @param {{axis: string|null}} point - a point
+ * @param {number} push - how hard it pushes, in volts
  * @param {string} side - which side
  * @returns {number} the push out through that side
  */
-function pushOut(point, side) {
-  const push = point.push;
+function pushOut(point, push, side) {
   if (!push) return 0;
   const plus = plusSide(point.axis);
   if (side === plus) return push / 2;
@@ -224,105 +205,72 @@ function pushOut(point, side) {
 }
 
 /**
- * The current coming OUT of each part's + end (its top or right end), for
- * one circuit whose connections have been solved. Negative means the
- * current goes in there.
- * @param {object} ready - the circuit, ready for solving (from prepareCircuit)
- * @param {number[]} members - the cell indexes in this circuit
- * @param {object[]} links - this circuit's connections (with their pushes)
+ * The current through every connection of one circuit, for one set of
+ * pushes. (The quick half of the sums: the circuit's equations were
+ * cleared out already, see prepareCircuit.)
+ * @param {{members: number[], links: object[], ready: object}} circuit - one separate circuit (from circuitPorts)
  * @param {Map<number, object>} points - every point
- * @returns {Map<number, number>|null} part's cell index → current out of
- *   its + end, or null if the circuit can't be solved
+ * @param {Function} pushOf - (cell index) => that point's push, in volts
+ * @returns {number[]|null} the current through each of the circuit's
+ *   connections (from its `a` end to its `b` end), or null if the
+ *   circuit can't be solved
  */
-function currentsOut(ready, members, links, points) {
-  const voltages = solveVoltages(ready, members, links);
+function flows(circuit, points, pushOf) {
+  const { members, links, ready } = circuit;
+  if (!ready.factored) return null;
+  // A pusher's push becomes a current source g × push on each of its connections.
+  const pushes = links.map((link) => pushOut(points.get(link.a), pushOf(link.a), link.side)
+    - pushOut(points.get(link.b), pushOf(link.b), OPPOSITE[link.side]));
+  const rhs = new Array(members.length).fill(0);
+  links.forEach((link, k) => {
+    if (pushes[k] === 0) return;
+    const g = 1 / link.resistance;
+    rhs[ready.position.get(link.a)] -= g * pushes[k];
+    rhs[ready.position.get(link.b)] += g * pushes[k];
+  });
+  rhs[0] = 0; // the first point is pinned at 0 volts
+  const voltages = solveFactored(ready.factored, rhs);
   if (!voltages) return null;
-  const out = new Map();
-  const other = new Map(); // the current out of the − end, for a part whose + end isn't joined to anything
-  for (const link of links) {
-    const current = (voltages.get(link.a) - voltages.get(link.b) + link.push) / link.resistance;
-    for (const [index, side, amount] of [[link.a, link.side, current], [link.b, OPPOSITE[link.side], -current]]) {
-      const point = points.get(index);
-      if (!point.part) continue;
-      if (side === plusSide(point.axis)) out.set(index, amount);
-      else other.set(index, amount);
-    }
-  }
-  for (const index of members) {
-    if (!points.get(index).part) continue;
-    // What comes out of one end went in at the other.
-    const current = out.get(index) ?? -(other.get(index) ?? 0);
-    out.set(index, Math.abs(current) < 1e-9 ? 0 : current);
-  }
-  return out;
+  return links.map((link, k) => {
+    const current = (voltages[ready.position.get(link.a)] - voltages[ready.position.get(link.b)] + pushes[k]) / link.resistance;
+    // Rounding leaves crumbs like 0.000000000000002 where the answer is 0.
+    return Math.abs(current) < 1e-9 ? 0 : current;
+  });
 }
 
 /**
- * Work out, for one circuit with generators in it (parts marked
- * `feelsLoad`), how much of every part's current each generator is
- * answerable for. A circuit is "linear": the current anywhere is just
- * the currents each pusher would make by itself, added up. So:
- *
- *   current out of a part's + end = fixed + perVolt(g1) × g1's push + perVolt(g2) × g2's push + ...
- *
- *   perVolt  the current each generator sends through this part, for
- *            each volt that generator pushes
- *   fixed    the current the OTHER pushers (batteries) send
- *            through it, with every generator standing still
- *
- * The gears use these to find how hard each generator is to turn at any
- * speed, and how a group of generators load each other, without having
- * to solve the circuit again and again. A generator's own perVolt is its
- * `load`: lots of lamps side by side = a big load, nothing wired to it
- * = none, plain wire across its ends = a huge one.
- *
- * Every one of these sums uses the same wiring, so the slow half of the
- * math is done just once for the whole circuit (`ready`, see
- * prepareCircuit), however many generators there are.
- * @param {object} ready - the circuit, ready for solving (from prepareCircuit)
- * @param {number[]} members - the cell indexes in this circuit
- * @param {object[]} links - this circuit's connections
+ * The current coming OUT of some parts' + ends (their top or right
+ * ends), for one circuit and one set of pushes. Negative means the
+ * current goes in there.
+ * @param {{members: number[], links: object[], ready: object}} circuit - one separate circuit
  * @param {Map<number, object>} points - every point
- * And `perVolt` only depends on the wiring, not on how hard anybody
- * pushes right now. So when the wiring is the same as the last time the
- * circuit was worked out (only a generator's speed changed), we keep
- * the old `perVolt` lists (`known`) and only work out `fixed` again.
- * @param {Map<number, object>} cells - every cell's record (gets `perVolt`, `fixed`, and `load` for generators)
- * @param {Map<number, object>|null} known - the records from last time, if the wiring is still the same
- * @returns {void}
+ * @param {Function} pushOf - (cell index) => that point's push, in volts
+ * @param {number[]} parts - the parts we want to know about (cell indexes)
+ * @returns {Map<number, number>} part's cell index → current out of its
+ *   + end (0 for all of them if the circuit can't be solved)
  */
-function shareOut(ready, members, links, points, cells, known) {
-  const makers = members.filter((index) => points.get(index).part?.feelsLoad);
-  if (makers.length === 0) return;
-  const parts = members.filter((index) => points.get(index).part);
-  /**
-   * The connections again, with only some of the points pushing.
-   * @param {Function} pushOf - (cell index) => that point's push, in volts
-   * @returns {object[]} the connections
-   */
-  const pushedBy = (pushOf) => links.map((link) => ({
-    ...link,
-    push: pushOut({ push: pushOf(link.a), axis: points.get(link.a).axis }, link.side)
-      - pushOut({ push: pushOf(link.b), axis: points.get(link.b).axis }, OPPOSITE[link.side]),
-  }));
-  const kept = Boolean(known) && parts.every((index) => known.get(index)?.perVolt?.size === makers.length);
-  for (const index of parts) {
-    cells.get(index).perVolt = kept ? known.get(index).perVolt : new Map();
-    cells.get(index).fixed = 0;
-  }
-  for (const maker of makers) {
-    if (kept) {
-      cells.get(maker).load = known.get(maker).load;
-      continue;
+function currentsOut(circuit, points, pushOf, parts) {
+  const out = new Map(parts.map((index) => [index, 0]));
+  const currents = flows(circuit, points, pushOf);
+  if (!currents) return out;
+  const other = new Map(); // the current out of the − end, for a part whose + end isn't joined to anything
+  const plusJoined = new Set();
+  circuit.links.forEach((link, k) => {
+    for (const [index, side, amount] of [[link.a, link.side, currents[k]], [link.b, OPPOSITE[link.side], -currents[k]]]) {
+      if (!out.has(index)) continue;
+      if (side === plusSide(points.get(index).axis)) {
+        out.set(index, amount || 0); // "|| 0" turns −0 into a plain 0
+        plusJoined.add(index);
+      } else {
+        other.set(index, amount);
+      }
     }
-    const out = currentsOut(ready, members, pushedBy((index) => (index === maker ? 1 : 0)), points);
-    for (const index of parts) cells.get(index).perVolt.set(maker, out?.get(index) ?? 0);
-    cells.get(maker).load = Math.abs(out?.get(maker) ?? 0);
+  });
+  for (const index of parts) {
+    // What comes out of one end went in at the other.
+    if (!plusJoined.has(index)) out.set(index, -(other.get(index) ?? 0) || 0);
   }
-  const others = members.some((index) => !makers.includes(index) && points.get(index).push !== 0);
-  if (!others) return;
-  const out = currentsOut(ready, members, pushedBy((index) => (makers.includes(index) ? 0 : points.get(index).push)), points);
-  for (const index of parts) cells.get(index).fixed = out?.get(index) ?? 0;
+  return out;
 }
 
 /**
@@ -453,28 +401,6 @@ function prepareCircuit(members, links) {
 }
 
 /**
- * Work out the voltage at every point of one separate circuit, for one
- * set of pushes. A battery's push becomes a current source g × push.
- * @param {{position: Map<number, number>, factored: object|null}} ready - from prepareCircuit
- * @param {number[]} members - the cell indexes in this circuit
- * @param {object[]} links - this circuit's connections (with their pushes)
- * @returns {Map<number, number>|null} cell index → voltage, or null if it can't be solved
- */
-function solveVoltages(ready, members, links) {
-  if (!ready.factored) return null;
-  const rhs = new Array(members.length).fill(0);
-  for (const link of links) {
-    if (link.push === 0) continue;
-    const g = 1 / link.resistance;
-    rhs[ready.position.get(link.a)] -= g * link.push;
-    rhs[ready.position.get(link.b)] += g * link.push;
-  }
-  rhs[0] = 0; // the first point is pinned at 0 volts
-  const voltages = solveFactored(ready.factored, rhs);
-  return voltages && new Map(members.map((index, k) => [index, voltages[k]]));
-}
-
-/**
  * Group the points into separate circuits: points joined by connections
  * (directly or through others) are in the same group.
  * @param {number[]} indexes - every point's cell index
@@ -503,29 +429,34 @@ function groupsOf(indexes, links) {
 }
 
 /**
- * Is this battery short-circuited? That's when its + end and − end are
+ * Is this pusher (a battery, mostly) short-circuited? That's when its + end and − end are
  * joined by a path of plain wire with nothing to slow the current down,
  * like a lamp. However long the wire is, it's still a short circuit.
  *
- * "Plain wire" means wires, gold and closed switches. ANOTHER pusher (a
- * battery or generator) on the path counts as plain wire only if:
- *   • the path goes through it the way it pushes (in at −, out at +):
- *     batteries in a row, wired straight back, short each other; or
- *   • it isn't pushing right now: a stopped generator's coil is just wire; or
- *   • it's being overpowered: so much current is forced through it
- *     BACKWARDS that it plainly isn't holding anything back.
- * A healthy battery side by side with this one (parallel) is none of
- * those: it pushes back just as hard, so no current goes round through
- * it, and it is not a short circuit.
- * @param {number} battery - the battery's cell index
- * @param {object} point - the battery's point
+ * "Plain wire" means wires, gold and closed switches. ANOTHER battery on
+ * the path counts as plain wire only if the path goes through it the
+ * way it pushes (in at −, out at +): batteries in a row, wired straight
+ * back, short each other. A healthy battery side by side with this one
+ * (parallel) is not that: it pushes back just as hard, so no current
+ * goes round through it, and it is not a short circuit.
+ *
+ * A motor's or generator's coil is NEVER plain wire, turning or stopped:
+ * it has real resistance, like a lamp. A battery wired straight across
+ * one is a stalled motor (lots of current, but no sparks), and it starts
+ * to turn.
+ *
+ * A spinning machine is a pusher too, and the same rule goes for it: it
+ * is short-circuited when it is pushing a lot of current round a loop of
+ * nothing but plain wire. (A battery in that loop is not plain wire for
+ * it: the battery is doing pushing of its own.)
+ * @param {number} battery - the pusher's cell index
  * @param {Map<number, object>} points - every point
+ * @param {Map<number, number>} pushes - cell index → how hard that point pushes right now
  * @param {Map<number, number[]>} touching - cell index → the indexes it's connected to
- * @param {Map<number, object>} cells - every cell's record (for the currents)
  * @param {number} width - the world's width
  * @returns {boolean} true if + and − are joined by plain wire
  */
-function shortedByShape(battery, point, points, touching, cells, width) {
+function shortedByShape(battery, points, pushes, touching, width) {
   /**
    * The cell index next to a cell on one side.
    * @param {number} index - a cell index
@@ -536,12 +467,13 @@ function shortedByShape(battery, point, points, touching, cells, width) {
   /**
    * The side a pusher is pushing current OUT of right now: its + end, or
    * the other end if its push is backwards (a generator turning ↺).
-   * @param {{push: number, axis: string}} p - a pushing point
+   * @param {number} index - a pushing point's cell index
    * @returns {string} the side
    */
-  const outSide = (p) => (p.push > 0 ? plusSide(p.axis) : OPPOSITE[plusSide(p.axis)]);
-  const plus = beside(battery, outSide(point));
-  const minus = beside(battery, OPPOSITE[outSide(point)]);
+  const outSide = (index) => (pushes.get(index) > 0 ? plusSide(points.get(index).axis) : OPPOSITE[plusSide(points.get(index).axis)]);
+  const isBattery = points.get(battery).part.push !== undefined;
+  const plus = beside(battery, outSide(battery));
+  const minus = beside(battery, OPPOSITE[outSide(battery)]);
   const linked = touching.get(battery) ?? [];
   if (!linked.includes(plus) || !linked.includes(minus)) return false;
 
@@ -550,15 +482,14 @@ function shortedByShape(battery, point, points, touching, cells, width) {
    * down or pushed back?
    * @param {number} from - the cell index it comes from
    * @param {number} index - the cell index it steps into
-   * @returns {boolean} true for wire-like points, and other pushers (see above)
+   * @returns {boolean} true for wire-like points, and batteries the right way round (see above)
    */
   const plain = (from, index) => {
     const p = points.get(index);
     if (p.info.conducts || p.part.resistance <= SHORT_PATH_RESISTANCE) return true;
-    if (p.part.push === undefined && !p.part.pushNow) return false; // a lamp, a motor...
-    if (p.push === 0) return true; // a pusher that's stopped
-    if (beside(index, OPPOSITE[outSide(p)]) === from) return true; // going through it the way it pushes
-    return (cells.get(index).arms[outSide(p)] ?? 0) < -SHORT_CURRENT; // overpowered
+    if (p.part.push === undefined) return false; // a lamp, or a motor's or generator's coil
+    if (!isBattery) return false; // a spinning machine only shorts ITSELF: a battery on the path is doing its own pushing
+    return beside(index, OPPOSITE[outSide(index)]) === from; // a battery: only going through it the way it pushes
   };
   if (!plain(battery, plus)) return false;
   const seen = new Set([battery, plus]);
@@ -577,32 +508,40 @@ function shortedByShape(battery, point, points, touching, cells, width) {
 }
 
 /**
- * Work out the electricity in the whole world.
+ * Work out everything about the electricity that depends only on the
+ * WIRING: which blocks are joined to which, the separate circuits, and
+ * what each port (a part marked `part.port`: a motor or generator) needs
+ * to know. Nothing here depends on how fast anything turns, so it is
+ * worked out once and kept until a block, a switch or a clicker's beat
+ * changes (see refreshWiring in electric.js).
  *
- * Returns a record for every electric cell:
- *   axis   'h' or 'v' for parts (null for wires)
- *   faces  the sides it's connected through
- *   arms   current out through each connected side (negative = flowing in)
- *   level  for parts: current through it ÷ REFERENCE_CURRENT (0 to MAX_LEVEL),
- *          for drawing (a lamp can only shine so bright)
- *   current  for parts: the real current through it, with no limit
- *          (a motor's strength and a generator's push-back use this)
- *   spark  true for a short-circuited battery
- *   load   only for parts marked `part.feelsLoad` (generators): the current
- *          that flows through it for each volt it pushes (see shareOut)
- *   perVolt, fixed  only for parts in a circuit that has a generator in it:
- *          how the current out of its + end is made up (see shareOut)
- *   group  which separate circuit it's in (a number), or null if it's a gap
+ * For every port, the current coming out of its + end (its right or top
+ * end) is always
  *
+ *   current = fixed + perVolt(p1) × p1's push + perVolt(p2) × p2's push + ...
+ *
+ *   fixed    the current the batteries send through it, with every port
+ *            standing still (pushing nothing)
+ *   perVolt  for each port in the same circuit (itself too): the current
+ *            that port sends through this one for each volt it pushes
+ *
+ * A circuit of plain resistors sends the same current from A's volt
+ * through B as from B's volt through A. So `perVolt` is the same both
+ * ways round between two ports. (Grown-ups call that reciprocity.)
+ *
+ * Every one of these sums uses the same wiring, so the slow half of the
+ * math is done just once for each circuit (see prepareCircuit), however
+ * many ports there are.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
- * @param {Map<number, object>|null} [known] - the records from the last
- *   time, but ONLY if nothing about the wiring has changed since (the same
- *   blocks, switches and clicker beat): then the `perVolt` lists are kept
- *   instead of worked out again (see shareOut)
- * @returns {{cells: Map<number, object>, flowing: boolean}} the records, and whether any current flows
+ * @returns {{cells: Map<number, object>, points: Map<number, object>, touching: Map<number, number[]>,
+ *   circuits: object[], ports: Map<number, {fixed: number, perVolt: Map<number, number>}>, width: number}}
+ *   the wiring: a blank record for every electric cell, every point,
+ *   who touches whom, every circuit that could carry current (its
+ *   members, connections, cleared-out equations and ports), and what
+ *   each port needs to know
  */
-export function solveCircuit(world, blockInfo, known = null) {
+export function circuitPorts(world, blockInfo) {
   const cells = new Map();
   const points = new Map();
   for (let y = 0; y < world.height; y++) {
@@ -611,11 +550,9 @@ export function solveCircuit(world, blockInfo, known = null) {
       if (!isElectric(info)) continue;
       const index = y * world.width + x;
       const axis = info.conducts ? null : partAxis(world, x, y, blockInfo);
-      cells.set(index, { axis, faces: [], arms: {}, level: 0, current: 0, spark: false, group: null });
+      cells.set(index, { axis, faces: [], group: null });
       const part = activePart(info, world);
-      if (info.conducts || part) {
-        points.set(index, { x, y, info, part, axis, sides: sidesFor(info, axis), push: partPush(part, world, x, y) });
-      }
+      if (info.conducts || part) points.set(index, { x, y, info, part, axis, sides: sidesFor(info, axis) });
     }
   }
 
@@ -630,46 +567,101 @@ export function solveCircuit(world, blockInfo, known = null) {
       const b = a + dx + dy * world.width;
       const pb = points.get(b);
       if (!pb || !pa.sides.includes(side) || !pb.sides.includes(OPPOSITE[side])) continue;
-      links.push({
-        a, b, side,
-        resistance: halfResistance(pa) + halfResistance(pb),
-        push: pushOut(pa, side) - pushOut(pb, OPPOSITE[side]),
-        current: 0,
-      });
+      links.push({ a, b, side, resistance: halfResistance(pa) + halfResistance(pb) });
       cells.get(a).faces.push(side);
       cells.get(b).faces.push(OPPOSITE[side]);
-      cells.get(a).arms[side] = 0;
-      cells.get(b).arms[OPPOSITE[side]] = 0;
       touching.set(a, [...(touching.get(a) ?? []), b]);
       touching.set(b, [...(touching.get(b) ?? []), a]);
     }
   }
 
-  // Solve each separate circuit that has a battery in it.
+  const circuits = [];
+  const ports = new Map();
   let groupNumber = 0;
   for (const members of groupsOf([...points.keys()], links)) {
     groupNumber += 1;
     for (const index of members) cells.get(index).group = groupNumber; // which separate circuit it's in
+    const batteries = members.some((index) => points.get(index).part?.push);
+    const pushers = batteries || members.some((index) => points.get(index).part?.pushNow);
+    if (!pushers) continue; // nothing here could ever push: no sums needed
     const inside = new Set(members);
-    const groupLinks = links.filter((link) => inside.has(link.a));
-    const makers = members.some((index) => points.get(index).part?.feelsLoad);
-    const pushing = members.some((index) => points.get(index).push !== 0);
-    if (!makers && !pushing) continue; // nothing here could ever push: no sums needed
-    const ready = prepareCircuit(members, groupLinks); // the slow half, done once for this circuit
-    shareOut(ready, members, groupLinks, points, cells, known);
-    if (!pushing) continue;
-    const voltages = solveVoltages(ready, members, groupLinks);
-    if (!voltages) {
+    const circuit = {
+      members,
+      links: links.filter((link) => inside.has(link.a)),
+      ports: members.filter((index) => points.get(index).part?.port),
+    };
+    circuit.ready = prepareCircuit(members, circuit.links); // the slow half, done once for this circuit
+    circuits.push(circuit);
+    if (circuit.ports.length === 0) continue;
+    const fixed = batteries
+      ? currentsOut(circuit, points, (index) => (points.get(index).part?.port ? 0 : points.get(index).part?.push ?? 0), circuit.ports)
+      : null;
+    for (const index of circuit.ports) ports.set(index, { fixed: fixed?.get(index) ?? 0, perVolt: new Map() });
+    for (const maker of circuit.ports) {
+      const out = currentsOut(circuit, points, (index) => (index === maker ? 1 : 0), circuit.ports);
+      for (const index of circuit.ports) ports.get(index).perVolt.set(maker, out.get(index));
+    }
+    // The same both ways round, to the last crumb of rounding.
+    for (const a of circuit.ports) {
+      for (const b of circuit.ports) {
+        if (a >= b) continue;
+        const share = (ports.get(a).perVolt.get(b) + ports.get(b).perVolt.get(a)) / 2;
+        ports.get(a).perVolt.set(b, share);
+        ports.get(b).perVolt.set(a, share);
+      }
+    }
+  }
+  return { cells, points, touching, circuits, ports, width: world.width };
+}
+
+/**
+ * Work out the electricity in the whole world.
+ *
+ * Returns a record for every electric cell:
+ *   axis   'h' or 'v' for parts (null for wires)
+ *   faces  the sides it's connected through
+ *   arms   current out through each connected side (negative = flowing in)
+ *   level  for parts: current through it ÷ REFERENCE_CURRENT (0 to MAX_LEVEL),
+ *          for drawing (a lamp can only shine so bright)
+ *   current  for parts: the real current through it, with no limit
+ *   spark  true for a short-circuited battery
+ *   fixed, perVolt  only for ports (parts marked `part.port`): how the
+ *          current out of its + end is made up (see circuitPorts)
+ *   group  which separate circuit it's in (a number), or null if it's a gap
+ *
+ * @param {object} world - the world
+ * @param {Function} blockInfo - looks up what a block name means
+ * @param {object} [net] - the wiring, from circuitPorts, but ONLY if
+ *   nothing about the wiring has changed since it was worked out (the
+ *   same blocks, switches and clicker beat). Then just the quick half of
+ *   the sums is done: one answer for each circuit, with the pushes as
+ *   they are right now.
+ * @returns {{cells: Map<number, object>, flowing: boolean}} the records, and whether any current flows
+ */
+export function solveCircuit(world, blockInfo, net = circuitPorts(world, blockInfo)) {
+  const { points, touching } = net;
+  const cells = new Map();
+  for (const [index, blank] of net.cells) {
+    cells.set(index, { axis: blank.axis, faces: blank.faces, arms: Object.fromEntries(blank.faces.map((side) => [side, 0])), level: 0, current: 0, spark: false, group: blank.group });
+  }
+  for (const [index, port] of net.ports) Object.assign(cells.get(index), port);
+  const pushes = new Map();
+  for (const [index, point] of points) pushes.set(index, partPush(point.part, world, point.x, point.y));
+
+  // Solve each separate circuit that has somebody pushing in it.
+  let flowing = false;
+  for (const circuit of net.circuits) {
+    if (!circuit.members.some((index) => pushes.get(index) !== 0)) continue;
+    const currents = flows(circuit, points, (index) => pushes.get(index));
+    if (!currents) {
       console.warn('A circuit could not be solved, so it gets no current.');
       continue;
     }
-    for (const link of groupLinks) {
-      const current = (voltages.get(link.a) - voltages.get(link.b) + link.push) / link.resistance;
-      // Rounding leaves crumbs like 0.000000000000002 where the answer is 0.
-      link.current = Math.abs(current) < 1e-9 ? 0 : current;
-      cells.get(link.a).arms[link.side] = link.current;
-      cells.get(link.b).arms[OPPOSITE[link.side]] = -link.current;
-    }
+    circuit.links.forEach((link, k) => {
+      cells.get(link.a).arms[link.side] = currents[k];
+      cells.get(link.b).arms[OPPOSITE[link.side]] = -currents[k] || 0;
+      if (Math.abs(currents[k]) > FLOW_MIN) flowing = true;
+    });
   }
 
   for (const [index, point] of points) {
@@ -678,11 +670,9 @@ export function solveCircuit(world, blockInfo, known = null) {
     const through = Math.max(0, ...point.sides.map((side) => Math.abs(cell.arms[side] ?? 0)));
     cell.current = through;
     cell.level = Math.min(MAX_LEVEL, through / REFERENCE_CURRENT);
-    if (point.push !== 0 && through > SHORT_CURRENT) {
-      cell.spark = shortedByShape(index, point, points, touching, cells, world.width);
+    if (pushes.get(index) !== 0 && through > SHORT_CURRENT) {
+      cell.spark = shortedByShape(index, points, pushes, touching, world.width);
     }
   }
-
-  const flowing = links.some((link) => Math.abs(link.current) > FLOW_MIN);
   return { cells, flowing };
 }
