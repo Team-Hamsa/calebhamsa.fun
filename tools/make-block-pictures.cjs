@@ -118,7 +118,7 @@ const SCENES = {
     'g...g',
     'ggggg',
   ] },
-  'water-tower': { ticks: 8, rows: [
+  'water-tower': { ticks: 4, rows: [
     '#~~#......',
     '#~~#......',
     '#~~#......',
