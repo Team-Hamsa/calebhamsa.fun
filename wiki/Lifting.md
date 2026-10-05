@@ -6,8 +6,8 @@ Heavy things need more. Turning ↻ winds the rope in (up), ↺ lets it out (dow
 | ![Winch](blocks/winch.png) | **Winch** | A drum that winds rope. Turn it with a crank, gears or a motor touching it. It has a little **catch** (a ratchet, the pale bit on top): let go and the load stays up. If the load is too heavy it **stalls**: nothing turns and it shows a red ⬇ (![Stalled winch](blocks/winch-stalled.png)). When the load reaches **the top** it can't wind any more: everything stops and it shows an orange ⬆ (![Winch with its load at the top](blocks/winch-top.png)). | — |
 | ![Rope](blocks/rope.png) | **Rope** | Put at least one next to the winch and let it hang down. The winch adds rope and takes it away as it lets out and winds in. Rope goes straight: it only turns a corner at a pulley. Water flows through it. | — |
 | ![Pulley](blocks/pulley.png) | **Pulley** | A wheel the rope runs over, so the rope can change direction: the winch on the ground, the rope up a tower and down the other side. | — |
-| ![Pulley hook](blocks/pulleyHook.png) | **Pulley hook** | Hang it on the rope's end and the load under it. Two bits of rope share the load, so it counts **half as heavy**, but it goes up half as fast. | — |
-| ![Crate](blocks/crate.png) | **Crate** | Weighs **1**. Falls like sand, unless it hangs on a winch's rope. Let down on a rope, it **floats** on water. Only the one block on the rope's end is lifted (or a pulley hook and the block under it). | — |
+| ![Pulley hook](blocks/pulleyHook.png) | **Pulley hook** | Hang it on the rope's end and the load under it. Two bits of rope share the load, so it counts **half as heavy**, but it goes up half as fast. Water flows through it, like rope. | — |
+| ![Crate](blocks/crate.png) | **Crate** | Weighs **1**. Falls like sand, unless it hangs on a winch's rope. It **floats** on water. Only the one block on the rope's end is lifted (or a pulley hook and the block under it). | — |
 | ![Iron weight](blocks/ironWeight.png) | **Iron weight** | Weighs **4**. Too heavy for a crank turning a winch on its own! | — |
 
 **Slower is stronger.** A crank (strength 2) turning the winch on its own
@@ -69,8 +69,13 @@ crates. An iron weight (4) still sinks, but it pulls on its rope with only 1½.
 A crate **floats**: let down onto deep water it stops on top, its rope goes
 slack, and it helps the winch no more (just like a load on the ground). It
 still sinks into a shallow puddle, less than half a block deep. A **pulley
-hook** is a block too, and weighs nothing, so a hook with a load under it
-floats more easily than the load alone.
+hook** changes none of this: water runs through the hook, like rope, so only
+the load under it has to push water out of the way. Iron on a hook sinks just
+like iron alone, and an empty hook goes down into a well with no trouble.
+
+**Loose blocks follow the same rule.** A crate that is just falling (its rope
+dug away) floats on water too. **Sand** is heavy (it weighs 4, like an iron
+weight), so sand and iron sink.
 
 **Steam pushes back the other way.** Steam wants to be high, so a load going
 **up** through steam has to push the steam **down**, and that makes it heavier
@@ -85,9 +90,20 @@ rope, and it only moves once it has paid.
 
 Three places where the game is still simpler than the real world: going the
 *easy* way gives nothing back (water over a load doesn't help lift it, so a
-crate under water does not bob up by itself); a **loose** block that is just
-falling (sand, or a crate whose rope you dug away) still sinks through water;
-and water deep down in a tall tank is squeezed, so it weighs a bit more than
-water at the top.
+crate under water does not bob up by itself); a block is always in one whole
+square, so a floating crate sits in the square **above** the water, even over
+a puddle half a block deep; and water deep down in a tall tank is squeezed, so
+it weighs a bit more than water at the top (sand and iron stop sinking about
+6 blocks down a full tank).
+
+**Ropes that cross are tied.** If one winch's rope runs on *through* the end of
+another winch's rope, that end is tied into it and can't be wound in (its winch
+just turns, or stops with an orange ⬆ if it has a load). Otherwise one winch
+could cut another's rope, drop its load into a pool for nothing, and a machine
+could do that over and over. Only ⛏️ digging cuts a rope.
+
+**Rope let out is owed.** A load can pull a little rope out before it has come
+down a whole block. Winding that little bit back always costs at least as much
+as the load gave for it, even if you dig the load away in between.
 
 **Cut the rope** (⛏️ dig it) and whatever hangs on it falls.

@@ -7,7 +7,7 @@
 | ![Glass](blocks/glass.png) | **Glass** | See-through. Build a glass tank to watch the water inside. |
 | ![Obsidian](blocks/obsidian.png) | **Obsidian** | A plain dark building block. |
 | ![Gold](blocks/gold.png) | **Gold** | A building block that **carries electricity**, like real gold. It can be used as wire. |
-| ![Sand](blocks/sand.png) | **Sand** | **Falls** until it lands on something. It sinks through water (the water floats up and swaps places). |
+| ![Sand](blocks/sand.png) | **Sand** | **Falls** until it lands on something. It is heavy (it weighs **4**, like an iron weight), so it sinks through water (the water floats up and swaps places). |
 
 **Note blocks:**
 ![C](blocks/noteC.png) ![D](blocks/noteD.png) ![E](blocks/noteE.png) ![F](blocks/noteF.png) ![G](blocks/noteG.png) ![A](blocks/noteA.png) ![B](blocks/noteB.png)
