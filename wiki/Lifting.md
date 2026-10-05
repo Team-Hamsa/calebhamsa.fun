@@ -42,9 +42,11 @@ take the crank away (or stop it) and the load just hangs there. Two cranks
 pushing opposite ways just as hard cancel out, so nothing is left to lift
 with: the winch stalls (red ⬇) and the load stays put. The load only comes
 down when something really turns the winch ↺, and then it helps. ("Really"
-means a push you could see turn the gears with nothing on the rope. A tiny
-trickle of electricity straying into a motor from the loop next door doesn't
-count: the catch stays on.) That means
+means a push you could see turn the gears with nothing on the rope, and at
+least a tenth as strong as the load's pull. A tiny trickle of electricity
+straying into a motor from a wire next door doesn't count: the catch stays
+on. At most the load creeps down as slowly as that trickle turns the gears,
+and it gives no push of its own.) That means
 a falling weight can't run a generator by itself here, and a heavy weight
 won't haul up a lighter one without a crank to start it. (A real winch with
 its catch lifted off would do both.)

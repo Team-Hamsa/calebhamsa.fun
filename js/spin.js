@@ -97,6 +97,16 @@ export const MIN_SPEED = 0.001;
 /** Pushes that add up to less than this cancel each other out. */
 const BALANCED = 1e-9;
 
+/**
+ * How big a push has to be, beside the thing it would change, before it
+ * COUNTS: a tenth. A winch's catch lets go only for a push at least a
+ * tenth of its hanging load's pull, and a wheel that turns either way
+ * turns round only for a push at least a tenth of its own. Real catches
+ * and real wheels are like this too: they take a proper shove, and a
+ * tiny trickle of current straying in from the loop next door isn't one.
+ */
+export const PUSH_THAT_COUNTS = 0.1;
+
 /** Groups that lean on each other have settled when no speed is further than this from where its pushes balance. */
 const SETTLED = 1e-9;
 
@@ -415,7 +425,11 @@ function climb(ahead, slowing, loads) {
  *      current, and what the other groups' turning pushes through its
  *      links: everything but the loads). Is it a REAL push the let-out
  *      way: one that would turn the gears fast enough to see with
- *      nothing on any rope? Then that group's catch lets go. Settle again.
+ *      nothing on any rope, and at least a tenth as strong as the
+ *      hanging load's pull (PUSH_THAT_COUNTS)? Then that group's catch
+ *      lets go. Settle again. (A weaker push the let-out way still
+ *      turns the gears, slowly, and the load comes down with them. But
+ *      the catch stays on, so the load gives no push of its own.)
  *   c. Now check every catch that let go, at the new speeds. Is its
  *      group still really pushed the way it turns? If not, the load is
  *      dragging the gears round by itself (which a ratchet never
@@ -539,8 +553,12 @@ export function solveSpin(world, blockInfo) {
     let slowing = 0;
     const members = [...group.ratio.keys()];
     const eitherWay = []; // sources that don't mind which way they turn
+    group.drag = 0; // push-back that grows with speed (bearings rubbing)
+    group.reach = 0; // how fast its fastest block turns, compared to the first block
     for (const [index, r] of group.ratio) {
       const point = points.get(index);
+      group.drag += (point.info.spinDrag?.(world, point.x, point.y) ?? 0) * r * r;
+      group.reach = Math.max(group.reach, Math.abs(r));
       const source = point.info.spinSource?.(world, point.x, point.y, members) ?? null;
       if (source && source.speed && source.strength > 0) {
         const top = source.speed / r;                // its top speed, at the first block
@@ -562,9 +580,14 @@ export function solveSpin(world, blockInfo) {
     //   1. the pushes that don't depend on any turning at all: the other
     //      sources on its gears (a crank, a wheel with water coming off
     //      one side) and what a battery's current pushes through a motor
-    //      or generator on them (`still`). It joins in the way they push.
-    //      So two wheels on one shaft never fight, and a mirrored build
-    //      works the same.
+    //      or generator on them (`still`). If that is a push that COUNTS,
+    //      it joins in the way they push. So two wheels on one shaft
+    //      never fight, and a mirrored build works the same.
+    //      A push counts when it would turn the bare gears fast enough
+    //      to see AND it is at least a PUSH_THAT_COUNTS share of the
+    //      wheels' own push. (A stray trickle of current from the loop
+    //      next door is nothing beside a turbine: it doesn't turn a
+    //      running one round, or choose the way a stopped one starts.)
     //   2. the way it was already turning: a turning wheel keeps going.
     //   3. nothing at all: the first one goes the way it says (↻ for a
     //      wheel) and the rest follow it.
@@ -573,14 +596,23 @@ export function solveSpin(world, blockInfo) {
     // something stronger does turn the wheel backwards, the wheel pushes
     // back harder, like a crank turned the wrong way, and on the next
     // tick rule 2 lets it go along.)
-    let pointing = ahead + group.still;
-    for (const { top, strength, before } of eitherWay) {
-      let way = Math.sign(top);
-      if (Math.abs(pointing) > BALANCED) way = Math.sign(pointing);
-      else if (before !== 0) way = before;
-      ahead += way * strength;
-      pointing += way * strength;
-      slowing += strength / Math.abs(top);
+    if (eitherWay.length > 0) {
+      const standing = ahead + group.still;
+      let going = 0; // the push of the ones already turning, the way they were going
+      let all = 0; // the push of all of them
+      for (const { strength, before } of eitherWay) {
+        going += before * strength;
+        all += strength;
+      }
+      // With only the bearings and the other sources holding back, how fast would the standing push turn the gears?
+      const holding = slowing + group.drag + (group.lean.get(group) ?? 0);
+      const seen = holding > 0 && (Math.abs(standing) / holding) * group.reach >= MIN_SPEED;
+      const counts = seen && Math.abs(standing) >= PUSH_THAT_COUNTS * all;
+      const way = counts ? Math.sign(standing) : going !== 0 ? Math.sign(going) : Math.sign(eitherWay[0].top);
+      for (const { top, strength } of eitherWay) {
+        ahead += way * strength;
+        slowing += strength / Math.abs(top);
+      }
     }
     group.ahead = ahead;
     group.slowing = slowing;
@@ -624,19 +656,15 @@ export function solveSpin(world, blockInfo) {
   for (const group of groups) {
     group.loads = []; // loads (a hanging weight), at the first block
     group.holding = []; // the same loads with the catch ON: each only pulls back while it is being lifted
-    group.drag = 0; // push-back that grows with speed
     group.stops = []; // hard stops: which block, and which way the FIRST block can't turn because of it
-    group.reach = 0; // how fast its fastest block turns, compared to the first block
     for (const [index, r] of group.ratio) {
       const point = points.get(index);
       for (const load of loadsOf(point.info.spinLoad?.(world, point.x, point.y, blockInfo, isDriven))) {
         group.loads.push({ pull: load.pull * r, limit: load.limit / Math.abs(r) });
         group.holding.push({ pull: load.pull * r, limit: 0 });
       }
-      group.drag += (point.info.spinDrag?.(world, point.x, point.y) ?? 0) * r * r;
       const stop = point.info.spinStop?.(world, point.x, point.y, blockInfo, isDriven) ?? 0;
       if (stop !== 0) group.stops.push({ index, way: Math.sign(stop * r) });
-      group.reach = Math.max(group.reach, Math.abs(r));
     }
   }
 
@@ -666,7 +694,9 @@ export function solveSpin(world, blockInfo) {
   /**
    * Which way is a group REALLY pushed right now (see "THE CATCH" at the
    * top of this function)? A real push is one that would turn the gears
-   * fast enough to see if nothing hung on any rope.
+   * fast enough to see if nothing hung on any rope, and that is at least
+   * a PUSH_THAT_COUNTS share of the pull of the loads hanging its way
+   * (the loads a catch would be letting go of).
    * @param {object} group - the group
    * @returns {number} +1 or −1 (at the first block), or 0 if the push is too small to matter
    */
@@ -674,7 +704,12 @@ export function solveSpin(world, blockInfo) {
     const push = pushOn(group);
     const fading = fadingOf(group);
     if (!(fading > 0) || Math.abs(push / fading) * group.reach < MIN_SPEED) return 0;
-    return Math.sign(push);
+    const way = Math.sign(push);
+    let hanging = 0;
+    for (const load of group.loads) {
+      if (load.limit > 0 && Math.sign(load.pull) === way) hanging += Math.abs(load.pull);
+    }
+    return Math.abs(push) >= PUSH_THAT_COUNTS * hanging ? way : 0;
   };
 
   /**

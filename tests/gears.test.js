@@ -206,6 +206,47 @@ test('the water wheel is drawn with its spinning record (so it can be seen turni
   assert.ok(handed && typeof handed.speed === 'number' && handed.speed > 0, `wheel got ${JSON.stringify(handed)}`);
 });
 
+test('a motor and a generator are drawn with what BOTH their packs know, whichever pack comes first (the + end, the turning shaft, facing their wires)', () => {
+  // A cranked generator wired up-and-down to a lamp, and a battery's motor, also up-and-down.
+  const rows = ['.WWW.WWW', 'RE.L.B.M', '.WWW.WWW'];
+  for (const pageOrder of [true, false]) {
+    const world = createWorld(8, 3);
+    rows.forEach((row, y) => [...row].forEach((letter, x) => setBlock(world, x, y, LETTERS[letter])));
+    // The Build page draws before its first tick: that makes the packs' records in a different order.
+    if (pageOrder) refreshSignals(world);
+    const systems = allSystems();
+    for (let i = 0; i < 12; i++) tick(world, systems, blockInfo);
+    if (pageOrder) refreshSignals(world);
+    const handed = {};
+    const spy = (name) => (name === 'motor' || name === 'generator'
+      ? { ...blockInfo(name), drawSignals: (...args) => { handed[name] = args[5]; blockInfo(name).drawSignals(...args); } }
+      : blockInfo(name));
+    const whites = [];
+    const ends = [];
+    const ctx = {
+      fillStyle: '',
+      globalAlpha: 1,
+      strokeRect() {},
+      fillText() {},
+      fillRect(x, y) {
+        if (ctx.fillStyle === '#ffffff' && x >= 8 && x < 16) whites.push([x - 8, y - 8]);
+        if (ctx.fillStyle === '#b0b0b0' && x >= 8 && x < 16) ends.push([x - 8, y - 8]);
+      },
+    };
+    drawWorld(ctx, world, 8, spy, '#7ec8ff');
+    for (const name of ['motor', 'generator']) {
+      const cell = handed[name];
+      assert.ok(cell && Math.abs(cell.speed) > 0.5 && cell.partAxis === 'v', `${name} got ${JSON.stringify(cell)} (page order: ${pageOrder})`);
+      assert.ok(cell.current > 0 && cell.axis === 'v', `${name} keeps its circuit details too: ${JSON.stringify(cell)}`);
+    }
+    assert.ok(whites.length > 0 && whites.every(([, y]) => y < 2), `the generator's + is on its top end (it turns ↻): ${JSON.stringify(whites)}`);
+    assert.deepEqual(ends, [[3, 0], [3, 7]], 'its metal ends are at the top and the bottom, where its wires are');
+    // The packs' own records are left alone.
+    assert.equal(world.signals.electric.cells.get(8 + 1).speed, undefined);
+    assert.equal(world.signals.spin.cells.get(8 + 1).current, undefined);
+  }
+});
+
 test('gears don\'t make power: a geared-up generator is harder to turn, and the lamp never gets more than the crank puts in', () => {
   const direct = run(['.R.', 'WEW', 'W.W', 'WLW'], 10);
   const gearedUp = run(['RGs.', '.WEW', '.W.W', '.WLW'], 10); // crank → big gear → small gear (2× faster) → generator
@@ -1279,6 +1320,58 @@ test('a clicker (or a tapped switch) between a generator and a motor gives the m
       }
     }
   }
+});
+
+test('a stray trickle of current from the loop next door doesn\'t turn a running turbine or water wheel round', () => {
+  // A steam plant, and a water wheel with water falling straight through it: each turns a
+  // generator that lights a lamp. Then a battery-and-lamp loop is wired on that shares one of
+  // the generator's rails, so about a thousandth of an amp strays through the generator's coil.
+  const plants = [
+    {
+      rows: ['#CC#....', '#..#....', '#..WWWWW', '##TE...L', '##~WWWWW', '##b#####'],
+      source: [2, 3],
+      warmUp: 200,
+      nextDoor: (world, flip) => {
+        for (let x = 5; x < 8; x++) setBlock(world, x, 0, 'wire');
+        setBlock(world, flip ? 7 : 5, 1, 'battery');
+        setBlock(world, flip ? 5 : 7, 1, 'lamp');
+      },
+    },
+    {
+      rows: ['.FWWWWWW', '.OE....L', '.DWWWWWW', '........', '........', '########'],
+      source: [1, 1],
+      warmUp: 60,
+      nextDoor: (world, flip) => {
+        setBlock(world, flip ? 7 : 2, 3, 'battery');
+        setBlock(world, flip ? 2 : 7, 3, 'lamp');
+        for (let x = 2; x < 8; x++) setBlock(world, x, 4, 'wire');
+      },
+    },
+  ];
+  for (const { rows, source: [x, y], warmUp, nextDoor } of plants) {
+    for (const flip of [false, true]) { // the stray one way, then the other
+      const world = more(build(rows), warmUp);
+      const before = spinAt(world, x, y);
+      assert.ok(before > 0.5, `${rows[0]}: turns ${before} alone`);
+      nextDoor(world, flip);
+      for (let t = 0; t < 30; t++) {
+        more(world, 1);
+        const now = spinAt(world, x, y);
+        assert.ok(Math.abs(now - before) < 0.02, `${rows[0]} flip ${flip} tick ${t}: was ${before}, now ${now}`); // was −1.016 the very next tick
+      }
+      const stray = Math.abs(world.signals.electric.cells.get(y * world.width + x + 1).current
+        - world.signals.electric.cells.get(y * world.width + 7).current);
+      assert.ok(stray > 0 && stray < 0.01, `stray current ${stray}`);
+    }
+  }
+  // A push that counts still turns it round: a crank on the generator's other side, turning ↺.
+  const world = more(build(['.FWWWWWW', '.OE....L', '.DWWWWWW', '........']), 60);
+  assert.ok(spinAt(world, 1, 1) > 0.5);
+  setBlock(world, 2, 0, 'air');
+  setBlock(world, 2, 2, 'air'); // (take the wires off so the crank's block can sit on the shaft)
+  setBlock(world, 0, 1, 'crankCCW');
+  more(world, 1);
+  assert.ok(spinAt(world, 1, 1) < -0.5, `a crank turning ↺ beside it: the wheel turns ${spinAt(world, 1, 1)}`);
 });
 
 test('two water wheels on one shaft work the same in a mirrored build: a wheel with water falling straight through turns the way its neighbor does', () => {

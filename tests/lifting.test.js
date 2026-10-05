@@ -491,6 +491,37 @@ test('a battery lighting a lamp in the loop next door doesn\'t let a crane\'s lo
   }
 });
 
+test('a crane motor wired across a live rail (a few thousandths of an amp) doesn\'t drop its iron weight: the catch lets go only for a push that counts beside the load', () => {
+  // The battery and lamp are one loop. The motor's two ends are joined to each other through two
+  // cells of that loop's bottom rail, so a little of the rail's current (about 4 thousandths of
+  // an amp) goes through the motor instead: a push of 0.004 on a load that pulls 4.
+  const tail = ['..w....', '..|....', '..|....', '..I....', '.......', '.......', '.......', '.......', '.......', '#######'];
+  const pictures = [
+    ['WWWWWWW', 'B.....L', 'WWWWWWW', '.WMW...', ...tail],                                              // the stray pushes the let-out way
+    ['WWWWWWW', 'L.....B', 'WWWWWWW', '...WMW.', ...tail.map((row) => [...row].reverse().join(''))],     // the mirror picture
+    ['WWWWWWW', 'L.....B', 'WWWWWWW', '.WMW...', ...tail],                                              // the stray pushes the lifting way
+  ];
+  for (const rows of pictures) {
+    const x = rows[3].indexOf('M');
+    const world = make(rows);
+    const start = rowOf(world, x, 'ironWeight');
+    for (let t = 0; t < 40; t++) {
+      run(world, 1);
+      // Was −1.74 with 3.8 amps: the weight fell, driving the motor as a generator.
+      assert.ok(Math.abs(spinAt(world, x, 4)) < 0.01, `${rows[3]}, tick ${t}: the winch turns ${spinAt(world, x, 4)}`);
+      const current = Math.abs(world.signals.electric.cells.get(3 * world.width + x).current);
+      assert.ok(current > 0 && current < 0.01, `${rows[3]}, tick ${t}: the motor carries ${current}`);
+    }
+    assert.equal(rowOf(world, x, 'ironWeight'), start, `${rows[3]}: the weight moved`);
+  }
+  // A push that counts still lets it down under power: a real battery in the motor's own loop.
+  const driven = make(['WWWWW..', 'B...W..', 'WWMWW..', ...tail]);
+  const before = rowOf(driven, 2, 'ironWeight');
+  run(driven, 40);
+  const after = rowOf(driven, 2, 'ironWeight');
+  assert.notEqual(after, before, 'a battery\'s motor should move the weight');
+});
+
 test('the same three cranes give the same answer wherever each tower stands', () => {
   // One battery tower lifts a crate. The other two towers hold iron weights, and nothing drives
   // them but stray trickles through the shared rails. (They used to take turns: whichever heavy
