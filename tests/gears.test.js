@@ -538,7 +538,13 @@ test('a wheel in a level stream still turns, but feebly: the water hardly falls'
   assert.ok(spinAt(world, 2, 1) > 0.1 && spinAt(world, 2, 1) < 0.5, `with nothing to push it turns at ${spinAt(world, 2, 1)}`);
   const wheel = wheelSource(world, 2, 1);
   assert.ok(wheel.strength > 0 && wheel.strength < CRANK_STRENGTH / 3, `strength ${wheel.strength}`);
-  // The most work it can do is about a tenth of a crank's.
+  // The most work it can do is about a tenth of a crank's (0.100 of it).
+  // (It was 0.075 before water's energy shares were made exact: the wheel
+  // was being told a little LESS than the water lost going through it. In
+  // every small step the water coming into the wheel's cell was counted
+  // as landing on what the cell held BEFORE its own water left, which is
+  // higher than where it really lands. Now each share is exactly what was
+  // lost, so the bound here is 0.11, not the old 0.1. It is still feeble.)
   const best = (wheel.strength / 2) * (wheel.speed / 2);
   assert.ok(best < 0.11 * (CRANK_STRENGTH / 2) * (CRANK_SPEED / 2), `best work ${best}`);
 });
