@@ -31,6 +31,11 @@ const TEST_BLOCKS = {
   falling: { spin: { kind: 'hub' }, spinLoad: () => ({ pull: -8, topSpeed: 4 }) },
   racer: { spin: { kind: 'hub' }, spinSource: () => ({ speed: -6, strength: 2 }) },
   grounded: { spin: { kind: 'hub' }, spinLoad: () => ({ pull: -3, resting: true }) },
+  // Like a winch whose load has steam over it: it weighs 0.5 coming down, but
+  // lifting it means pushing the steam down too, and that takes 1.5.
+  steamy: { spin: { kind: 'hub' }, spinLoad: () => ({ pull: -0.5, lifting: -1.5 }) },
+  // The same, but too hard to lift for one crank (strength 2).
+  stuck: { spin: { kind: 'hub' }, spinLoad: () => ({ pull: -0.5, lifting: -2.5 }) },
   // Like a generator: pushes back 2 for every turn per second.
   dynamo: { spin: { kind: 'hub' }, spinDrag: () => 2 },
   // Like a generator with a battery in its loop: it pushes back 3 standing still and
@@ -52,7 +57,7 @@ const blockInfo = (name) => TEST_BLOCKS[name];
 /** What each letter means. */
 const LETTERS = {
   '.': 'air', s: 'gearSmall', G: 'gearBig', '-': 'axle', H: 'hub', R: 'crankCW', Q: 'crankCCW',
-  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light', g: 'grounded', f: 'falling', Z: 'racer', Y: 'strongCCW', D: 'dynamo', b: 'brake', l: 'lightBrake', T: 'topped',
+  F: 'fastCrank', '#': 'stone', K: 'heavy', k: 'light', g: 'grounded', f: 'falling', Z: 'racer', Y: 'strongCCW', D: 'dynamo', b: 'brake', l: 'lightBrake', T: 'topped', S: 'steamy', U: 'stuck',
 };
 
 /**
@@ -228,6 +233,19 @@ test('with no crank at all, a load on the ground just sits there (not stalled)',
 
 test('a hanging load never pulls its winch round faster than the load could fall', () => {
   assert.equal(spin(['Qf'])(1, 0).speed, -4); // not (−2 − 8) ÷ 2 = −5
+});
+
+test('a load can be harder to lift than it is heavy coming down: `lifting` only counts while it goes up', () => {
+  // Lifting: strength 2 against 1.5 leaves a quarter of the crank's speed.
+  assert.equal(spin(['RS'])(1, 0).speed, 0.25);
+  // Coming down it helps with 0.5 only: (−2 − 0.5) ÷ 2.
+  assert.equal(spin(['QS'])(1, 0).speed, -1.25);
+  // Too hard to lift: it stalls, and the load does not come down by itself.
+  const stuck = spin(['RU']);
+  assert.equal(stuck(1, 0).speed, 0);
+  assert.equal(stuck(1, 0).stalled, true);
+  // With no crank at all it just hangs (the catch holds it).
+  assert.equal(spin(['HS'])(1, 0).speed, 0);
 });
 
 test('gearing up doesn\'t let a falling load whirl the crank: the winch still stops at falling speed', () => {

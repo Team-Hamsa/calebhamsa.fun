@@ -7,7 +7,7 @@ Heavy things need more. Turning ↻ winds the rope in (up), ↺ lets it out (dow
 | ![Rope](blocks/rope.png) | **Rope** | Put at least one next to the winch and let it hang down. The winch adds rope and takes it away as it lets out and winds in. Rope goes straight: it only turns a corner at a pulley. Water flows through it. | — |
 | ![Pulley](blocks/pulley.png) | **Pulley** | A wheel the rope runs over, so the rope can change direction: the winch on the ground, the rope up a tower and down the other side. | — |
 | ![Pulley hook](blocks/pulleyHook.png) | **Pulley hook** | Hang it on the rope's end and the load under it. Two bits of rope share the load, so it counts **half as heavy**, but it goes up half as fast. | — |
-| ![Crate](blocks/crate.png) | **Crate** | Weighs **1**. Falls like sand, unless it hangs on a winch's rope. Only the one block on the rope's end is lifted (or a pulley hook and the block under it). | — |
+| ![Crate](blocks/crate.png) | **Crate** | Weighs **1**. Falls like sand, unless it hangs on a winch's rope. Let down on a rope, it **floats** on water. Only the one block on the rope's end is lifted (or a pulley hook and the block under it). | — |
 | ![Iron weight](blocks/ironWeight.png) | **Iron weight** | Weighs **4**. Too heavy for a crank turning a winch on its own! | — |
 
 **Slower is stronger.** A crank (strength 2) turning the winch on its own
@@ -62,11 +62,32 @@ left) carries the load, and the other spins with nothing on it. The load goes
 at the speed of the rope, never twice as fast. When the load gets to the
 pulley, neither rope can be pulled any further, so **both** winches stop (orange ⬆).
 
-**Nothing floats.** This is one place the game is simpler than the real world.
-A crate or an iron weight let down into water sinks just as it does in air,
-pulling with its whole weight, and the water simply moves up out of its way
-(sand sinks the same way). Real water pushes back: a wooden crate would float
-and its rope would go slack, an iron weight would feel lighter, and lifting
-the water would cost the push that here comes for free.
+**Water pushes back.** A load going down into water has to lift that water up
+out of its way, and that takes push. So in water a load feels **lighter**, by
+the weight of the water it moves: a block full of water weighs as much as 2½
+crates. An iron weight (4) still sinks, but it pulls on its rope with only 1½.
+A crate **floats**: let down onto deep water it stops on top, its rope goes
+slack, and it helps the winch no more (just like a load on the ground). It
+still sinks into a shallow puddle, less than half a block deep. A **pulley
+hook** is a block too, and weighs nothing, so a hook with a load under it
+floats more easily than the load alone.
+
+**Steam pushes back the other way.** Steam wants to be high, so a load going
+**up** through steam has to push the steam **down**, and that makes it heavier
+to lift (by 2½ crates for a block full of steam). Too much steam in the way and
+the crank stalls.
+
+Why? Because lifted water can fall again and turn a water wheel, and steam
+that has been pushed down rises again and can turn a turbine. If moving them
+cost nothing, a hand flipping a crank to and fro could light a lamp for ever
+without doing any work. The load pays for the water or steam with every bit of
+rope, and it only moves once it has paid.
+
+Three places where the game is still simpler than the real world: going the
+*easy* way gives nothing back (water over a load doesn't help lift it, so a
+crate under water does not bob up by itself); a **loose** block that is just
+falling (sand, or a crate whose rope you dug away) still sinks through water;
+and water deep down in a tall tank is squeezed, so it weighs a bit more than
+water at the top.
 
 **Cut the rope** (⛏️ dig it) and whatever hangs on it falls.

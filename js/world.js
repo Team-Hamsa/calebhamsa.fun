@@ -146,6 +146,8 @@ export function swapBlock(world, x, y, name) {
  * Move a block into an empty (air) cell, and move that cell's water and
  * steam back into the cell the block left. That's how sand sinks
  * through water: the sand and the water trade places, so no water is lost.
+ * (Moving the fluid is not free for a load on a winch's rope: the winch
+ * pays for it. See inTheWay in js/blocks/lifting.js.)
  * @param {object} world - the world
  * @param {number} fromX - where the block is
  * @param {number} fromY - where the block is

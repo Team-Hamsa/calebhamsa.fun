@@ -23,7 +23,9 @@
  *
  * How heavy the load is matters (see winchLoad in js/blocks/lifting.js):
  * a crate weighs 1, an iron weight 4, and a pulley hook makes the load
- * count half as heavy (two bits of rope share it).
+ * count half as heavy (two bits of rope share it). Water under a load
+ * and steam over it push back (see inTheWay there): the load has to pay
+ * for moving them, so a crate floats.
  *
  * This file only reads the fields blocks have: `winch`, `rope` (rope and
  * pulleys: the rope runs through them), `pulley`, `falls`, `weight` and `hook`.

@@ -34,6 +34,8 @@
  *              A weight lying on the ground is different: its rope is
  *              slack, so it can't pull the winch round. It only pulls
  *              back when the winch tries to lift it (see `balance`).
+ *              And a load can be harder to LIFT than it is heavy coming
+ *              down (it has steam to push out of its way: see `loadsOf`).
  *   spinDrag   a plain push back that grows with speed, whichever way
  *              the block turns (like stirring honey). No block in the
  *              game uses it right now: the generator used to, and now
@@ -189,21 +191,33 @@ function sideRatio(a, b, side) {
  * Tidy up what a block's `spinLoad` gave us. It can be just a number (a
  * pull that's always there), or a record:
  *   pull      how hard it pulls (+ is the ↻ way)
- *   resting   true if the load is lying on the ground: its rope is slack,
- *             so it only pulls back while it's being lifted
+ *   lifting   how hard it pulls back while it is being LIFTED (turned
+ *             against its pull), if that is harder than `pull`: a load
+ *             that has to push steam out of its way going up is harder
+ *             to lift than it is heavy coming down. Left out, it pulls
+ *             the same both ways.
+ *   resting   true if the load is lying on the ground (or floating on
+ *             water): its rope is slack, so it only pulls back while
+ *             it's being lifted
  *   topSpeed  the fastest the load can pull this block round (turns per
  *             second). A weight on a rope can't go down faster than it
  *             would fall with no rope at all: any faster, and the rope
  *             would go slack.
- * @param {number|{pull: number, resting?: boolean, topSpeed?: number}|undefined} load - from spinLoad
- * @returns {{pull: number, limit: number}} the pull, and the speed (the
- *   way it pulls) at which it stops pulling: 0 for a load on the ground,
- *   Infinity for one that always pulls
+ * @param {number|{pull: number, lifting?: number, resting?: boolean, topSpeed?: number}|undefined} load - from spinLoad
+ * @returns {Array<{pull: number, limit: number}>} its pulls, each with
+ *   the speed (the way it pulls) at which it stops pulling: 0 for a pull
+ *   that is only there while the load is being lifted, Infinity for one
+ *   that is always there. (Pulls of 0 are left out.)
  */
-function loadOf(load) {
-  if (typeof load === 'number') return { pull: load, limit: Infinity };
-  if (!load) return { pull: 0, limit: Infinity };
-  return { pull: load.pull, limit: load.resting ? 0 : load.topSpeed ?? Infinity };
+function loadsOf(load) {
+  if (typeof load === 'number') return load !== 0 ? [{ pull: load, limit: Infinity }] : [];
+  if (!load) return [];
+  const lifting = load.lifting ?? load.pull;
+  // Coming down (or just hanging) it pulls with `pull`. Being lifted, it
+  // pulls with `lifting`: that's `pull`, and the rest only while it goes up.
+  const hanging = load.resting ? 0 : load.pull;
+  const loads = [{ pull: hanging, limit: load.topSpeed ?? Infinity }, { pull: lifting - hanging, limit: 0 }];
+  return loads.filter((one) => one.pull !== 0);
 }
 
 /**
@@ -530,8 +544,9 @@ export function solveSpin(world, blockInfo) {
     group.stops = []; // hard stops: which block, and which way the FIRST block can't turn because of it
     for (const [index, r] of group.ratio) {
       const point = points.get(index);
-      const load = loadOf(point.info.spinLoad?.(world, point.x, point.y, blockInfo, isDriven));
-      if (load.pull !== 0) group.loads.push({ pull: load.pull * r, limit: load.limit / Math.abs(r) });
+      for (const load of loadsOf(point.info.spinLoad?.(world, point.x, point.y, blockInfo, isDriven))) {
+        group.loads.push({ pull: load.pull * r, limit: load.limit / Math.abs(r) });
+      }
       group.drag += (point.info.spinDrag?.(world, point.x, point.y) ?? 0) * r * r;
       if (point.info.spinBrake) group.brakers.push({ point, r });
       const stop = point.info.spinStop?.(world, point.x, point.y, blockInfo, isDriven) ?? 0;

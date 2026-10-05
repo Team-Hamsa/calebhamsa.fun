@@ -6,17 +6,18 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorld, getBlock, setBlock, tick } from '../js/world.js';
+import { createWorld, getBlock, getFluid, setBlock, setFluid, tick } from '../js/world.js';
 import { allSystems, blockInfo, blocksInPack } from '../js/blocks/registry.js';
 import { drawWorld } from '../js/block-art.js';
-import lifting from '../js/blocks/lifting.js';
-import { spinAt } from '../js/blocks/gears.js';
+import lifting, { ROPE_PER_TURN, STEAM_PUSH, WATER_WEIGHT, winchLoad } from '../js/blocks/lifting.js';
+import { DROP_POWER, RISE_POWER } from '../js/fluids.js';
+import { TICKS_PER_SECOND, spinAt } from '../js/blocks/gears.js';
 
 /** What each letter in a test picture means. */
 const LETTERS = {
   '.': 'air', '#': 'stone', s: 'gearSmall', G: 'gearBig', '-': 'axle', R: 'crankCW', Q: 'crankCCW',
   w: 'winch', '|': 'rope', P: 'pulley', h: 'pulleyHook', c: 'crate', I: 'ironWeight', S: 'sand',
-  f: 'faucet', O: 'waterWheel', D: 'drain', W: 'wire', B: 'battery', M: 'motor', E: 'generator', L: 'lamp', X: 'crankStop', K: 'clicker',
+  f: 'faucet', O: 'waterWheel', T: 'turbine', D: 'drain', W: 'wire', B: 'battery', M: 'motor', E: 'generator', L: 'lamp', X: 'crankStop', K: 'clicker',
 };
 
 /**
@@ -426,11 +427,204 @@ test('two winches with hanging weights, each one\'s generator driving the other\
   assert.equal(world.signals.electric.flowing, false); // and both lamps are dark
 });
 
-test('the guide and the wiki say plainly that nothing floats here', async () => {
+// =============================================================
+// Water and steam in a load's way push back (issue #21)
+// =============================================================
+
+test('water weighs what its fall is worth, and steam pushes back with what its rise is worth', () => {
+  // One cell of rope is 1 ÷ ROPE_PER_TURN turns, and a turn a second is TICKS_PER_SECOND ticks of work:
+  // lifting a full cell of water one cell must cost the winch at least DROP_POWER.
+  assert.equal(WATER_WEIGHT * TICKS_PER_SECOND / ROPE_PER_TURN, DROP_POWER);
+  assert.equal(STEAM_PUSH * TICKS_PER_SECOND / ROPE_PER_TURN, RISE_POWER);
+  assert.ok(WATER_WEIGHT > blockInfo('crate').weight, 'a crate is lighter than water');
+  assert.ok(WATER_WEIGHT < blockInfo('ironWeight').weight, 'an iron weight is heavier');
+});
+
+test('a crate floats: let down onto water it stops there, its rope goes slack and it helps the crank no more', () => {
+  const world = make(['Qw.', '.|.', '.c.', '...', '###']);
+  for (const x of [0, 1, 2]) setFluid(world, 'water', x, 3, 1);
+  run(world, 40);
+  assert.equal(rowOf(world, 1, 'crate'), 2); // still on top of the water
+  assert.equal(spinAt(world, 1, 0), -1);     // the crank turns at its own speed: nothing pulls it round
+  const load = winchLoad(world, 1, 0, blockInfo);
+  assert.equal(load.pull, -0);
+  assert.equal(load.resting, true);
+  assert.equal(load.lifting, -1); // but lifting it off the water takes its whole weight
+});
+
+test('a crate still sinks into a puddle too shallow to hold it up, and no water is lost', () => {
+  const world = make(['Qw.', '.|.', '.c.', '...', '###']);
+  for (const x of [0, 1, 2]) setFluid(world, 'water', x, 3, 0.3); // 0.3 of a cell weighs 0.75: less than the crate
+  run(world, 40);
+  assert.equal(rowOf(world, 1, 'crate'), 3);
+  const water = world.fluid.water.reduce((sum, amount) => sum + amount, 0);
+  assert.ok(Math.abs(water - 0.9) < 1e-9, `water ${water}`);
+});
+
+test('an iron weight sinks, but in water it pulls less: it has to lift the water out of its way', () => {
+  const world = make(['Xw.', '.|.', '.I.', '...', '###']);
+  assert.equal(winchLoad(world, 1, 0, blockInfo).pull, -4);
+  setFluid(world, 'water', 1, 3, 1);
+  const load = winchLoad(world, 1, 0, blockInfo);
+  assert.equal(load.pull, -(4 - WATER_WEIGHT));
+  assert.equal(load.lifting, -4);
+  assert.equal(load.resting, false);
+  // On a pulley hook it is two blocks tall: the water goes up TWO cells, for each cell the weight comes down.
+  const hooked = make(['Xw.', '.|.', '.h.', '.I.', '...', '###']);
+  setFluid(hooked, 'water', 1, 4, 0.5);
+  assert.equal(winchLoad(hooked, 1, 0, blockInfo).pull, -(4 / 2 - WATER_WEIGHT * 0.5 * 2 / 2));
+  setFluid(hooked, 'water', 1, 4, 1);
+  assert.equal(winchLoad(hooked, 1, 0, blockInfo).resting, true, 'full water holds even an iron weight up when a hook has to go under too');
+});
+
+test('a load going up through steam is heavier: it has to push the steam down', () => {
+  const world = make(['Rw', '.|', '.|', '.c', '##']);
+  setFluid(world, 'steam', 1, 2, 0.2);
+  const load = winchLoad(world, 1, 0, blockInfo);
+  assert.equal(load.lifting, -(1 + STEAM_PUSH * 0.2));
+  assert.equal(load.pull, -1); // coming down, steam gives nothing back
+  // In a sealed shaft with steam packed under the winch, a crank (strength
+  // 2, top speed 1) lifts the crate slower: at 1 − (its weight + the steam's push) ÷ 2.
+  const sealed = steamShaft();
+  const above = getFluid(sealed, 'steam', 2, 4);
+  assert.ok(above > 0.1 && above < 0.3, `steam above the crate: ${above}`);
+  setBlock(sealed, 1, 1, 'crankCW');
+  run(sealed, 1);
+  assert.ok(Math.abs(spinAt(sealed, 2, 1) - (1 - (1 + STEAM_PUSH * above) / 2)) < 1e-9, `speed ${spinAt(sealed, 2, 1)}`);
+  // And too much steam is too heavy for the crank: it stalls.
+  setFluid(sealed, 'steam', 2, 4, above + 0.3);
+  run(sealed, 2);
+  assert.equal(spinAt(sealed, 2, 1), 0);
+  assert.equal(sealed.signals.spin.cells.get(1 * 5 + 2).stalled, true);
+});
+
+/**
+ * A sealed shaft: a stopped crank and a winch, three cells of rope and a
+ * crate, with steam that has settled under the winch (the top two rope
+ * cells are full, and a little is left in the cell right above the crate).
+ * @returns {object} the world
+ */
+function steamShaft() {
+  const world = make(['#####', '#Xw##', '##|##', '##|##', '##|##', '##c##', '#####']);
+  setFluid(world, 'steam', 2, 2, 2.3);
+  return run(world, 300);
+}
+
+test('steam that comes into the way late is still paid for: the load waits until the rope has paid', () => {
+  const world = steamShaft();
+  const winch = 1 * 5 + 2;
+  setBlock(world, 1, 1, 'crankCW');
+  run(world, 10); // most of a cell wound in, paying for the little steam that was there
+  assert.equal(rowOf(world, 2, 'crate'), 5);
+  setFluid(world, 'steam', 2, 4, getFluid(world, 'steam', 2, 4) + 0.1); // now more steam drifts in above the crate
+  let waited = 0; // ticks it stood still with a whole cell of rope already wound
+  let paid = 0;
+  let cost = 0;
+  for (let t = 0; t < 200 && rowOf(world, 2, 'crate') === 5; t++) {
+    paid = world.signals.lift.aside.get(winch) ?? 0;
+    cost = STEAM_PUSH * getFluid(world, 'steam', 2, 4);
+    if (world.signals.lift.pull.get(winch) >= 1) {
+      waited++;
+      assert.ok(paid < cost, 'it only waits while the steam is not paid for');
+    }
+    run(world, 1);
+  }
+  assert.equal(rowOf(world, 2, 'crate'), 4, 'in the end it goes up');
+  assert.ok(waited >= 1, 'a whole cell of rope was not enough: it had to keep winding');
+  // What was left over after paying is kept for the next cell, and is never more than was paid in.
+  const left = world.signals.lift.aside.get(winch) ?? 0;
+  assert.ok(left >= 0 && left < paid + STEAM_PUSH, `left over ${left}`);
+  assert.ok(getFluid(world, 'steam', 2, 5) > 0.2, 'the steam ended up under the crate');
+});
+
+/**
+ * Run a machine with a crank that a hand flips to and fro, and add up
+ * the work the crank puts in and the most work its wheels and turbines
+ * could do with what the water and steam gave up.
+ * @param {object} world - the world
+ * @param {{x: number, y: number}} crank - where the crank is
+ * @param {number} cycles - how many times to go down and up
+ * @param {Function} isDown - (world) => true when the load is at the low end
+ * @param {Function} isUp - (world) => true when the load is at the high end
+ * @param {string[]} order - which way to turn first, then second ('crankCW' or 'crankCCW')
+ * @returns {{crank: number, best: number, strokes: number}} the crank's
+ *   work, the wheels' and turbines' best work, and how many strokes got there
+ */
+function shuttle(world, crank, cycles, isDown, isUp, order) {
+  const systems = allSystems();
+  let work = 0;
+  let best = 0;
+  let strokes = 0;
+  /**
+   * One tick, counting the work.
+   * @returns {void}
+   */
+  const step = () => {
+    tick(world, systems, blockInfo);
+    const speed = Math.abs(spinAt(world, crank.x, crank.y));
+    if (getBlock(world, crank.x, crank.y) !== 'crankStop') work += 2 * (1 - speed) * speed; // a crank: strength 2, top speed 1
+    for (const gave of world.signals.water?.waterWork?.values() ?? []) best += DROP_POWER * gave;
+    for (const turbine of world.signals.water?.turbines?.values() ?? []) best += RISE_POWER * turbine.work;
+  };
+  for (let cycle = 0; cycle < cycles; cycle++) {
+    for (const way of order) {
+      const there = way === 'crankCW' ? isUp : isDown;
+      setBlock(world, crank.x, crank.y, way);
+      for (let t = 0; t < 200 && !there(world); t++) step();
+      if (there(world)) strokes++;
+      setBlock(world, crank.x, crank.y, 'crankStop');
+      for (let t = 0; t < 60; t++) step();
+    }
+  }
+  return { crank: work, best, strokes };
+}
+
+test('no power from shuttling a load through sealed steam: the turbine never gets more than the hand put in', () => {
+  // The machine from the review of issue #21. No burner anywhere. A
+  // weightless pulley hook goes up and down a shaft; each stroke up used
+  // to carry the steam above it to below it for free, and that steam then
+  // rose through the turbine: light for ever from a hand that did no work.
+  for (const [load, steam] of [['pulleyHook', 4], ['pulleyHook', 4.4], ['crate', 3.6]]) {
+    const world = make(['########', '#w######', '#|..####', '#|#T####', '#|..####', '#|######', '#.######', '########']);
+    setBlock(world, 0, 1, 'crankStop');
+    setFluid(world, 'steam', 2, 2, steam);
+    run(world, 800); // let the steam settle
+    setBlock(world, 1, 6, load);
+    const { crank, best, strokes } = shuttle(world, { x: 0, y: 1 }, 10, (w) => rowOf(w, 1, load) === 6, (w) => rowOf(w, 1, load) === 3, ['crankCW', 'crankCCW']);
+    assert.equal(strokes, 20, `${load} in ${steam} of steam: it should get there every time`);
+    assert.ok(best > 5, `${load}: the turbine should get some push (${best})`);
+    assert.ok(best <= crank + 1e-6, `${load} in ${steam} of steam: the turbine could do ${best} but the hand only put in ${crank}`);
+  }
+});
+
+test('no power from dipping a load in a pool: the water wheel never gets more than the hand put in', () => {
+  // The same trick with water: a hook and crate dipped into a pool lift
+  // the water two cells; it runs off over a water wheel and back under.
+  for (const amount of [0.3, 0.5]) {
+    const world = make(['########', '#w######', '#|######', '#h..####', '#c#O####', '#...####', '########']);
+    setBlock(world, 0, 1, 'crankStop');
+    setFluid(world, 'water', 2, 5, amount);
+    run(world, 400);
+    const { crank, best, strokes } = shuttle(world, { x: 0, y: 1 }, 10, (w) => rowOf(w, 1, 'crate') === 5, (w) => rowOf(w, 1, 'crate') === 4, ['crankCCW', 'crankCW']);
+    assert.equal(strokes, 20);
+    assert.ok(best > 5, `the wheel should get some push (${best})`);
+    assert.ok(best <= crank + 1e-6, `${amount} of water: the wheel could do ${best} but the hand only put in ${crank}`);
+  }
+  // And a deeper pool just holds the crate up: nothing goes down, nothing turns.
+  const deep = make(['########', '#w######', '#|######', '#h..####', '#c#O####', '#...####', '########']);
+  setBlock(deep, 0, 1, 'crankCCW');
+  setFluid(deep, 'water', 2, 5, 1.5);
+  run(deep, 200);
+  assert.equal(rowOf(deep, 1, 'crate'), 4);
+});
+
+test('the guide and the wiki say that water pushes back: a crate floats, and steam is hard to push through', async () => {
   const { readFileSync } = await import('node:fs');
   const wiki = readFileSync(new URL('../wiki/Lifting.md', import.meta.url), 'utf8');
-  assert.match(wiki, /Nothing floats/);
-  assert.ok(lifting.guide.rules.some((rule) => /float/.test(rule)));
+  assert.match(wiki, /crate \*\*floats\*\*/);
+  assert.match(wiki, /steam/);
+  assert.doesNotMatch(wiki, /Nothing floats/);
+  assert.ok(lifting.guide.rules.some((rule) => /FLOATS/.test(rule) && /steam/.test(rule)));
 });
 
 test('lowering a load onto the ground and lifting it again never pays the crank: slack rope has to be wound back in', () => {
