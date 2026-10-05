@@ -366,7 +366,7 @@ const FALL_RANGE = 0.05;
 
 /**
  * Work out how to DRAW the water in every cell. The picture is the
- * water: a cell is drawn with exactly what it holds (water can't be
+ * water: a cell is drawn with just what it holds (water can't be
  * squashed, so ten buckets in a shaft really are ten cells tall).
  *
  * The one thing worked out here is which water is FALLING. Water with
@@ -392,7 +392,8 @@ export function waterPicture(world, blockInfo, sides = allOpenSides(world, block
   const falling = new Float64Array(size);
   for (let index = 0; index < size; index++) {
     if (water[index] < MIN_AMOUNT) continue;
-    shown[index] = Math.min(water[index], FULL);
+    // (A cell that is full but for a rounding speck is drawn full: no hairline of air on top of it.)
+    shown[index] = water[index] >= FULL - FULL_SLACK ? FULL : water[index];
     // Is it falling? In an open cell, yes, as long as the cell under it has
     // space. (A pump holds water back, so nothing "falls" into or out of one.)
     const below = index + width;

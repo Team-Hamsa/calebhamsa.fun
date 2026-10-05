@@ -12,7 +12,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, setBlock, setFluid } from '../js/world.js';
-import { FULL, MIN_AMOUNT, pour, scoop, stepFluids, waterPicture } from '../js/fluids.js';
+import { FULL, FULL_SLACK, MIN_AMOUNT, pour, scoop, stepFluids, waterPicture } from '../js/fluids.js';
 import { applyTool } from '../js/build.js';
 
 /** Stand-in blocks with the same fluid settings as the real ones. */
@@ -148,7 +148,10 @@ test('waterPicture gives only `shown` and `falling`, and every cell is drawn wit
       stepFluids(world, blockInfo);
       const { shown, falling } = waterPicture(world, blockInfo);
       world.fluid.water.forEach((amount, index) => {
-        assert.equal(shown[index], amount >= MIN_AMOUNT ? Math.min(amount, FULL) : 0, `world ${trial} tick ${tick} cell ${index}`);
+        // (Full but for a rounding speck is drawn full; a speck too small to see is not drawn.)
+        const drawn = amount >= FULL - FULL_SLACK ? FULL : amount >= MIN_AMOUNT ? amount : 0;
+        assert.equal(shown[index], drawn, `world ${trial} tick ${tick} cell ${index}`);
+        assert.ok(shown[index] <= FULL);
         assert.ok(falling[index] >= 0 && falling[index] <= 1);
       });
     }
