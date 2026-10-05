@@ -1310,3 +1310,156 @@ test('in lots of random worlds with pumps, wheels get no more than the water gav
   // And in all the worlds of this file, the water circuit always settled.
   assert.equal(pressWork.stuck, 0);
 });
+
+/**
+ * All the push that falling water is still carrying (see stepFluids).
+ * @param {object} world - the world
+ * @returns {number} the total
+ */
+const carriedPush = (world) => (world.signals.falling ?? []).reduce((sum, push) => sum + push, 0);
+
+test('a cell\'s carried push is handed out once: the shares of its water that move away in one small step never add up to more than 1', () => {
+  // The start of the 1.5× bug: water that fell AND then spread had its second
+  // share measured against the little that was left, not against what it began with.
+  const random = randomFrom(3);
+  let most = 0;
+  for (let trial = 0; trial < 60; trial++) {
+    const world = createWorld(4 + Math.floor(random() * 10), 4 + Math.floor(random() * 8));
+    world.cells.forEach((_, index) => {
+      const pick = random();
+      setBlock(world, index % world.width, Math.floor(index / world.width), pick < 0.2 ? 'stone' : pick < 0.3 ? 'waterWheel' : pick < 0.35 ? 'pipe' : 'air');
+      if (world.cells[index] !== 'stone' && random() < 0.5) world.fluid.water[index] = random() < 0.6 ? 1 : random();
+    });
+    const table = flowTable(world, allOpenSides(world, blockInfo), blockInfo);
+    for (let step = 0; step < 200; step++) {
+      const shares = new Map();
+      flowWater(world, table, (from, to, amount, energy, drop, part, pressed) => {
+        if (pressed) assert.equal(part, 0);
+        assert.ok(part >= 0 && part <= 1);
+        shares.set(from, (shares.get(from) ?? 0) + part);
+      });
+      for (const [cell, share] of shares) {
+        most = Math.max(most, share);
+        assert.ok(share <= 1 + 1e-9, `world ${trial}, small step ${step}, cell ${cell}: shares add up to ${share}`);
+      }
+    }
+  }
+  assert.ok(most > 0.9, 'some cell should have given nearly all its water away');
+});
+
+test('one cellful dropped down a shaft onto three water wheels: together they get no more than the water lost', () => {
+  for (const [fall, puddle] of [[10, 0.01], [10, 0.3], [5, 0.01], [12, 0.05]]) {
+    // A wheel on each side of where the water lands, and one underneath holding a small puddle.
+    const world = worldFrom([...Array(fall).fill('#.#'), 'O.O', '#O#', '###']);
+    setFluid(world, 'water', 1, 0, 1);
+    setFluid(world, 'water', 1, fall + 1, puddle);
+    const start = waterEnergy(world);
+    let credited = 0;
+    for (let tick = 0; tick < 200; tick++) {
+      const before = waterEnergy(world) + carriedPush(world);
+      let now = 0;
+      for (const work of stepFluids(world, blockInfo).waterWork.values()) now += work;
+      credited += now;
+      const lost = before - (waterEnergy(world) + carriedPush(world));
+      assert.ok(now <= lost + 1e-9, `fall ${fall}, tick ${tick}: the wheels got ${now}, the water lost ${lost}`);
+    }
+    const lost = start - waterEnergy(world);
+    assert.ok(credited <= lost + 1e-9, `fall ${fall}: the wheels got ${credited}, the water lost ${lost}`);
+    // (And most of it does reach them: a taller fall is a stronger one.)
+    assert.ok(credited > 0.8 * lost, `fall ${fall}: the wheels got only ${credited} of ${lost}`);
+  }
+});
+
+test('a steady waterfall onto three water wheels, for ever: in every tick the wheels get no more than the water lost', () => {
+  // A faucet at the top of a 10-deep shaft. Where the stream lands there is
+  // a wheel on each side, each emptying into a drain, and under it a wheel
+  // whose only way out is a long level pipe to a drain (so it stays nearly full).
+  const fall = 10;
+  const pipe = 18;
+  const world = worldFrom([
+    `##F##${'#'.repeat(pipe)}`,
+    ...Array(fall).fill(`##.##${'#'.repeat(pipe)}`),
+    `DO.OD${'#'.repeat(pipe)}`,
+    `##O${'P'.repeat(pipe)}D#`,
+    `#####${'#'.repeat(pipe)}`,
+  ]);
+  /** The same blocks with the faucets and drains switched off: only the water's own moves. */
+  const quiet = (name) => (name === 'faucet' ? {} : name === 'drain' ? { fluid: { sides: 'all' } } : blockInfo(name));
+  let credited = 0;
+  let given = 0;
+  for (let tick = 0; tick < 1200; tick++) {
+    // What the water really lost in this tick's moves, from a twin with no faucet and no drain.
+    const twin = structuredClone(world);
+    const before = waterEnergy(twin) + carriedPush(twin);
+    let now = 0;
+    for (const work of stepFluids(twin, quiet).waterWork.values()) now += work;
+    const lost = before - (waterEnergy(twin) + carriedPush(twin));
+    assert.ok(now <= lost + 1e-9, `tick ${tick}: the wheels got ${now}, the water lost ${lost}`);
+    stepFluids(world, blockInfo);
+    if (tick >= 1000) {
+      credited += now;
+      given += lost;
+    }
+  }
+  // A faucet's water falling 12 cells has 0.05 × 12 to give, and no more.
+  assert.ok(credited / 200 <= FAUCET_RATE * (fall + 2) + 1e-9, `the wheels get ${credited / 200} a tick`);
+  assert.ok(credited > 0.5 * given, `the wheels got ${credited} of ${given}`);
+});
+
+test('in lots of random worlds, in every single tick: the wheels get no more than the water lost (counting the push falling water still carries as not lost yet)', () => {
+  const random = randomFrom(11);
+  for (let trial = 0; trial < 60; trial++) {
+    const world = createWorld(4 + Math.floor(random() * 12), 4 + Math.floor(random() * 9));
+    world.cells.forEach((_, index) => {
+      const pick = random();
+      setBlock(world, index % world.width, Math.floor(index / world.width), pick < 0.2 ? 'stone' : pick < 0.32 ? 'waterWheel' : pick < 0.4 ? 'pipe' : 'air');
+      if (world.cells[index] !== 'stone' && random() < 0.5) world.fluid.water[index] = random() < 0.6 ? 1 : random();
+    });
+    for (let tick = 0; tick < 150; tick++) {
+      const before = waterEnergy(world) + carriedPush(world);
+      let now = 0;
+      for (const work of stepFluids(world, blockInfo).waterWork.values()) now += work;
+      const lost = before - (waterEnergy(world) + carriedPush(world));
+      assert.ok(now <= lost + 1e-9, `world ${trial}, tick ${tick}: the wheels got ${now}, the water lost ${lost}`);
+    }
+  }
+});
+
+test('a build that is the same on both sides stays the same on both sides, and a mirrored build gives the mirrored answer', () => {
+  // (Once, a rounding-sized flow between two full cells, whose direction is
+  // a coin toss, could switch SPREAD off on one side and not the other.)
+  const one = ['######', '#~####', '#.+~##', '#~~~~#', '#~..##', '##..##', '######'];
+  for (const rows of [one, mirrored(one)]) {
+    const flip = rows !== one;
+    const world = worldFrom(rows.map((row) => row.replace('+', '.')));
+    setFluid(world, 'water', flip ? 3 : 2, 2, 0.799);
+    smallStep(world);
+    const at = (x, y) => getFluid(world, 'water', flip ? 5 - x : x, y);
+    if (!flip) one.answer = [1, 2, 3, 4].flatMap((x) => [2, 3, 4, 5].map((y) => at(x, y)));
+    else assert.deepEqual([1, 2, 3, 4].flatMap((x) => [2, 3, 4, 5].map((y) => at(x, y))).map((v, k) => Math.abs(v - one.answer[k]) < 1e-12), Array(16).fill(true));
+  }
+  const random = randomFrom(1);
+  for (let trial = 0; trial < 80; trial++) {
+    const half = 2 + Math.floor(random() * 7);
+    const width = 2 * half + (random() < 0.5 ? 1 : 0);
+    const world = createWorld(width, 4 + Math.floor(random() * 9));
+    for (let y = 0; y < world.height; y++) {
+      for (let x = 0; x < Math.ceil(width / 2); x++) {
+        const pick = random();
+        const name = pick < 0.3 ? 'stone' : pick < 0.4 ? 'pipe' : pick < 0.45 ? 'waterWheel' : 'air';
+        const amount = random() < 0.5 ? (random() < 0.7 ? 1 : Math.round(random() * 8) / 8) : 0;
+        for (const column of [x, width - 1 - x]) {
+          setBlock(world, column, y, name);
+          if (name !== 'stone') setFluid(world, 'water', column, y, amount);
+        }
+      }
+    }
+    for (let tick = 0; tick < 200; tick++) {
+      stepFluids(world, blockInfo);
+      world.fluid.water.forEach((amount, index) => {
+        const other = Math.floor(index / width) * width + (width - 1 - index % width);
+        assert.ok(Math.abs(amount - world.fluid.water[other]) < 1e-6, `world ${trial}, tick ${tick}: ${amount} on one side, ${world.fluid.water[other]} on the other`);
+      });
+    }
+  }
+});

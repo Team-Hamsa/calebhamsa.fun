@@ -977,7 +977,7 @@ let bandScratch = new Float64Array(0);
  *   with 3 full cells on it reads 4); for any other cell, its own amount
  * @returns {{after: Float64Array, moved: number, carried: Uint8Array, pumpWork: number}}
  *   the water after PRESS; how much moved; for cell `i` and side number
- *   `s`, 1 at place i × 4 + s if pressed water left the cell that way;
+ *   `s`, 1 at place i × 4 + s if pressed water (more than a rounding speck) left the cell that way;
  *   and the energy the pumps gave the water
  */
 function pressWater(world, w, table, pumps, onMove, press) {
@@ -1528,9 +1528,12 @@ function pressWater(world, w, table, pumps, onMove, press) {
       if (linAt[j] > 0) energy -= extraEnd[j] * lin / linAt[j];
     }
     const side = flow.to === flow.from - width ? 0 : flow.to === flow.from + 1 ? 1 : flow.to === flow.from + width ? 2 : 3;
+    // (A move this small is only rounding being tidied up: not worth
+    // telling, and it doesn't count as water pushed out of that side. Its
+    // direction is a coin toss, and must not decide what SPREAD does next.)
+    if (q <= FULL_SLACK) continue;
     carried[flow.from * 4 + side] = 1;
-    // (A move this small is only rounding being tidied up: not worth telling.)
-    if (q > FULL_SLACK) onMove(flow.from, flow.to, q, energy, side === 2 ? 1 : side === 0 ? -1 : 0, 0, true);
+    onMove(flow.from, flow.to, q, energy, side === 2 ? 1 : side === 0 ? -1 : 0, 0, true);
   }
   return { after, moved, carried, pumpWork };
 }
@@ -1567,9 +1570,9 @@ function pressWater(world, w, table, pumps, onMove, press) {
  * @param {Function} onMove - told (fromIndex, toIndex, amount, energy, drop, part, pressed)
  *   for every move: `energy` is how much the water gave up by moving,
  *   `drop` is how many cells lower it ended up (1 falling, 0 sideways,
- *   −1 rising), `part` is how much of the cell's water this move took
- *   (0 to 1; always 0 for a pressed move), and `pressed` is true for
- *   water moved by pressure
+ *   −1 rising), `part` is how much of the water the cell held at the
+ *   start of the small step this move took (0 to 1; always 0 for a
+ *   pressed move), and `pressed` is true for water moved by pressure
  * @param {Array<{back: number, ahead: number, level: number}>} [pumps] - the pumps that are running (from workingPumps)
  * @returns {{moved: number, pumpWork: number}} the total amount that
  *   moved, and the energy the pumps gave the water
@@ -1590,6 +1593,10 @@ export function flowWater(world, table, onMove, pumps = []) {
   let moved = 0;
   /**
    * Tell onMove about a list of moves, with the energy each gave up.
+   * Each move's `part` is its share of the water the cell held when
+   * the small step BEGAN (not of what an earlier part left behind):
+   * that is the water any push the cell carries belongs to, so all the
+   * shares out of one cell in one small step never add up to more than 1.
    * @param {Float64Array} had - what every cell held before these moves
    * @param {number[]} moves - the moves, four numbers each: from, to, amount, drop
    * @returns {void}
@@ -1613,7 +1620,7 @@ export function flowWater(world, table, onMove, pumps = []) {
       const energy = amount * drop
         + (storedEnergy(had[from]) - storedEnergy(had[from] - gone[from])) * (amount / gone[from])
         + (storedEnergy(left) - storedEnergy(left + came[into])) * (amount / came[into]);
-      onMove(from, into, amount, energy, drop, Math.min(1, amount / had[from]), false);
+      onMove(from, into, amount, energy, drop, Math.min(1, amount / start[from]), false);
     }
   };
 
