@@ -37,7 +37,7 @@ After this pass:
 | How is pressure worked out? | Each small step, the **full** cells that touch are solved together like a circuit: flow between two full cells = `PIPE_EASE` × their difference in head. Surfaces are where the head is known | It is the water analogy the ⚡ pack already teaches, run the other way: pressure is voltage, flow is current, a long pipe is resistance, a pump is a battery. It gives one answer whatever the shape (loops too), it is the same in a mirror, and "flow × head lost" on every link is exactly the energy given up |
 | Does a cell store pressure? | No. Pressure is worked out afresh every small step and kept only for looking at (`world.signals.press`) | Nothing to save, nothing to go stale, no water hidden in it |
 | What moves un-pressed water? | Today's rules 1 and 2 (fall, spread sideways by a quarter of the difference). Only rule 3 (UP by squish) is replaced. One change to rule 1: a stack of water over a gap falls together | Streams, puddles, faucets, wheels under a fall: all as they are now. A column must stay full while it drains, or nothing in it is pressed |
-| How fast? | `PIPE_EASE = 1`, `SURFACE_EASE = 1/4`, `SQUIRT_EASE = 1/32`, still 4 small steps a tick | Measured: U-tube level in 7 to 9 ticks (it was about 38), a 22-cell pipe in 14 to 21. A tower empties a little faster than today (half gone in 47 ticks, was 68). A quarter at a surface is also the most that can never overshoot |
+| How fast? | `PIPE_EASE = 1`, `SURFACE_EASE = 1/4`, `SQUIRT_EASE = 1/32`, still 4 small steps a tick. **(Changed after the second review: `SURFACE_EASE` is gone, a surface is a link like any other. See the last addendum)** | Measured: U-tube level in 7 to 9 ticks (it was about 38), a 22-cell pipe in 14 to 21. A tower empties a little faster than today (half gone in 47 ticks, was 68). A quarter at a surface is also the most that can never overshoot |
 | Sloshing? | Impossible: water here has no momentum. Every flow goes from more head to less, and each surface moves at most to its neighbours' level, never past | Proven below, and measured: no arm ever turned back |
 | Steam | **Stays squeezable, exactly as it is.** Its number is renamed `STEAM_SQUEEZE` (0.1) | Steam is a gas, and gases really can be squeezed: that is the honest difference between the two fluids, and worth teaching. Its ledger, the turbine numbers and every steam test stay as they are. Treating steam like water would be less real (a sealed boiler would just stop instead of building pressure) |
 | Pumps | The same law (`PUMP_RATE`, `PUMP_HEAD`), with the lift read from the pressure. The pump works inside the pressure step, a quarter of a tick's worth each small step | A pump in a pipe that is full all the way round has to push the whole ring at once; only the joint solve can do that |
@@ -74,7 +74,7 @@ const PRESS_PASSES = 64;               // tries at which cells count as pressed 
 
 `SQUISH` is deleted, not aliased. `PUMP_RATE`, `PUMP_HEAD`, `DROP_POWER`, `RISE_POWER`, `FAUCET_RATE`, `BOIL_RATE`, `CONDENSE_RATE`, `MIN_AMOUNT`, `MAX_FLOW` keep their values.
 
-Each has a 🧪 "Try this!" note in the code, as the old ones did: `PIPE_EASE = 0.1` makes long pipes sluggish; `SQUIRT_EASE = 1/4` makes a tower empty in a blink; `SURFACE_EASE` above 1/4 lets a level overshoot.
+*(Changed after the second review: `SURFACE_EASE` is gone and the hole law is different. See the last addendum.)* Each has a 🧪 "Try this!" note in the code, as the old ones did: `PIPE_EASE = 0.1` makes long pipes sluggish; `SQUIRT_EASE = 1/4` makes a tower empty in a blink; `SURFACE_EASE` above 1/4 lets a level overshoot.
 
 ### One small step of water: FALL, PRESS, SPREAD
 
@@ -96,7 +96,7 @@ using the amounts **as they are now** (the cell below has already dropped its ow
 flow = clamp((rest − water[beside] now) ÷ 4, 0, what is left of rest)     // skip if ≤ FULL_SLACK ÷ 4
 ```
 
-**but not through a side that PRESS just pushed water out of** (PRESS has already done that side's spreading, and more). Both sides are worked out from the same `rest`, as today, so left and right are treated alike.
+**but not through a side that PRESS just pushed water out of** (PRESS has already done that side's spreading, and more). *(Changed after the second review: SPREAD is the same for every side, and PRESS only moves what pressure adds. See the last addendum.)* Both sides are worked out from the same `rest`, as today, so left and right are treated alike.
 
 None of the three can put a cell over `FULL`: FALL and PRESS never give a cell more than its room, and SPREAD gives each neighbour at most a quarter of what it is short of, from each of two sides.
 
@@ -108,7 +108,7 @@ None of the three can put a cell over `FULL`: FALL and PRESS never give a cell m
 flow a → b = PIPE_EASE × (H(a) − H(b))
 ```
 
-**Ends.** For a point `i` and each side where the neighbour `j` is open to it, is not a point and is not a pump, there is an *end*: a place where the head is known. `level(j) = floor(j) + water[j]` as it is at the start of PRESS.
+**Ends.** *(The table below is as first built. After the second review a surface has ease `PIPE_EASE`, and a hole in the side follows "the hole law" of the last addendum.)* For a point `i` and each side where the neighbour `j` is open to it, is not a point and is not a pump, there is an *end*: a place where the head is known. `level(j) = floor(j) + water[j]` as it is at the start of PRESS.
 
 | End | Flow out of the point | When | Most |
 |---|---|---|---|
@@ -449,7 +449,7 @@ Built as specified, with the changes below. `npm test`: 863 pass (837 before: 13
 
 ### Known edges found while building
 
-- **A hole that is shut early in a small step stays shut for that step, even if it should have opened.** The sums start with every surface free; a hole that is "not pressed" then is shut, and "shut stays shut" (the rule that stops the sums going round in circles). If a surface is then held at its most and the pressure rises, the hole still only spreads (the usual quarter) in that small step. It errs on the slow side and can only lose energy. It also means the answer depends a little on the order the limits are found in, so starting the sums from last step's answer (tried, for speed: 6 rounds became 1 in a full world with a pump) changed about 1 world in 100 by a few hundredths of a cell. It was taken out again: nothing is carried over from one small step to the next, as the spec decided.
+- *(Gone after the second review: a shut hole may open again. See the last addendum.)* **A hole that is shut early in a small step stays shut for that step, even if it should have opened.** The sums start with every surface free; a hole that is "not pressed" then is shut, and "shut stays shut" (the rule that stops the sums going round in circles). If a surface is then held at its most and the pressure rises, the hole still only spreads (the usual quarter) in that small step. It errs on the slow side and can only lose energy. It also means the answer depends a little on the order the limits are found in, so starting the sums from last step's answer (tried, for speed: 6 rounds became 1 in a full world with a pump) changed about 1 world in 100 by a few hundredths of a cell. It was taken out again: nothing is carried over from one small step to the next, as the spec decided.
 - **A pump's "does it suck?" test is a hard switch** (`H < floor + 1 − 1e-9`). In a soup of dozens of pumps a difference of `1e-15` can flip it and change a tick by 0.07 of a cell. It is the same for both answers' energy books, and nothing was seen to flicker from it.
 - **A group that does not settle** (`stuck`) happened once in 2.8 million solves, in the random worlds with pumps (never without pumps, never in the tower sweep). That body of water waits one small step.
 
@@ -563,7 +563,7 @@ Throwaway scripts in the session scratchpad (`build30/`, `build30/old/`, `repair
 ### Known edges left
 
 - **A full cell that is a speck short is topped up, even from a little lower down.** A cell within `FULL_SLACK` (`1e-9`) of full counts as full, and the solve fills its last speck. If SPREAD then takes a speck out of it again (into a neighbour that is also a hair short), it is topped up again next step. The water's energy can rise by itself by about `1e-9 ×` a cell a tick while that lasts (worst seen 6.4e-10 in a tick); it stops when the row is full, and no wheel was credited any of it.
-- **A steady stream can pulse a little.** One of seven faucet-tank-hole scenes (3 faucets, hole 1 cell up, 12 cells of floor) never quite holds still: its tank creeps up 0.03 of a cell and sinks back, about every 70 ticks (a pixel on the screen). It did the same before the repair. The 13 steady machines of `sweep6` all hold still.
+- *(Gone after the second review: all seven scenes hold still.)* **A steady stream can pulse a little.** One of seven faucet-tank-hole scenes (3 faucets, hole 1 cell up, 12 cells of floor) never quite holds still: its tank creeps up 0.03 of a cell and sinks back, about every 70 ticks (a pixel on the screen). It did the same before the repair. The 13 steady machines of `sweep6` all hold still.
 - **Pump soups that keep moving.** In about 1 random world in 500 with dozens of pumps some cell is still going up and down after 200 ticks (a pump lifting water that falls back to it). None without pumps.
 - **Water left inside an upward pump** (from an old save, or a pump built into a pond) stays there until it is dug out: it can only leave by the pump's front, and nothing falls upward. It is drawn in the pump, and no water is made or lost.
 - The edges of the first addendum stand ("a hole that is shut early stays shut for that step", `stuck`: twice in about 48 million solves of the pump sweeps, never without pumps).
@@ -587,3 +587,125 @@ Much the same as built. (The worst single tick of the pump worlds was 19 to 36 m
 
 Guide and wiki: a pump with no power is a shut door; two pumps in a row lift twice as high; a hole at the foot of a tall tank floods the floor in a rush; let the water fall away from a wheel at a spout; the Lifting page's "squeezed" paragraph is gone. `water-tower.png` was made again (a few pixels differ); the other pictures came out the same file. `CACHE_NAME` stays `caleb-v8` (no file was added to or renamed in the list the service worker saves).
 
+## Addendum 2026-10-05 (second review): one build, one answer
+
+A second round of reviewers reported five findings. All five were real. The second one showed that the law itself was at fault, so the law is changed here (and the spec above is marked where it no longer holds). `npm test`: 885 pass (878 before).
+
+### The five findings
+
+1. **A build and its mirror image gave different steam (low).** `flowSteam` asks "is this cell more than half water?" with a plain `<= 0.5`, and the new water's sums leave a cell that should hold a half at a half give or take `1e-16`. *Fixed:* `<= 0.5 + FULL_SLACK`. The reviewer's 3 × 4 world and 400 random worlds of stone, water and steam are a test. Measured: 30 000 tiny worlds of stone, water and steam beside their mirrors, 0 differ (53 before); 4500 whole-game worlds with the real blocks (steam, pumps, sand, crates), 0 differ (18 before).
+2. **The same tank and the same hole had two different steady flows (medium).** See "The law changed" below.
+3. **A taller tower made a wheel in the middle of a short pipe weaker (low).** It was the same fault seen from the wheel: under a lower tower the pipe after the wheel did not run full, so the wheel was the spout and got most of the head; once the pipe ran full it got only its own two links' rubbing. *Fixed by the new law:* the pipe runs full or not by the pressure alone, so the wheel's share only grows with the tower (kept 1 to 8 deep, wheel in the middle of 3 cells: 0.11, 0.60, 0.60, 0.71, 0.83, 0.96, 1.09, 1.23 a tick; before, from an empty pipe: 0.11, 0.17, 0.21, 1.40, 2.41, 3.21, 1.03, 1.17). **Not done:** a wheel still has no resistance of its own in the water circuit, so in the middle of a pipe it only gets what its two links rub away, far less than at the end (1.23 against 9.0 a tick under 8 cells). A real turbine takes the pressure drop it makes wherever it stands. That would be a new setting (a link through a wheel with less ease than `PIPE_EASE`) and would change what every wheel in a pipe gives, so it is left for a pass of its own; the guide and the wiki now say plainly "make it the LAST thing in the pipe".
+4. **The "Try this!" on `SURFACE_EASE` was not true (low).** The setting is gone (see below), and its note with it.
+5. **The level-stream wheel got a third stronger and its test bound was moved from 0.1 to 0.11 without a word (low).** The cause is the exact FALL and SPREAD shares of the first build ("inflow lands on what was left"). Before, the water coming into the wheel's cell was counted as landing on what the cell held *before* its own water left, which is higher than where it really lands: the wheel was told a little less than the water lost. Checked by putting that one line back in a copy of today's code: the wheel's best work goes from 0.1002 of a crank's back to 0.0752, the old number exactly. Each share is now exactly what was lost (the every-tick ledgers below are equalities to `1e-12`), so 0.100 is the right number and the bound stays 0.11. The test says why.
+
+### The law changed: PRESS only adds, and nothing jumps where a cell fills up
+
+**What was wrong.** A cell beside a pressed cell could sit in two states that both kept themselves going.
+
+- *Not full:* the hole gave it `(1 − level) ÷ 4 + SQUIRT_EASE × pressure` and it passed water on by SPREAD, a quarter of its level. It hovered at 0.5 to 0.8.
+- *Full:* it was a point. The link into it had `PIPE_EASE` (32 times the hole's ease), and its own far side was now the hole, squirting into an emptier cell. Twice the flow, and the pressure behind kept it full.
+
+Three seams let both stand: (a) the push into a cell jumped from `SQUIRT_EASE × pressure` to `PIPE_EASE × pressure` the moment the cell filled; (b) a full cell's hole flow was all done in PRESS (and SPREAD skipped that side), while a part-full cell's was done in SPREAD, so the two were out of step and a cell that PRESS filled to the brim was emptied a little by SPREAD and was "not full" again next step; (c) a surface had ease 1/4 and a link ease 1, the same jump for a pipe going up. A cell crossed over only when the hole alone could fill it in one small step (about 7 cells of head).
+
+**The new law.**
+
+1. **PRESS only moves what pressure ADDS. SPREAD always does its plain quarter, the same for every cell and every side.** `carried` (the list of sides PRESS had "already done") is gone. A full cell with no pressure on it does in PRESS exactly what a pressed one does with its pressure taken away: nothing. So there is no seam between pressed and not.
+2. **The hole law.** For a point `i` and a cell `j` beside it that is not a point, with `pressure = H(i) − floor(i) − 1` (only while that is 0 or more):
+
+   ```
+   flow = min( PIPE_EASE × pressure ,  HOLE_EASE × pressure + water[j] ÷ 3 )        HOLE_EASE = SQUIRT_EASE × 4 ÷ 3
+   ```
+
+   never more than `j`'s room. The first line is the link `j` would be if it were just full, so nothing jumps when it fills. The second line is the narrow hole: with the quarter SPREAD moves afterwards, it comes to `1/4 + SQUIRT_EASE × pressure` in all (the "4 ÷ 3" and "÷ 3" are there because SPREAD's quarter is a quarter less for every bit PRESS has just put in), **whatever `j` holds already.** Into an empty cell that is the old squirt exactly.
+3. **A surface is a link like any other:** `PIPE_EASE × (H − level)`. `SURFACE_EASE` is deleted (one setting fewer). With ease 1 a surface moves at most to the head just under it, never past it; the levelling tests (no arm turns back, and it stops) pass untouched, about twice as fast.
+4. **SPREAD moves what PRESS has just pushed in, too** (not what has just FALLEN in: a falling stream is still a stream). A cell that PRESS fills up passes a quarter on in the same small step, like a cell that was full already.
+5. **The last cell of a pipe that is running full is found afresh in every small step.** SPREAD takes a quarter out of it through the open end; PRESS fills it up again next step and it counts as a point again ("a cell that fills up passes the push on", unchanged). Whether a pipe runs full is decided by the pressure there is now, never remembered from the step before.
+6. **The books: `onFill`.** The water that fills a cell up under pressure arrives pushed (at the cell's head) and then just sits there; the push it had left, `amount × H − (what its height energy really rose)`, is used up in that cell. It was already left out of every wheel's count (so the books were safe). It is now told to `onFill(cell, energy)`, and `stepFluids` gives it to a water wheel in that cell: that is how a wheel in the last cell of a pipe gets its head, now that its water leaves by SPREAD. Every-tick ledgers with a wheel in every open cell: credited = lost to `2e-12`.
+
+**Why there is one answer now (the idea, not a proof).** Call a cell's water plus its pressure its "fill" (under 1: part full; over 1: pressed). The push into a cell is now a function of the fills that has no jump at 1 and never grows when the cell's own fill grows; what a cell passes on never shrinks when its fill grows. A steady state is where the two are equal, and two such curves cross once. (Before, the first curve jumped up at 1, and they crossed twice.) Nothing in the step remembers the step before except the water itself.
+
+**The sums.** A hole is now two straight lines (the smaller is the law), so an end can be: shut, on its first line, on its second line, or held at "all the room there is". Three changes keep the sums from going round in circles: an end moves **one step at a time** along that list (a hole never jumps from shut to its second line or back; a surface never jumps from "gives all it can" to "takes all it can"); a shut hole **may open again** (twice at most in one small step, and only in a part with something to measure its push from); `PRESS_ROUNDS` is 16 (was 8). "A hole that is shut early stays shut for that step" (a known edge of the first build) is gone.
+
+### Measured
+
+Steady flow out of a tank 3 wide kept 10 deep (topped up every tick), through its wall, the water then falling away, in cells a tick. "Before" is the code before this repair, hole or pipe beginning empty / beginning full of water; now both give the same number to `1e-7`.
+
+| Row of the tank's water the way out is in | 1 (top) | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| Bare hole, before: empty / full | 0.43 / 0.43 | 0.54 / 1.02 | 0.60 / 1.13 | 0.66 / 1.23 | 0.71 / 1.33 | 0.77 / 1.42 | 1.52 / 1.52 | 1.61 / 1.61 |
+| Bare hole, now | 0.46 | 1.05 | 1.16 | 1.26 | 1.36 | 1.46 | 1.56 | 1.66 |
+| 5 cells of pipe, now | 0.16 | 0.69 | 1.04 | 1.13 | 1.23 | 1.32 | 1.41 | 1.49 |
+| 9 cells of pipe, now | 0.10 | 0.45 | 0.78 | 1.03 | 1.11 | 1.20 | 1.28 | 1.36 |
+| 15 cells of pipe, now | 0.06 | 0.29 | 0.51 | 0.73 | 0.94 | 1.05 | 1.12 | 1.20 |
+
+From the second row down a bare hole grows 10% to 6% a cell (the test allows 30%). A long pipe grows in step with the head until the hole at its end is the narrow place: about `head ÷ (cells of pipe + 1)` a small step, then `1/4 + SQUIRT_EASE × pressure`.
+
+The guide's machine (tower 3 wide kept `d` deep, 2 cells of pipe, an enclosed wheel, a free fall), pipes beginning empty / full:
+
+| Tower | 2 | 3 | 4 | 5 | 6 | 8 |
+|---|---|---|---|---|---|---|
+| Wheel's best power, before: empty / full | 1.3 / 7.2 | 1.6 / 17.4 | 3.9 / 28.1 | 27.7 / 40.0 | 36.3 / 53.1 | 82.7 / 82.7 |
+| Now (both) | 10.2 | 20.6 | 32.0 | 44.8 | 58.8 | 90.3 |
+| Fall (work ÷ flow), now | 1.09 | 1.88 | 2.69 | 3.48 | 4.26 | 5.76 |
+
+Also single-valued and growing with the tank (throwaway scripts in `r3/`): a riser 2 to 5 cells up running over one way or both; a pipe down out of a tank's floor to an elbow; a hole onto 2, 6 and 12 cells of floor; a tee with an open branch. With the tank topped up every *small step* (so nothing pulses) the two starts agree to `2e-13`. 150 random builds with faucets and drains, each run once from dry and once from brim full for 3000 ticks, give every wheel the same (they did before the repair too: a faucet's trickle never reached the two-state band).
+
+Levelling (within 5% / 1% of level, ticks): the U-tube of the tests 3 / 3 (was 7 / 8); tower and pipe 4 / 5 (9 / 11); 22 cells of pipe 11 / 16 (14 / 20); 11-deep arm, 8 of pipe, a 4-wide basin 10 / 13 (12 / 17); 7-deep arm into a 5-wide basin 5 / 6 (8 / 11); 12-deep arm into a 13-wide basin 9 / 21 (14 / 31). No arm turns back that did not before (the 13-wide basin's far column still dips twice as the hump passes).
+
+The rows of the last addendum's table again: a hole at ground level, tank kept 1 / 2 / 5 / 10 deep, out of the tank in tick 40: 0.089 / 0.34 / 1.31 / 2.20 (0.089 / 0.39 / 0.82 / 2.07). The same hole, tank left to drain, 5 / 10 deep: half empty after 5 / 5 ticks (9 / 7). A tank with a hole at its foot under three faucets stands 1.50 deep (1.6). A wheel at a spout under a tank kept 10 deep: 12.6 a tick with its water falling away, 2.2 standing in its puddle (10.1 and 2.1). The seven faucet-tank-hole scenes all hold still now (worst swing 2.5e-9; one of them used to pulse).
+
+### What this costs, so the owner knows
+
+- **A hole in the top row of the water is the odd one out.** Water there is not pressed: it spills over the lip with the hole cell under half full (0.46 a tick), and one row lower it is pressed and runs 2.3 times as fast. From there down it grows smoothly. A real tank does the same in kind (a weir against a hole running full: about 1.8 times), and less in size. The flow is not a square root of the depth, as Torricelli's is: it is a quarter of a cell plus `SQUIRT_EASE ×` pressure, a straight line. Both are as they were.
+- **Levelling is about twice as fast as it was** (a U-tube is level in under half a second), because the top of the water now moves as easily as the rest of it. It still cannot slosh. The alternative (keeping a stiffer surface) leaves a small jump where a riser's top cell fills, so it was not kept.
+- **A tower runs out faster through a pipe that points up** (it spills both ways at the top, each side at the hole's rate). `water-tower.png` is taken at tick 4 now, not 8.
+- **The last cell of a pipe that is running full reads, and is drawn, about three quarters full** at the end of a tick (it has just passed a quarter on). The cells behind it are full.
+- **A squirt goes one cell further sideways in the small step it comes out**, a quarter of it, before it falls.
+- **A wheel in the middle of a pipe still gets only the rubbing** (finding 3). It never gets weaker under a taller tower now, but it is much weaker than at the end.
+- A flow of `1e-12` or less still counts as nothing wherever a choice is made, as before.
+
+### Sweeps on the code as repaired (throwaway scripts in the session scratchpad; `r3/final.sh` runs them all)
+
+| Sweep | What | Result |
+|---|---|---|
+| `repair2/strict.mjs`, no pumps | 3 × 1500 random worlds × 300 ticks, each beside its mirror | In every single tick: wheel work − (energy lost, counting carried push) worst +4.0e-13; water worst 4.3e-14; fullest cell `FULL` + 1.6e-14; **0 of 4500 differ from their mirror**; none restless; `stuck` 0 |
+| `repair2/strict.mjs`, pumps | 3 × 1500 worlds | Wheel work − energy lost − pump work, worst +3.6e-13 in a tick; pump work ≤ 0.9 × electricity in every tick; water worst 2.3e-13; fullest cell `FULL` + 9.9e-13; **0 of 4500 differ from their mirror**; 11 restless; `stuck` 0 |
+| `r2e/fz.mjs` (the reviewer's) | 600 worlds × 150 ticks in each of four ways: every open cell a wheel; mixed; pumps re-powered at random; valves switched mid-run | Worst in a tick +2.1e-12, +7.5e-13, +9.0e-10 (the speck top-up), +6.9e-13; water worst 1.7e-13; `stuck` 0 in all four |
+| `r2e/minmir.mjs`, `r2e/mirwg.mjs` (the reviewer's) | 30 000 tiny steam worlds; 3 × 1500 whole-game worlds, each beside its mirror | 0 differ; 0 differ, no water or steam made or lost |
+| `r2e/eq.mjs`, `eq2.mjs`, `fountain.mjs`, `wg1.mjs` (the reviewer's) | coming to rest; 528 running fountains; 96 whole-game pump builds | None restless or uneven; none flicker; the water's gain never passed 0.9 × the pumps' current squared (worst 0.824) |
+| `repair2/strict-steam.mjs` | 1000 steam worlds × 200 ticks | Turbine work − energy lost, worst +7.5e-14 in a tick; steam worst 9.2e-14 |
+| `sweep1-random-worlds.mjs` | 1000 without pumps, 1000 with | Energy never rose by itself (worst +1.1e-12); ledger worst 0; water worst 3.1e-13; fullest cell `FULL` + 6.2e-14; pump work never above 0.9 × electricity; `stuck` 0 |
+| `sweep5-towers.mjs` | 2 × 500 worlds of towers, wheels, valves and pumps | Ledger worst +5.7e-14; water worst 1.8e-13; no world flickered (most turn-backs 2); `stuck` 0 |
+| `sweep6-steady.mjs`, `sweep7-nozzle-loops.mjs` | 13 steady machines; 300 tower-and-nozzle loops feeding their own pumps | All 13 hold still; 0 bad: all 300 ran, all stop and stay stopped |
+| `fuzz-whole-game.mjs` | 700 random whole-game worlds | No cell over `FULL` after any pack's turn; no water made (worst 1.1e-13) |
+| `old/law/sweep2` to `7` | soups, 2 × 400 pump → wheels → generator loops, winch towers, feedback plants, wheels with batteries | 0 bad in each (615 loops really ran; worst books gap 1.9e-10, as before) |
+| `old/turbine/sweep1`, `old/repair/sweep-lift.mjs`, `old/r3fix/sweep.mjs` | 1200 steam worlds; 400 and 1200 rope-and-water runs | 0 bad; the rope ledgers never climbed back (worst +0.0000) |
+
+### Speed (ms a tick, `stepFluids` only)
+
+| World (24 × 14) | Before | Now |
+|---|---|---|
+| Empty | 0.11 | 0.11 |
+| Brim full of still water | 0.50 | 0.52 (no solves) |
+| Brim full, one column emptied | 1.7 (worst tick 5.4) | 1.8 (worst 12.6: the first tick, a wall of water 14 high let go at once) |
+| Two big tanks joined by a pipe, one full | 1.0 (worst 2.1) | 1.1 (worst 3.3) |
+| Maze of full pipes | 0.42 | 0.46 |
+| 12-deep tower emptying through a hole onto the floor | 0.61 | 0.65 |
+| Tower kept full by faucets, 14 pipes, a wheel, drains | 0.46 | 0.58 |
+| Brim full with a pump in the middle | 6.1 | 6.4 |
+| Random worlds with dozens of pumps | mean 1.05, 99 in 100 under 2.7 | mean 1.29, 99 in 100 under 4.0, 999 in 1000 under 6.9 |
+
+A little slower where water is running out of something (the open end is found afresh each small step: about one more pass of sums), the same elsewhere. A tick has 125 ms.
+
+### Known edges left
+
+- **A wheel has no resistance of its own in the water circuit** (see finding 3).
+- **The top row of the water** (see "What this costs").
+- **A full cell that is a speck short is topped up, even from a little lower down** (the `1e-9` creep of the last addendum; worst seen in a tick here 9.0e-10; no wheel is credited any of it).
+- **Pump soups that keep moving**, and **water left inside an upward pump**: as before.
+- `stuck`: 0 in every sweep above (about 20 million solves). Before the one-step-at-a-time rule the new law's sums gave up a few times in a million; four such worlds are kept in `tests/fixtures/stuck-worlds.json`.
+
+### Docs and pictures
+
+Guide and wiki: make a water wheel the last thing in its pipe; every cell taller the tower, the wheel a bit stronger; a hole in the top row only spills; the same tank and pipe always run just as fast whichever was built first; two more experiments (pipe first or water first? where does the wheel go?). `water-tower.png` was made again at tick 4; the other pictures came out the same file. `CACHE_NAME` stays (the service worker fetches the game's own files from the network first, and no file was added to or renamed in the list it saves).
