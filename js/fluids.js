@@ -1002,7 +1002,10 @@ let bandScratch = new Float64Array(0);
  *     it, it just empties the cell behind it. A pump that is switched
  *     off is a shut door: no water gets past it at all, pressed or
  *     not (see flowTable). Pumps in a row work as one taller pump
- *     (see workingPumps).
+ *     (see workingPumps). And a pump with nothing behind it moves
+ *     nothing: an open cell behind it can give no more than it
+ *     holds, so a pump running dry never holds up the water it points
+ *     into.
  *   • The rule for every point: what flows in, flows out.
  *
  * Solving that (solveBanded) gives every point's head, and so every
@@ -1026,6 +1029,13 @@ let bandScratch = new Float64Array(0);
  * wheel in a pipe gets exactly what the water gave up going through it.
  * Nothing here can raise the water's energy except a pump, and the work
  * each pump did on the water is added up in `pumpWork`.
+ *
+ * NOTHING HANGS ON A ROUNDING SPECK. Sums like these never come out as
+ * exactly nothing: a flow that should be 0 comes out as a speck above or
+ * below it. So a flow of a million-millionth or less counts as nothing
+ * wherever a choice is made (is this hole pressed? does this pump
+ * run?), and that is what makes a mirrored build give the mirrored
+ * answer.
  * @param {object} world - the world
  * @param {Float64Array} w - how much water each cell holds, after FALL (not changed)
  * @param {{joined: Int32Array, pump: Uint8Array, sky: Uint8Array, floor: Int32Array}} table - from flowTable
@@ -1059,11 +1069,7 @@ function pressWater(world, w, table, pumps, onMove, press) {
   const promoted = new Uint8Array(size); // cells that fill up in this step: points too
   const banned = new Uint8Array(size);   // cells that were tried as points and weren't really pressed
   const opened = new Uint8Array(size);   // full cells a pump is emptying: not points in this step
-  const pumpEnd = new Uint8Array(size);  // cells right behind or in front of a working pump
-  for (const pump of pumps) {
-    pumpEnd[pump.back] = 1;
-    pumpEnd[pump.ahead] = 1;
-  }
+  const pumpEnd = new Uint8Array(size);  // cells right behind or in front of a pump that can move water
   const node = new Uint8Array(size);      // 1 for every point
   const local = new Int32Array(size).fill(-1); // a point's number inside the group being solved
   const parent = new Int32Array(size);    // for finding which points hang together
@@ -1133,16 +1139,25 @@ function pressWater(world, w, table, pumps, onMove, press) {
     // little gentler for each of its two cells that is open: an open
     // cell's level moves as the pump moves water, and the lift is
     // measured AFTER the water has moved, so the pump never overshoots.
+    // A PUMP WITH NOTHING BEHIND IT MOVES NOTHING: an open cell behind
+    // the pump can give no more than it holds, and an open cell in front
+    // can take no more than it has room for (`cap`). A pump whose cap is
+    // nothing is left out: it is as good as switched off.
     const pumpParts = [];
+    pumpEnd.fill(0);
     for (const { back, ahead, level, count = 1 } of pumps) {
+      const cap = Math.min(node[back] ? Infinity : w[back], node[ahead] ? Infinity : Math.max(0, FULL - w[ahead]));
+      if (cap <= 1e-12) continue;
+      pumpEnd[back] = 1;
+      pumpEnd[ahead] = 1;
       const open = (node[back] ? 0 : 1) + (node[ahead] ? 0 : 1);
       // (A row of `count` pumps: the pushes add up in `level`, and the
       // water has to get through every one of them. See workingPumps.)
       const ease = PUMP_RATE / PUMP_HEAD / FLUID_STEPS / count;
       const stall = PUMP_HEAD * level;
       pumpParts.push({
-        back, ahead, stall, ease: ease / (1 + ease * open), on: true, starved: false, q: 0,
-        most: Math.min(ease * stall, node[back] ? Infinity : w[back], node[ahead] ? Infinity : Math.max(0, FULL - w[ahead])),
+        back, ahead, stall, ease: ease / (1 + ease * open), on: true, capped: false, starved: false, q: 0,
+        cap, most: Math.min(PUMP_RATE * level / count / FLUID_STEPS, cap),
       });
       if (node[back] && node[ahead]) union(back, ahead);
     }
@@ -1247,6 +1262,7 @@ function pressWater(world, w, table, pumps, onMove, press) {
       const x = new Float64Array(n);
       const part = new Int32Array(n);  // which points hang together in THIS round (a stopped pump joins nothing)
       const held = new Uint8Array(n);  // parts with somewhere of known head to measure from
+      const net = new Float64Array(n); // for a part with nowhere to measure from: its known flows, added up
       /**
        * Which part of the group is this point in, this round?
        * @param {number} k - the point's number in the group
@@ -1313,7 +1329,11 @@ function pressWater(world, w, table, pumps, onMove, press) {
           if (!pump.on) continue;
           const b = local[pump.back];
           const f = local[pump.ahead];
-          if (b >= 0 && f >= 0) {
+          if (pump.capped) {
+            // Held at all its open cell can give (or take): a flow that is known.
+            if (b >= 0) x[b] -= pump.q;
+            if (f >= 0) x[f] += pump.q;
+          } else if (b >= 0 && f >= 0) {
             link(b, f, pump.ease);
             x[b] -= pump.ease * pump.stall;
             x[f] += pump.ease * pump.stall;
@@ -1327,6 +1347,33 @@ function pressWater(world, w, table, pumps, onMove, press) {
             held[partOf(f)] = 1;
           }
         }
+        // A part with nothing to measure from has every one of its flows
+        // held at a known amount. If those don't add up (more held coming
+        // in than going out, or the other way round), something is held
+        // too hard: let go of it, and do the sums again.
+        net.fill(0);
+        for (let k = 0; k < n; k++) if (!held[partOf(k)]) net[partOf(k)] += x[k];
+        let letGo = false;
+        for (const pump of group.pumps) {
+          if (!pump.on || !pump.capped) continue;
+          const b = local[pump.back];
+          const f = local[pump.ahead];
+          // Too much coming in: a pump pushing in may push less. Too much going out: a pump taking out may take less.
+          if ((f >= 0 && !held[partOf(f)] && net[partOf(f)] > 1e-12) || (b >= 0 && !held[partOf(b)] && net[partOf(b)] < -1e-12)) {
+            pump.capped = false;
+            letGo = true;
+          }
+        }
+        for (const end of ends) {
+          if (end.state !== 1) continue;
+          const root = partOf(local[end.i]);
+          if (held[root]) continue;
+          if ((net[root] < -1e-12 && end.q > 0) || (net[root] > 1e-12 && end.q < 0)) {
+            end.state = 0;
+            letGo = true;
+          }
+        }
+        if (letGo) continue;
         // A part with nothing to measure from is shut in: only differences
         // of head matter in it. Pin one of its points at "just full".
         const loose = [];
@@ -1356,7 +1403,8 @@ function pressWater(world, w, table, pumps, onMove, press) {
           } else if (want < end.low - 1e-12) {
             state = end.low === 0 ? 2 : 1;
             q = end.low;
-          } else if (end.low === 0 && want <= 0) {
+          } else if (end.low === 0 && want <= 1e-12) {
+            // (A rounding speck either side of nothing is nothing: which side it fell on must not matter.)
             state = 2;
             q = 0;
           }
@@ -1367,13 +1415,29 @@ function pressWater(world, w, table, pumps, onMove, press) {
         for (const pump of group.pumps) {
           if (!pump.on) continue;
           const want = pump.ease * (pump.stall - headAt(pump.ahead, x) + headAt(pump.back, x));
-          if (want <= 0) {
-            // A pump never runs backwards. (If the water behind it isn't even pressed, it is starved.)
+          if (want <= 1e-12) {
+            // A pump never runs backwards. (If the water behind it isn't even
+            // pressed, it is starved.) A pump that can move nothing comes out
+            // as a rounding speck either side of 0: that counts as nothing too,
+            // so that which side it fell on never matters.
             pump.on = false;
             pump.q = 0;
             changed = true;
-            if (local[pump.back] >= 0 && x[local[pump.back]] < floor[pump.back] + 1 - 1e-9) pump.starved = true;
-          } else pump.q = want;
+            // (Only where there is something to measure the push from: in a
+            // shut-in part the heads are only right compared with each other.)
+            const b = local[pump.back];
+            if (b >= 0 && held[partOf(b)] && x[b] < floor[pump.back] + 1 - 1e-9) pump.starved = true;
+          } else if (want > pump.cap + 1e-12) {
+            // It would move more than its open cell holds (or has room for):
+            // it moves just that much. (A pump with nothing behind it moves nothing.)
+            if (!pump.capped || Math.abs(pump.q - pump.cap) > 1e-15) changed = true;
+            pump.capped = true;
+            pump.q = pump.cap;
+          } else {
+            if (pump.capped) changed = true;
+            pump.capped = false;
+            pump.q = want;
+          }
         }
         // A shut-in part must not take in or give out any water.
         bad = false;
@@ -1465,10 +1529,14 @@ function pressWater(world, w, table, pumps, onMove, press) {
   // --- A safety net for cells that two groups (or a group and a pump)
   // both use: nothing may be over-filled or run dry. All the flows of a
   // group are scaled down together, so "what goes in comes out" stays true.
+  // (A flow that is only a rounding speck doesn't count here: a speck with
+  // no room for it must never slow a whole body of water down.)
+  const SPECK = 1e-12;
   const into = new Float64Array(size);
   const outOf = new Float64Array(size);
   for (const group of flows) {
     for (const flow of group.list) {
+      if (flow.q <= SPECK) continue;
       if (!node[flow.to]) into[flow.to] += flow.q;
       if (!node[flow.from] && !(flow.end && flow.end.side === 0)) outOf[flow.from] += flow.q;
     }
@@ -1477,6 +1545,7 @@ function pressWater(world, w, table, pumps, onMove, press) {
     let scale = 1;
     for (const flow of group.list) {
       if (flow.lin < -1e-12 && !flow.pump) scale = 0; // nothing but a pump may push water uphill
+      if (flow.q <= SPECK) continue;
       if (!node[flow.to]) {
         const room = Math.max(0, FULL - w[flow.to]);
         if (into[flow.to] > room + 1e-15) scale = Math.min(scale, room / into[flow.to]);
@@ -1499,7 +1568,12 @@ function pressWater(world, w, table, pumps, onMove, press) {
       for (const flow of group.list) {
         const giving = Boolean(flow.end && flow.end.side === 0 && flow.from === flow.end.j);
         if (giving !== givers) continue;
-        const q = flow.q * group.scale;
+        let q = flow.q * group.scale;
+        if (flow.q <= SPECK && !giving) {
+          // A speck goes only as far as there is room for it, and water to take it from.
+          if (!node[flow.to]) q = Math.min(q, Math.max(0, FULL - after[flow.to]));
+          if (!node[flow.from]) q = Math.min(q, Math.max(0, after[flow.from]));
+        }
         if (q <= 0) continue;
         moved += q;
         applied.push({ flow, q, lin: flow.lin * group.scale });

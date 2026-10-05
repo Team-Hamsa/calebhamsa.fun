@@ -5,6 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createWorld, getFluid, setBlock, setFluid } from '../js/world.js';
 import { REFERENCE_CURRENT } from '../js/circuit.js';
 import {
@@ -1690,4 +1691,60 @@ test('no share of the energy is less than nothing: a little water and a lot meet
     assert.ok(fromWheel <= lost + 1e-12, `small step ${step}: the wheel's water was given ${fromWheel} of ${lost}`);
     if (step === 0) assert.ok(fromWheel > 0.04, `the wheel's water was given ${fromWheel}`);
   }
+});
+
+test('worlds that once came out differently in a mirror (because of the sign of a rounding speck) now come out the same', () => {
+  // Each world was caught by a sweep of random worlds against their mirror
+  // images. In all of them a number that should be exactly nothing came
+  // out as a speck above or below it, and which one decided what happened.
+  const worlds = JSON.parse(readFileSync(new URL('./fixtures/mirror-worlds.json', import.meta.url), 'utf8'));
+  for (const { why, rows, water, current } of worlds) {
+    const width = rows[0].length;
+    /**
+     * Where a cell lands in the mirror image.
+     * @param {number} index - the cell
+     * @returns {number} the mirrored cell
+     */
+    const across = (index) => Math.floor(index / width) * width + (width - 1 - index % width);
+    const plain = worldFrom(rows);
+    const flipped = worldFrom(mirrored(rows));
+    water.forEach((amount, index) => {
+      plain.fluid.water[index] = amount;
+      flipped.fluid.water[across(index)] = amount;
+    });
+    plain.signals.electric = { cells: new Map(current.map(([index, amps]) => [index, { current: amps }])) };
+    flipped.signals.electric = { cells: new Map(current.map(([index, amps]) => [across(index), { current: amps }])) };
+    for (let tick = 0; tick < 5; tick++) {
+      stepFluids(plain, blockInfo);
+      stepFluids(flipped, blockInfo);
+      plain.fluid.water.forEach((amount, index) => {
+        const other = flipped.fluid.water[across(index)];
+        assert.ok(Math.abs(amount - other) < 1e-9, `${why}: tick ${tick}, cell ${index} holds ${amount}, its mirror image ${other}`);
+      });
+    }
+  }
+});
+
+test('a pump with nothing behind it moves nothing, and does not hold up the water it points into', () => {
+  // A tank levels with a basin. A pump in the basin's roof points down into
+  // it, with only air behind it. Switched on or off, the water does the same.
+  const rows = ['#~#####', '#~#####', '#~#...#', '#~##v.#', '#~~...#', '#######'];
+  const off = worldFrom(rows);
+  const on = worldFrom(rows);
+  powerPumps(on, 1);
+  for (let tick = 0; tick < 40; tick++) {
+    stepFluids(off, blockInfo);
+    const { pumpWork } = stepFluids(on, blockInfo);
+    assert.equal(pumpWork, 0);
+    on.fluid.water.forEach((amount, index) => assert.ok(Math.abs(amount - off.fluid.water[index]) < 1e-9, `tick ${tick}, cell ${index}: ${amount} with the pump on, ${off.fluid.water[index]} with it off`));
+  }
+  assert.ok(Math.abs(column(on, 1, 0, 4) - column(on, 5, 0, 4)) < 0.01, `the tank stands ${column(on, 1, 0, 4)}, the far side ${column(on, 5, 0, 4)}`);
+  // And a pump fed by a trickle moves the trickle, and no more: the tank and
+  // the far side still come level (both a little higher, with the faucet's water).
+  const fed = worldFrom(['#~##F##', '#~##.##', '#~#...#', '#~##v.#', '#~~...#', '#######']);
+  powerPumps(fed, 1);
+  run(fed, 20);
+  assert.ok(Math.abs(column(fed, 1, 0, 4) - column(fed, 5, 3, 4)) < 0.05, `with a trickle through the pump the tank stands ${column(fed, 1, 0, 4)}, the far side ${column(fed, 5, 3, 4)}`);
+  assert.ok(Math.abs(total(fed, 'water') - (6 + 20 * FAUCET_RATE)) < 1e-9);
+  assert.ok(column(fed, 4, 1, 2) < 3 * FAUCET_RATE, `the pump is not keeping up with its trickle: ${column(fed, 4, 1, 2)} is waiting behind it`);
 });
