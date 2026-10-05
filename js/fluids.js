@@ -41,7 +41,10 @@
  *
  * Fluid only moves between two cells if BOTH let it through on the
  * sides that touch: air lets it through everywhere, solid blocks never
- * do, and pipes only along their open sides (see openSides).
+ * do, and pipes only along their open sides (see openSides). A PUMP IS
+ * A SHUT DOOR: the only water that gets past it is what it pushes
+ * itself, so a pump that is switched off holds back a whole tank (and
+ * steam can't get through a pump at all). See flowTable.
  */
 import { AIR, FLUIDS, getBlock, inBounds, swapBlock } from './world.js';
 import { OPPOSITE, REFERENCE_CURRENT, SIDES } from './circuit.js';
@@ -152,18 +155,6 @@ export function storedEnergy(amount) {
   if (amount <= FULL) return (amount * amount) / (2 * FULL);
   const extra = amount - FULL;
   return FULL / 2 + extra + (extra * extra) / (2 * STEAM_SQUEEZE);
-}
-
-/**
- * STEAM ONLY. How hard the steam in a cell pushes: half full is 0.5,
- * and full with 3 full cells of steam packed in behind it is 4, because
- * each of them squeezes it by STEAM_SQUEEZE. (How hard WATER pushes is
- * worked out from how deep it is: see pressWater and world.signals.press.)
- * @param {number} amount - how much steam the cell holds
- * @returns {number} its push, in cells
- */
-export function headOf(amount) {
-  return amount <= FULL ? amount : FULL + (amount - FULL) / STEAM_SQUEEZE;
 }
 
 /**
@@ -444,7 +435,7 @@ export function placeBlock(world, x, y, name, blockInfo) {
  * Push all the water and steam out of a cell (a solid block was just
  * built there) into the cells next to it: up first, then the sides,
  * then down. A neighbor only takes it through a side it's open on (so
- * not through a pipe's wall), and never a pump (a one-way door). With
+ * not through a pipe's wall), and never a pump (a shut door). With
  * no neighbor to take it, it is lost. (The neighbor may end up with
  * more water than fits: placeBlock calls makeRoom next.)
  * @param {object} world - the world
@@ -499,7 +490,7 @@ const ROOM_SLACK = 1e-12;
  * may be squeezed).
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
- * @param {{to: Int32Array, pump: Uint8Array}} [table] - from flowTable, if already worked out
+ * @param {{to: Int32Array}} [table] - from flowTable, if already worked out
  * @returns {number} how much water was dropped (0 when it all found room)
  */
 export function makeRoom(world, blockInfo, table) {
@@ -508,18 +499,16 @@ export function makeRoom(world, blockInfo, table) {
   let first = -1;
   for (let index = 0; index < size && first < 0; index++) if (water[index] > FULL + ROOM_SLACK) first = index;
   if (first < 0) return 0; // the usual answer: one quick look, and nothing to do
-  const { to, pump } = table ?? flowTable(world, allOpenSides(world, blockInfo), blockInfo);
+  const { to } = table ?? flowTable(world, allOpenSides(world, blockInfo), blockInfo);
   /**
    * Where can extra water go from this cell through one side? Out of
-   * any open side, but never INTO a pump (so never through one).
+   * any open side, but never INTO a pump (so never through one): that
+   * is just what flowTable's `to` says.
    * @param {number} cell - the cell it is in
    * @param {number} side - which side (a number: see SIDE_INDEX)
    * @returns {number} the neighbor's index, or −1
    */
-  const step = (cell, side) => {
-    const next = to[cell * 4 + side];
-    return next >= 0 && !pump[next] ? next : -1;
-  };
+  const step = (cell, side) => to[cell * 4 + side];
   const region = new Int32Array(size).fill(-1); // which pot each cell's extra goes in
   const seen = new Int32Array(size).fill(-1);   // which pot's search has been here
   let dropped = 0;
@@ -600,32 +589,6 @@ export function allOpenSides(world, blockInfo) {
 }
 
 /**
- * Make a "can fluid go from cell i out through this side?" checker.
- * Both cells must be open on the touching sides. A pump is a one-way
- * door: fluid may only leave it from its front, and only enter it from
- * its back.
- * @param {object} world - the world
- * @param {string[][]} sides - open sides by cell index (from allOpenSides)
- * @param {Function} blockInfo - looks up what a block name means
- * @returns {Function} (index, side) => the neighbor's index, or -1 if blocked
- */
-export function flowChecker(world, sides, blockInfo) {
-  return (index, side) => {
-    const x = index % world.width;
-    const y = Math.floor(index / world.width);
-    const [dx, dy] = STEP[side];
-    if (!inBounds(world, x + dx, y + dy)) return -1;
-    const next = index + dx + dy * world.width;
-    if (!sides[index].includes(side) || !sides[next].includes(OPPOSITE[side])) return -1;
-    const from = blockInfo(world.cells[index])?.fluid?.pump;
-    if (from && side !== from) return -1;
-    const into = blockInfo(world.cells[next])?.fluid?.pump;
-    if (into && side !== into) return -1;
-    return next;
-  };
-}
-
-/**
  * Keep a number between two limits.
  * @param {number} value - the number
  * @param {number} low - the smallest allowed
@@ -638,12 +601,19 @@ function clamp(value, low, high) {
 
 /**
  * Work out, once for the whole tick, where fluid can go from every cell
- * through every side, as plain lists of numbers (the same answers as
- * flowChecker gives, but asking it again and again is slow). For cell `i` and side number `s` (see
- * SIDE_INDEX), look at place `i * 4 + s`:
+ * through every side, as plain lists of numbers. For cell `i` and side
+ * number `s` (see SIDE_INDEX), look at place `i * 4 + s`:
  *
- *   to      the neighbor fluid may flow INTO from here (pumps are
- *           one-way doors), or −1
+ *   to      the neighbor fluid may flow INTO from here BY ITSELF
+ *           (falling, spreading, steam rising), or −1. Both cells must
+ *           be open on the sides that touch. And A PUMP IS A SHUT DOOR:
+ *           nothing goes into a pump by itself, from any side. The only
+ *           water that gets past a pump is what the pump pushes, from
+ *           the cell behind it to the cell in front (see workingPumps
+ *           and pressWater). So a pump that is switched off holds a
+ *           whole tank back. (Water that is somehow INSIDE a pump, from
+ *           an old saved world or a pump built into a pond, may leave
+ *           through the pump's front.)
  *   joined  the neighbor that is open BOTH ways, with neither cell a
  *           pump: cells where water stands as one body. Or −1
  *
@@ -686,9 +656,10 @@ export function flowTable(world, sides, blockInfo) {
       if ((side === 1 && x === width - 1) || (side === 3 && x === 0)) continue; // the edge of the world
       const next = index + across[side];
       if (next < 0 || next >= size || !(open[next] & (1 << ((side + 2) % 4)))) continue;
-      // A pump is a one-way door: out through its front only, in through its back only.
+      // A pump is a shut door: nothing goes in by itself, and what is inside
+      // may only leave through its front.
+      if (front[next] >= 0) continue;
       if (front[index] >= 0 && front[index] !== side) continue;
-      if (front[next] >= 0 && front[next] !== side) continue;
       to[index * 4 + side] = next;
       if (!pump[index] && !pump[next]) joined[index * 4 + side] = next;
     }
@@ -698,33 +669,63 @@ export function flowTable(world, sides, blockInfo) {
 
 /**
  * List the pumps that are switched on and can work this tick: enough
- * current, and open cells behind and in front (neither of them a pump).
+ * current, and open cells behind and in front.
+ *
+ * PUMPS IN A ROW WORK AS ONE. Pumps standing nose to tail, all facing
+ * the same way, are listed as one taller pump that takes water from
+ * the cell behind the first and puts it in the cell in front of the
+ * last. Like batteries in a row, their pushes add up: two pumps lift
+ * twice as high as one. But the water has to squeeze through both, so
+ * with nothing to lift they move no more than one pump does. Every pump
+ * in the row has to be switched on: one that is off is a shut door, and
+ * shuts the whole row. (So do two pumps pushing nose to nose.)
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @param {string[][]} sides - open sides by cell index (from allOpenSides)
- * @returns {Array<{index: number, back: number, ahead: number, level: number}>}
- *   each pump's own cell, the cell behind it, the cell in front of it,
- *   and how much electricity it gets (1 = one battery)
+ * @returns {Array<{index: number, back: number, ahead: number, level: number, count: number}>}
+ *   for each pump (or row of pumps): its first cell, the cell behind it,
+ *   the cell in front of it, how much electricity it gets (1 = one
+ *   battery; for a row, all its pumps' added up), and how many pumps
+ *   are in the row
  */
 export function workingPumps(world, blockInfo, sides) {
   const pumps = [];
+  /**
+   * Which way does the pump in this cell push? (undefined if it isn't a pump.)
+   * @param {number} index - the cell
+   * @returns {string|undefined} the side its front is on
+   */
+  const frontOf = (index) => (world.cells[index] === AIR ? undefined : blockInfo(world.cells[index])?.fluid?.pump);
   for (let index = 0; index < world.cells.length; index++) {
-    if (world.cells[index] === AIR) continue;
-    const front = blockInfo(world.cells[index])?.fluid?.pump;
+    const front = frontOf(index);
     if (!front) continue;
-    // The real current (not `level`, which stops at 2 so lamps don't get
-    // too bright): more batteries really do pump faster and higher.
-    const level = (world.signals.electric?.cells?.get(index)?.current ?? 0) / REFERENCE_CURRENT;
-    if (level < PUMP_ON_LEVEL) continue;
-    const x = index % world.width;
-    const y = Math.floor(index / world.width);
     const [dx, dy] = STEP[front];
-    if (!inBounds(world, x - dx, y - dy) || !inBounds(world, x + dx, y + dy)) continue;
-    const back = index - dx - dy * world.width;
-    const ahead = index + dx + dy * world.width;
-    if (!sides[back].includes(front) || !sides[ahead].includes(OPPOSITE[front])) continue;
-    if (blockInfo(world.cells[back])?.fluid?.pump || blockInfo(world.cells[ahead])?.fluid?.pump) continue;
-    pumps.push({ index, back, ahead, level });
+    const across = dx + dy * world.width;
+    let x = index % world.width;
+    let y = Math.floor(index / world.width);
+    if (!inBounds(world, x - dx, y - dy)) continue;
+    const back = index - across;
+    // Only the FIRST pump of a row lists the row.
+    if (frontOf(back) === front) continue;
+    if (frontOf(back) || !sides[back].includes(front)) continue;
+    let level = 0;
+    let count = 0;
+    let ahead = index;
+    let on = true;
+    while (on && frontOf(ahead) === front) {
+      // The real current (not `level`, which stops at 2 so lamps don't get
+      // too bright): more batteries really do pump faster and higher.
+      const own = (world.signals.electric?.cells?.get(ahead)?.current ?? 0) / REFERENCE_CURRENT;
+      if (own < PUMP_ON_LEVEL) on = false;
+      level += own;
+      count += 1;
+      x += dx;
+      y += dy;
+      if (!inBounds(world, x, y)) on = false;
+      ahead += across;
+    }
+    if (!on || frontOf(ahead) || !sides[ahead].includes(OPPOSITE[front])) continue;
+    pumps.push({ index, back, ahead, level, count });
   }
   return pumps;
 }
@@ -751,7 +752,7 @@ export function workingPumps(world, blockInfo, sides) {
  * more than the steam really gave up, and left and right get the same.
  *
  * @param {object} world - the world
- * @param {Function} canFlow - from flowChecker
+ * @param {Function} canFlow - (index, side) => the neighbor steam may flow into, or −1 (see flowTable's `to`)
  * @param {Function} onMove - told (fromIndex, toIndex, amount, energy, drop, part)
  *   for every move: `energy` is how much the steam gave up by moving (see
  *   fallEnergy, which works for steam with "down" meaning up), `drop` is
@@ -944,7 +945,9 @@ let bandScratch = new Float64Array(0);
  *     behind it to the cell in front, and pushes (see pumpAmount). A
  *     pump doesn't suck: if the water behind it isn't pressed toward
  *     it, it just empties the cell behind it. A pump that is switched
- *     off is a shut door.
+ *     off is a shut door: no water gets past it at all, pressed or
+ *     not (see flowTable). Pumps in a row work as one taller pump
+ *     (see workingPumps).
  *   • The rule for every point: what flows in, flows out.
  *
  * Solving that (solveBanded) gives every point's head, and so every
@@ -970,7 +973,7 @@ let bandScratch = new Float64Array(0);
  * @param {object} world - the world
  * @param {Float64Array} w - how much water each cell holds, after FALL (not changed)
  * @param {{joined: Int32Array, pump: Uint8Array, sky: Uint8Array, floor: Int32Array}} table - from flowTable
- * @param {Array<{back: number, ahead: number, level: number}>} pumps - from workingPumps
+ * @param {Array<{back: number, ahead: number, level: number, count: number}>} pumps - from workingPumps
  * @param {Function} onMove - told (from, to, amount, energy, drop, 0, true) for every pressed move
  * @param {Float64Array} press - filled in with every cell's pressure: for a
  *   point, how tall the water standing over its floor is (a full cell
@@ -1075,12 +1078,15 @@ function pressWater(world, w, table, pumps, onMove, press) {
     // cell's level moves as the pump moves water, and the lift is
     // measured AFTER the water has moved, so the pump never overshoots.
     const pumpParts = [];
-    for (const { back, ahead, level } of pumps) {
+    for (const { back, ahead, level, count = 1 } of pumps) {
       const open = (node[back] ? 0 : 1) + (node[ahead] ? 0 : 1);
-      const ease = PUMP_RATE / PUMP_HEAD / FLUID_STEPS;
+      // (A row of `count` pumps: the pushes add up in `level`, and the
+      // water has to get through every one of them. See workingPumps.)
+      const ease = PUMP_RATE / PUMP_HEAD / FLUID_STEPS / count;
+      const stall = PUMP_HEAD * level;
       pumpParts.push({
-        back, ahead, stall: PUMP_HEAD * level, ease: ease / (1 + ease * open), on: true, starved: false, q: 0,
-        most: Math.min(PUMP_RATE * level / FLUID_STEPS, node[back] ? Infinity : w[back], node[ahead] ? Infinity : Math.max(0, FULL - w[ahead])),
+        back, ahead, stall, ease: ease / (1 + ease * open), on: true, starved: false, q: 0,
+        most: Math.min(ease * stall, node[back] ? Infinity : w[back], node[ahead] ? Infinity : Math.max(0, FULL - w[ahead])),
       });
       if (node[back] && node[ahead]) union(back, ahead);
     }
@@ -1573,7 +1579,7 @@ function pressWater(world, w, table, pumps, onMove, press) {
  *   −1 rising), `part` is how much of the water the cell held at the
  *   start of the small step this move took (0 to 1; always 0 for a
  *   pressed move), and `pressed` is true for water moved by pressure
- * @param {Array<{back: number, ahead: number, level: number}>} [pumps] - the pumps that are running (from workingPumps)
+ * @param {Array<{back: number, ahead: number, level: number, count: number}>} [pumps] - the pumps that are running (from workingPumps)
  * @returns {{moved: number, pumpWork: number}} the total amount that
  *   moved, and the energy the pumps gave the water
  */
@@ -1759,7 +1765,8 @@ export const PUMP_ON_LEVEL = 0.25;
  *
  * (pressWater uses this same straight line, a quarter of it in each
  * small step, as one more part of its water circuit: a pump there is
- * like a battery.)
+ * like a battery. And like batteries, pumps in a row add up: two pumps
+ * nose to tail lift twice as high as one. See workingPumps.)
  * @param {number} level - the pump's current ÷ REFERENCE_CURRENT
  * @param {number} lift - how many cells of water it has to lift (downhill is negative)
  * @returns {number} how much water it moves in one tick
@@ -1942,8 +1949,8 @@ export function stepFluids(world, blockInfo) {
   const sides = allOpenSides(world, blockInfo);
   const table = flowTable(world, sides, blockInfo);
   /**
-   * Can fluid go from cell `index` out through this side? (flowChecker's
-   * answer, looked up in the table instead of worked out again.)
+   * Can fluid go from cell `index` out through this side by itself?
+   * (Looked up in the table: see flowTable's `to`.)
    * @param {number} index - the cell
    * @param {string} side - which side
    * @returns {number} the neighbor's index, or −1 if blocked

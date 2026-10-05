@@ -87,6 +87,8 @@ test('the Water guide says deep water presses harder, and no longer says it is s
   assert.ok(water.guide.rules.some((rule) => /presses harder/.test(rule)), 'the Water rules should say deep water presses harder');
   assert.ok(water.guide.rules.some((rule) => /can't be squashed/.test(rule)), 'the Water rules should say water can\'t be squashed');
   assert.match(water.guide.blocks.pumpRight.does, /doesn't suck/);
+  assert.match(water.guide.blocks.pumpRight.does, /no power is a shut door/);
+  assert.ok(water.guide.rules.some((rule) => /Two pumps in a row/.test(rule)), 'the Water rules should say pumps in a row lift higher');
   const gears = PACKS.find((pack) => pack.tab.id === 'gears');
   assert.match(gears.guide.blocks.waterWheel.does, /end of a pipe from a tall tank/);
 });

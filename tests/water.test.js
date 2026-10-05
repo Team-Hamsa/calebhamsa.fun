@@ -405,6 +405,34 @@ test('more batteries make a pump lift water HIGHER and faster; one battery stall
   assert.ok(two.ticksTo3 < one.ticksTo3, `two batteries took ${two.ticksTo3} ticks, one took ${one.ticksTo3}`);
 });
 
+test('a second pump stood on the first lifts the water higher (the obvious thing to try when the water stops part way up)', () => {
+  /**
+   * Some pumps one on top of the other under a tall shaft, a wide pool
+   * behind them, and one battery in a loop of wire round them all.
+   * @param {number} pumps - how many pumps
+   * @returns {number} how many cells high the water ends up standing above the pumps
+   */
+  const lift = (pumps) => {
+    const rows = ['#######...#######'];
+    for (let i = 0; i < 13 - pumps; i++) rows.push('########.########');
+    for (let i = 0; i < pumps; i++) rows.push('WWWWWWWW^WWWWWWWW');
+    rows.push(`W${'~'.repeat(15)}W`, `W${'#'.repeat(15)}W`, `WB${'W'.repeat(15)}`);
+    const world = worldFrom(rows);
+    const systems = allSystems();
+    for (let i = 1; i <= 1500; i++) tick(world, systems, blockInfo);
+    let total = 0;
+    world.fluid.water.forEach((amount) => { total += amount; });
+    assert.ok(Math.abs(total - 15) < 1e-9, `water went from 15 to ${total}`);
+    let height = 0;
+    for (let y = 13 - pumps; y >= 1 && getFluid(world, 'water', 8, y) > 0.5; y--) height++;
+    return height;
+  };
+  const one = lift(1);
+  const two = lift(2);
+  assert.ok(one >= 3 && one <= 6, `one pump lifted ${one} cells`);
+  assert.ok(two >= one + 3, `two pumps lifted ${two}, one lifted ${one}`);
+});
+
 test('sand sinks through water: they trade places and no water is lost', () => {
   const world = createWorld(1, 3);
   setBlock(world, 0, 0, 'sand');

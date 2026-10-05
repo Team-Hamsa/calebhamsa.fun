@@ -9,8 +9,8 @@ import { createWorld, getFluid, setBlock, setFluid } from '../js/world.js';
 import { REFERENCE_CURRENT } from '../js/circuit.js';
 import {
   BOIL_RATE, CONDENSE_RATE, DROP_POWER, FAUCET_RATE, FULL, FULL_SLACK, PIPE_EASE, PUMP_HEAD, PUMP_RATE, RISE_POWER, SQUIRT_EASE,
-  STEAM_SQUEEZE, SURFACE_EASE, allOpenSides, fallEnergy, flowChecker, flowTable, flowWater, headOf, makeRoom, openSides, placeBlock, pressWork, pumpAmount,
-  solveBanded, stableBelow, stepFluids, storedEnergy,
+  STEAM_SQUEEZE, SURFACE_EASE, allOpenSides, fallEnergy, flowTable, flowWater, makeRoom, openSides, placeBlock, pressWork, pumpAmount,
+  solveBanded, stableBelow, stepFluids, storedEnergy, workingPumps,
 } from '../js/fluids.js';
 
 /**
@@ -142,9 +142,12 @@ test('steam can be squeezed (the nearer the ceiling, the more a cell holds); wat
   assert.equal(stableBelow(1), 1);
   assert.ok(stableBelow(2) > 1 && stableBelow(2) < 1 + STEAM_SQUEEZE);
   assert.ok(stableBelow(4) > 2);
-  // Squeezed steam pushes harder: full, with 3 more cells' worth packed in behind it, pushes like 4.
-  assert.equal(headOf(0.5), 0.5);
-  assert.ok(Math.abs(headOf(1 + 3 * STEAM_SQUEEZE) - 4) < 1e-12);
+  // Squeezed steam pushes harder: full, with 3 more cells' worth packed in
+  // behind it, it pushes like 4. (How hard it pushes is how fast its energy
+  // grows as a little more is packed in.)
+  const push = (amount) => (storedEnergy(amount + 1e-7) - storedEnergy(amount - 1e-7)) / 2e-7;
+  assert.ok(Math.abs(push(0.5) - 0.5) < 1e-6);
+  assert.ok(Math.abs(push(1 + 3 * STEAM_SQUEEZE) - 4) < 1e-6);
   // Water: a tall column, with more poured on top, never shows a cell over full.
   const world = worldFrom(['#~#', '#~#', '#~#', '#~#', '#~#', '#~#', '#~#', '#~#', '###']);
   for (let i = 0; i < 300; i++) {
@@ -337,6 +340,9 @@ test('pumps in a shaft, a pond and a sealed ring: each tick the water gains no m
     ['#.........#', '#~~~~^~~~~#', '#~~~~~~~~~#', '###########'],                     // stirring a pond
     ['#####', '#ppp#', '#u#p#', '#ppp#', '#####'],                                     // a sealed ring, full all the way round
     ['#.#.#', '#~#.#', '#~#.#', '#~#.#', '#~<~#', '#####'],                           // pushing a U-tube out of level
+    ['#.#', '#.#', '#.#', '#.#', '#.#', '#.#', '#.#', '#.#', '#.#', '#^#', '#^#', '#~#', '#~#', '###'], // two pumps in a row, lifting
+    ['#....#....#', '#~~~>>>...#', '#~~~###...#', '###########'],                     // three in a row, on the level
+    ['######', '#pppp#', '#u##d#', '#u##d#', '#pppp#', '######'],                       // a sealed ring with two rows of two
   ];
   for (const rows of pictures) {
     for (const level of [0.5, 1, 2, 3.5]) {
@@ -741,7 +747,31 @@ function smallStep(world) {
   return flowWater(world, table, () => {});
 }
 
-test('flowTable gives the same answers as flowChecker, for every cell and side of lots of random worlds', () => {
+/**
+ * The rule for where fluid may go by itself, written out the slow and
+ * plain way, to check flowTable against: both cells open on the sides
+ * that touch; nothing goes INTO a pump; out of a pump only by its front.
+ * @param {object} world - the world
+ * @param {string[][]} sides - open sides by cell index (from allOpenSides)
+ * @returns {Function} (index, side) => the neighbor's index, or −1 if blocked
+ */
+function plainFlowRule(world, sides) {
+  const step = { up: [0, -1], right: [1, 0], down: [0, 1], left: [-1, 0] };
+  const opposite = { up: 'down', down: 'up', left: 'right', right: 'left' };
+  return (index, side) => {
+    const x = index % world.width + step[side][0];
+    const y = Math.floor(index / world.width) + step[side][1];
+    if (x < 0 || y < 0 || x >= world.width || y >= world.height) return -1;
+    const next = y * world.width + x;
+    if (!sides[index].includes(side) || !sides[next].includes(opposite[side])) return -1;
+    if (blockInfo(world.cells[next])?.fluid?.pump) return -1;
+    const from = blockInfo(world.cells[index])?.fluid?.pump;
+    if (from && side !== from) return -1;
+    return next;
+  };
+}
+
+test('flowTable gives the same answers as the rule written out plainly, for every cell and side of lots of random worlds', () => {
   const random = randomFrom(17);
   const names = Object.keys(TEST_BLOCKS);
   const sideNames = ['up', 'right', 'down', 'left'];
@@ -751,7 +781,7 @@ test('flowTable gives the same answers as flowChecker, for every cell and side o
       if (random() < 0.6) setBlock(world, index % world.width, Math.floor(index / world.width), names[Math.floor(random() * names.length)]);
     });
     const sides = allOpenSides(world, blockInfo);
-    const canFlow = flowChecker(world, sides, blockInfo);
+    const canFlow = plainFlowRule(world, sides);
     const table = flowTable(world, sides, blockInfo);
     world.cells.forEach((name, index) => {
       const pump = Boolean(blockInfo(name)?.fluid?.pump);
@@ -762,7 +792,7 @@ test('flowTable gives the same answers as flowChecker, for every cell and side o
         const next = canFlow(index, side);
         assert.equal(table.to[index * 4 + k], next, `world ${trial}, cell ${index} (${name}), ${side}`);
         // "joined": open both ways, and neither cell a pump.
-        const both = next >= 0 && !pump && !blockInfo(world.cells[next])?.fluid?.pump;
+        const both = next >= 0 && !pump;
         assert.equal(table.joined[index * 4 + k], both ? next : -1, `world ${trial}, cell ${index} (${name}), ${side}: joined`);
       });
     });
@@ -1105,8 +1135,9 @@ test('a pump that is switched off holds pressure back; a plain pipe lets it thro
   const off = run(worldFrom(rows), 300);
   // The water behind the pump never rises above the pump's own row.
   assert.ok(column(off, 3, 0, 5) < 1e-9, `water rose ${column(off, 3, 0, 5)} past a pump that is off`);
-  // (A little has trickled through it by falling and spreading, as far as the cell beyond: no further.)
-  assert.ok(column(off, 1, 0, 6) > 5 - 1e-9, `the tower holds ${column(off, 1, 0, 6)}`);
+  // Not a drop has got past it: a pump that is off is a shut door.
+  assert.equal(column(off, 1, 0, 6), 7);
+  assert.equal(column(off, 2, 6, 6) + column(off, 3, 0, 6), 0);
   assert.ok(Math.abs(total(off, 'water') - 7) < 1e-9);
   const open = run(worldFrom(rows.map((row) => row.replace('>', 'P'))), 300);
   assert.ok(Math.abs(column(open, 1, 0, 6) - column(open, 3, 0, 6)) < 0.01, `tower ${column(open, 1, 0, 6)}, riser ${column(open, 3, 0, 6)}`);
@@ -1309,6 +1340,100 @@ test('in lots of random worlds with pumps, wheels get no more than the water gav
   }
   // And in all the worlds of this file, the water circuit always settled.
   assert.equal(pressWork.stuck, 0);
+});
+
+test('a pump that is switched off is a shut door: a tank does not run out through it, sideways or down', () => {
+  // A dead pump in a tank's wall, with open floor beyond; and one in a tank's floor.
+  const wall = ['#~~~#....', '#~~~#....', '#~~~#....', '#~~~#....', '#~~~>....', '#########'];
+  const floor = ['#~~~#', '#~~~#', '#~~~#', '##v##', '#...#', '#...#', '#...#', '#####'];
+  for (const [rows, inside, held] of [[wall, [1, 3, 0, 4], 15], [mirrored(wall), [5, 7, 0, 4], 15], [floor, [1, 3, 0, 2], 9]]) {
+    const world = run(worldFrom(rows), 100);
+    let kept = 0;
+    for (let x = inside[0]; x <= inside[1]; x++) kept += column(world, x, inside[2], inside[3]);
+    assert.equal(kept, held, `${rows[rows.length - 2]}: the tank holds ${kept} of ${held}`);
+    // Switched on, the same pump lets the tank run out, and never faster than the pump's own law.
+    const on = worldFrom(rows);
+    powerPumps(on, 1);
+    let before = held;
+    for (let tick = 0; tick < 100; tick++) {
+      stepFluids(on, blockInfo);
+      let now = 0;
+      for (let x = inside[0]; x <= inside[1]; x++) now += column(on, x, inside[2], inside[3]);
+      // (The lift is downhill: at most the whole tank's depth, and a cell or two more.)
+      assert.ok(before - now <= pumpAmount(1, -8) + 1e-9, `tick ${tick}: ${before - now} went through in one tick`);
+      before = now;
+    }
+    assert.ok(before < held - 2, `only ${held - before} went through the running pump`);
+    assert.ok(Math.abs(total(on, 'water') - held) < 1e-9);
+  }
+  // And a U-tube with a dead pump for its bend does not level: with the pump on it does (and more).
+  const tube = ['#~#.#', '#~#.#', '#~#.#', '#~#.#', '#~>~#', '#####'];
+  const off = run(worldFrom(tube), 100);
+  assert.equal(column(off, 1, 0, 4), 5);
+  assert.equal(column(off, 3, 0, 4), 1);
+});
+
+test('steam does not get through a pump either', () => {
+  const world = run(worldFrom(['#.#', '#^#', '#s#', '###']), 50);
+  assert.equal(getFluid(world, 'steam', 1, 0) + getFluid(world, 'steam', 1, 1), 0);
+  assert.ok(Math.abs(total(world, 'steam') - 1) < 1e-12);
+});
+
+test('water left inside a pump (an old save, or a pump built into a pond) runs out of its front, and nothing gets in', () => {
+  const world = worldFrom(['#~r.#', '###.#', '###.#', '#####']);
+  run(world, 200);
+  assert.ok(getFluid(world, 'water', 2, 0) < 0.001, `the pump still holds ${getFluid(world, 'water', 2, 0)}`);
+  assert.equal(getFluid(world, 'water', 1, 0), 1);
+  assert.ok(Math.abs(getFluid(world, 'water', 3, 2) - 1) < 0.001);
+  assert.ok(Math.abs(total(world, 'water') - 2) < 1e-12);
+});
+
+test('pumps in a row work as one taller pump: two lift about twice as high as one, and no faster on the level', () => {
+  /**
+   * How much water ends up over the pumps, with one battery's worth each.
+   * @param {string[]} pumps - the pump rows
+   * @returns {{lifted: number, world: object}} the water above the pumps, and the world
+   */
+  const lift = (pumps) => {
+    const wall = '#'.repeat(8);
+    const world = worldFrom([...Array(16).fill(`${wall}.${wall}`), ...pumps.map((pump) => `${wall}${pump}${wall}`), '~'.repeat(17), '~'.repeat(17), '#'.repeat(17)]);
+    powerPumps(world, 1);
+    const height = world.height;
+    for (let tick = 0; tick < 1500; tick++) {
+      const electricity = pumps.length * REFERENCE_CURRENT ** 2; // current² × resistance (1), for each pump
+      const { pumpWork } = stepFluids(world, blockInfo);
+      assert.ok(DROP_POWER * pumpWork <= 0.9 * electricity + 1e-9, `tick ${tick}: the pumps did ${DROP_POWER * pumpWork} of work with ${electricity} of electricity`);
+    }
+    assert.ok(Math.abs(total(world, 'water') - 34) < 1e-9);
+    return { lifted: column(world, 8, 0, height - 4 - pumps.length), world };
+  };
+  const one = lift(['^']).lifted;
+  const two = lift(['^', '^']).lifted;
+  const three = lift(['^', '^', '^']).lifted;
+  assert.ok(one > 3.5 && one < PUMP_HEAD, `one pump lifted ${one}`);
+  assert.ok(two > one + 3.5 && two < 2 * PUMP_HEAD, `two pumps lifted ${two}, one lifted ${one}`);
+  assert.ok(three > two + 3.5 && three < 3 * PUMP_HEAD, `three pumps lifted ${three}, two lifted ${two}`);
+  // The list: one entry for the row, with the pushes added up.
+  const world = worldFrom(['#~>>>.#', '#######']);
+  powerPumps(world, 2);
+  const sides = allOpenSides(world, blockInfo);
+  assert.deepEqual(workingPumps(world, blockInfo, sides), [{ index: 2, back: 1, ahead: 5, level: 6, count: 3 }]);
+  // On the level a row moves what one pump moves (the water has to get through them all)...
+  stepFluids(world, blockInfo);
+  const single = worldFrom(['#~>.#', '#####']);
+  powerPumps(single, 2);
+  stepFluids(single, blockInfo);
+  assert.ok(Math.abs(getFluid(world, 'water', 5, 0) - getFluid(single, 'water', 3, 0)) < 1e-12);
+  assert.ok(getFluid(single, 'water', 3, 0) > 0.05);
+  // ...one pump of the row switched off shuts the whole row, and so do two pumps nose to nose.
+  const broken = worldFrom(['#~>>>.#', '#######']);
+  powerPumps(broken, 1).get(3).current = 0;
+  assert.deepEqual(workingPumps(broken, blockInfo, allOpenSides(broken, blockInfo)), []);
+  run(broken, 50);
+  assert.equal(getFluid(broken, 'water', 1, 0), 1);
+  const clash = worldFrom(['#~><~#', '######']);
+  powerPumps(clash, 1);
+  assert.deepEqual(workingPumps(clash, blockInfo, allOpenSides(clash, blockInfo)), []);
 });
 
 /**

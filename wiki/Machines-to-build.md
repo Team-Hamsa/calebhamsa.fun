@@ -52,7 +52,8 @@ wires straight on the turbine's sides stays dark: it needs a generator.)
 **Pump water uphill.** A pump (arrow pointing up) with water under it and a
 battery loop on its sides. The pump pushes the water up, against gravity.
 Try a taller shaft: one battery gets the water about 5 blocks up, slower and
-slower, and then it stops. Add a battery and it climbs higher.
+slower, and then it stops. Add a battery and it climbs higher. So does a
+second pump stood right on top of the first (wire it up too).
 
 ![A battery-powered pump lifting water](machines/pump-uphill.png)
 

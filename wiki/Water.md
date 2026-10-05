@@ -24,8 +24,12 @@ water wheel, if one is there). Water lying level has no push left.
 **Lifting water uses up a pump's push.** The higher a pump has to lift, the
 slower the water goes, and at some height the water is too heavy and it stops.
 More batteries lift **higher and faster**: one battery lifts about 5 blocks,
-two about 10. A pump doesn't suck: it takes the water right behind it, so let
-the water run to it.
+two about 10. Two pumps in a row, one pushing straight into the next, work as
+one taller pump: they lift twice as high as one (but no faster on the level).
+A pump doesn't suck: it takes the water right behind it, so let the water run
+to it. And a pump with **no power is a shut door**: no water gets past it, not
+even downhill, so a switched-off pump in the wall of a tank holds the whole
+tank back. (Steam can't get through a pump at all.)
 
 **Steam has to rise to give its push.** Steam is water upside down: steam low
 down (or squeezed) holds the energy, and it gives that push away on the way
@@ -60,4 +64,4 @@ and it all winds down.
 | ![Burner](blocks/burnerOn.png) | **Burner** | Boils the water just above it into steam. Off, it looks like this: ![Burner off](blocks/burnerOff.png) | on ↔ off |
 | ![Chiller](blocks/chiller.png) | **Chiller** | Very cold: steam touching it turns back into water (it "rains"). | — |
 | ![Turbine](blocks/turbine.png) | **Turbine** | A fan inside a pipe. Steam **rising** through it spins it. It makes **turning**, not electricity: put a **generator** (⚙️ tab) right beside it, and wire the generator to a lamp. Wires on the turbine itself do nothing. It turns ↻ by itself, or the way its gears already go. More steam = stronger. A taller chimney under it = faster and stronger. Stand it upright in the chimney: steam that turns a corner first has lost most of its push. If the steam has nowhere to go, it stops. One blade tip is **yellow**, so you can see it turn. | — |
-| ![Pump](blocks/pumpRight.png) | **Pump** | Uses **electricity** to push water the way its arrow points, even uphill. Wire it into a loop with a battery (wires on the sides the pipe isn't on). The arrow glows when it has power. Uphill is hard work: the higher, the slower. If the water stops part way up, add a battery. ![Pump pointing up](blocks/pumpUp.png) | turns: → ↓ ← ↑ |
+| ![Pump](blocks/pumpRight.png) | **Pump** | Uses **electricity** to push water the way its arrow points, even uphill. Wire it into a loop with a battery (wires on the sides the pipe isn't on). The arrow glows when it has power. Uphill is hard work: the higher, the slower. If the water stops part way up, add a battery, or a second pump right after the first. With no power it is a shut door. ![Pump pointing up](blocks/pumpUp.png) | turns: → ↓ ← ↑ |

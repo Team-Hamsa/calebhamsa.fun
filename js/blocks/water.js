@@ -565,7 +565,7 @@ const guide = {
     'Water can\'t be squashed: ten buckets are ten cells, however deep. Falling water is a stream as wide as there is water: a trickle looks like a trickle. One tap of DIG takes one scoop. You can\'t pour into a full cell: pour just above the water.',
     'Steam is the opposite: it rises and spreads out under ceilings. Steam has to RISE to give its push, like water has to fall.',
     'Water has to FALL to give its push. High water can turn a wheel on its way down. Water lying level has no push left.',
-    'Lifting water uses up a pump\'s push. The higher the water has to go, the slower the pump lifts it, and at some height it is too heavy and stops. More batteries lift higher AND faster: one battery lifts about 5 blocks.',
+    'Lifting water uses up a pump\'s push. The higher the water has to go, the slower the pump lifts it, and at some height it is too heavy and stops. More batteries lift higher AND faster: one battery lifts about 5 blocks. Two pumps in a row (one pushing into the next) lift twice as high as one.',
   ],
   blocks: {
     water: { does: 'BUILD pours a cell full of water. It falls, spreads out and levels off.' },
@@ -578,7 +578,7 @@ const guide = {
     chiller: { does: 'Very cold: steam touching it turns back into water. It rains!' },
     turbine: { does: 'A fan in a pipe. Steam rising through it spins it. It makes TURNING, not electricity: put a generator (⚙️ tab) beside it and wire the generator to a lamp. More steam = stronger. A taller chimney under it = faster and stronger. Stand it upright in the chimney: steam that turns a corner first has lost most of its push. If the steam has nowhere to go, it stops.' },
     pumpRight: {
-      does: 'Uses electricity to push water the way its arrow points, even uphill. Wire it into a loop with a battery. Uphill is hard work: the higher, the slower. If the water stops part way up, add a battery. A pump doesn\'t suck: it takes the water right behind it, so let the water run to it.',
+      does: 'Uses electricity to push water the way its arrow points, even uphill. Wire it into a loop with a battery. Uphill is hard work: the higher, the slower. If the water stops part way up, add a battery. A pump doesn\'t suck: it takes the water right behind it, so let the water run to it. A pump with no power is a shut door: no water gets past it.',
       use: 'turns it: → ↓ ← ↑',
     },
   },
