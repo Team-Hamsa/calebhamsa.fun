@@ -1748,3 +1748,46 @@ test('a pump with nothing behind it moves nothing, and does not hold up the wate
   assert.ok(Math.abs(total(fed, 'water') - (6 + 20 * FAUCET_RATE)) < 1e-9);
   assert.ok(column(fed, 4, 1, 2) < 3 * FAUCET_RATE, `the pump is not keeping up with its trickle: ${column(fed, 4, 1, 2)} is waiting behind it`);
 });
+
+test('steam comes out the same in a mirror too: water that is half a cell but for a rounding speck counts as half', () => {
+  // (Steam may not spread into a cell that is more than half water. Sums of
+  // water come out as a half give or take a rounding speck, and which side
+  // they fell on used to decide where the steam went.)
+  /**
+   * Run a world and its mirror image side by side, and check them against each other.
+   * @param {string[]} rows - the picture
+   * @param {number} ticks - how long
+   * @param {string} what - a name for the message
+   * @returns {void}
+   */
+  const sameInMirror = (rows, ticks, what) => {
+    const width = rows[0].length;
+    const plain = worldFrom(rows);
+    const flipped = worldFrom(mirrored(rows));
+    for (let tick = 0; tick < ticks; tick++) {
+      stepFluids(plain, blockInfo);
+      stepFluids(flipped, blockInfo);
+      for (const kind of ['water', 'steam']) {
+        plain.fluid[kind].forEach((amount, index) => {
+          const other = flipped.fluid[kind][Math.floor(index / width) * width + (width - 1 - index % width)];
+          assert.ok(Math.abs(amount - other) < 1e-9, `${what}, tick ${tick}: ${amount} of ${kind} in cell ${index}, ${other} in its mirror image`);
+        });
+      }
+    }
+  };
+  sameInMirror(['~~s', '#~.', '.#.', '..~'], 30, 'the world that showed it');
+  const random = randomFrom(11);
+  for (let trial = 0; trial < 400; trial++) {
+    const width = 3 + Math.floor(random() * 4);
+    const rows = [];
+    for (let y = 2 + Math.floor(random() * 4); y > 0; y--) {
+      let row = '';
+      for (let x = 0; x < width; x++) {
+        const pick = random();
+        row += pick < 0.25 ? '#' : pick < 0.55 ? '~' : pick < 0.7 ? 's' : '.';
+      }
+      rows.push(row);
+    }
+    sameInMirror(rows, 30, `world ${trial} (${rows.join('/')})`);
+  }
+});

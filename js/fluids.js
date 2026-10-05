@@ -785,11 +785,14 @@ export function flowSteam(world, canFlow, onMove) {
   /**
    * Can steam spread sideways (or sink) into this cell? Not into cells
    * that are mostly water. (Steam may always RISE into water: bubbles!
-   * And water may always go into steamy cells.)
+   * And water may always go into steamy cells.) A cell that is half
+   * water but for a rounding speck counts as half: sums of water never
+   * come out as exactly a half, and which side of it they land on must
+   * not matter (or a mirrored build would give a different answer).
    * @param {number} to - the cell index
    * @returns {boolean} true if it may
    */
-  const roomFor = (to) => water[to] <= 0.5;
+  const roomFor = (to) => water[to] <= 0.5 + FULL_SLACK;
 
   for (let index = 0; index < before.length; index++) {
     let remaining = before[index];
