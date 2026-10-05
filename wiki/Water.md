@@ -39,9 +39,12 @@ turbine uses up the push of the steam that goes through it: the next turbine
 up gets only what the steam gives rising on from there. Turbines one after the
 other in one chimney share the steam's push, and never get more than it had.
 Steam with nowhere to go (a sealed box with no chiller) stops rising, and the
-turbine slows down and stops. A chiller can sit **right on top of a turbine**
-(or beside it), like the condenser of a real power plant: steam chilled inside
-the turbine has still gone through it. Only a burner makes steam: turn it off
+turbine slows down and stops. A chiller can sit **right on top of a turbine**,
+like the condenser of a real power plant: steam chilled inside the turbine has
+still gone through it. Beside the turbine only works if the turbine is the very
+top of the chimney. Steam goes to the highest place it can reach, so that is
+where the chiller has to be: with open space above the turbine, the steam rushes
+past a chiller at its side and gathers up there instead. Only a burner makes steam: turn it off
 and it all winds down.
 
 | | Block | What it does | ✋ USE |
