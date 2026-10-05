@@ -196,16 +196,36 @@ export function blockCanvas(info, px, sky) {
 /**
  * Find what the packs worked out about one cell (world.signals holds one
  * record per pack, each with a `cells` Map from cell index to details).
+ * Some blocks belong to two packs at once: a motor is a part in a
+ * circuit (the electric pack knows its current) AND a spinning block
+ * (the gears pack knows its speed and which way it faces). Those get ONE
+ * record with everything both packs know. A pack that left a detail
+ * empty (null) never rubs out what another pack filled in, so it doesn't
+ * matter which pack comes first.
  * @param {object} world - the world
  * @param {number} index - the cell's index (y * width + x)
  * @returns {object|undefined} the cell's signals, or undefined if none
  */
-function signalsAt(world, index) {
+export function signalsAt(world, index) {
+  let found;
+  let joined = false;
   for (const pack of Object.values(world.signals ?? {})) {
     const cell = pack.cells?.get(index);
-    if (cell) return cell;
+    if (!cell) continue;
+    if (!found) {
+      found = cell; // nearly always the only one: hand it over as it is
+      continue;
+    }
+    if (!joined) {
+      found = { ...found }; // a copy, so the packs' own records stay as they were
+      joined = true;
+    }
+    for (const [key, value] of Object.entries(cell)) {
+      if (value !== null && value !== undefined) found[key] = value;
+      else if (!(key in found)) found[key] = value;
+    }
   }
-  return undefined;
+  return found;
 }
 
 /**
