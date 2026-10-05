@@ -428,3 +428,69 @@ Most of this file tested how squashed water was drawn. Rewrite it as "the pictur
 5. Guide, wiki, README, older-spec addenda.
 6. Pictures.
 7. Sweeps, and the "as built" addendum to this file.
+
+## Addendum 2026-10-05: as built
+
+Built as specified, with the changes below. `npm test`: 863 pass (837 before: 13 rewritten or deleted as listed, the rest added). Every perpetual-motion test passes as it stood; the only energy test that was edited is the level-stream limit (0.0501 against "a tenth of a crank": now `0.11 ×`), as the spec said.
+
+### What was built differently, and why
+
+1. **A new rule, `NO_ROOM` (0.01): a cell with no room to speak of passes the push on even in open air.** The prototype had a flaw the spec's table did not show. Water pressed sideways into the bottom of a pond that is *almost* full to the next row (a tall column beside a basin, a tank emptying into a pit) could only give each cell its last speck of room in each small step, and SPREAD then took a little out of that cell again. So the cell never counted as full, the push never got past it, and the column stood too high until every cell of the row had crept to within `FULL_SLACK`: about 110 ticks (14 seconds) for a 7-deep column beside a 5-wide basin, then a sudden rush. Now a hole whose cell has less than `NO_ROOM` of room counts as lidded for the lid rule: it fills and passes the push on (and must still come out really pressed, like any cell under a lid, so the books are unchanged). The same scene levels in 22 ticks with no pause. A spout into open air is still a nozzle (the cells outside it are nowhere near full), and the nozzle numbers of the spec's table came out the same to two decimals. One number moved: the 3 × 7 tank through a valve into a 3-wide pit is half gone after 15 ticks (prototype 47, squished water 68), because once the pit has filled to the valve the two are a U-tube.
+2. **`flowWater(world, table, onMove, pumps)`**, not `(world, canFlow, onMove, pumps, sides)`. `flowTable(world, sides, blockInfo)` works out once a tick, as typed arrays, where fluid may go from every cell (`to`, one-way through pumps), which cells stand as one body (`joined`), and each cell's `pump`, `sky` and `floor`. `workingPumps(world, blockInfo, sides)` lists the pumps that are running. Both are exported, with `solveBanded`, for the tests. Steam's `canFlow` is now a look-up in the same table. A test checks the table against `flowChecker` in 60 random worlds.
+3. **`makeRoom` puts the extra of joined over-full cells in one pot and searches from all of them at once** (the spec had each cell search by itself, bottom row first). The answer is the same in the four saved worlds of the table, but it no longer depends on which over-full cell comes first, so a mirrored world always gets the mirrored answer (tested on a lop-sided world). Two smaller points: the extra of an over-full *pump* cell may leave through the pump's front (the spec would have dropped it), and extra of `1e-12` or less is left alone as rounding.
+4. **The still-water short cut is a little wider than "no holes".** A body of water is skipped when it has no pump, nothing over or under full (to `1e-12`), every surface and sky cell at one head (to `1e-12`), no hole underneath, and no hole in the side that this head would press on (`head < the hole's own top`). So a settled pond with a step in it is skipped too. Checked against the same code with the short cut switched off, in 400 random worlds: the same to rounding (the short cut leaves specks of `1e-15` untidied, nothing more).
+5. **`waterPicture` draws a cell that is full but for a rounding speck (`FULL_SLACK`) as full.** Otherwise a draining tower showed hairlines of air between its cells (the surface line is drawn in any cell under 1). `shown` is otherwise the cell's own amount.
+6. **`world.signals.press`** reads the cell's amount *at the end* of the small step for every cell that is not pressed (the spec: at the start of PRESS).
+7. **`scoop(world, x, y)`** lost its `blockInfo` argument (it no longer needs the picture). build.js loads through one new helper, `openWorld(n)`, which calls `makeRoom`.
+8. **`pressWork` has a third count, `stuck`**: the times a body of water did not settle in `PRESS_ROUNDS` tries and was left alone for a small step.
+9. **"A stack of water falls together" is tested as what is true:** after one small step the stack has moved down one cell and is still one stack with no gaps, but its top cell is a tenth short, because PRESS has already pushed a little out of the bottom (the stack's own weight over the gap). None is lost.
+10. **tests/basic.test.js is unchanged.** Loose sand and iron sinking through 12 cells of water are tested in tests/lifting.test.js, with the whole game running.
+11. **wiki/Experiments.md** also gained `PIPE_EASE` as a thing to change.
+
+### Known edges found while building
+
+- **A hole that is shut early in a small step stays shut for that step, even if it should have opened.** The sums start with every surface free; a hole that is "not pressed" then is shut, and "shut stays shut" (the rule that stops the sums going round in circles). If a surface is then held at its most and the pressure rises, the hole still only spreads (the usual quarter) in that small step. It errs on the slow side and can only lose energy. It also means the answer depends a little on the order the limits are found in, so starting the sums from last step's answer (tried, for speed: 6 rounds became 1 in a full world with a pump) changed about 1 world in 100 by a few hundredths of a cell. It was taken out again: nothing is carried over from one small step to the next, as the spec decided.
+- **A pump's "does it suck?" test is a hard switch** (`H < floor + 1 − 1e-9`). In a soup of dozens of pumps a difference of `1e-15` can flip it and change a tick by 0.07 of a cell. It is the same for both answers' energy books, and nothing was seen to flicker from it.
+- **A group that does not settle** (`stuck`) happened once in 2.8 million solves, in the random worlds with pumps (never without pumps, never in the tower sweep). That body of water waits one small step.
+
+### Sweeps (throwaway node scripts in the session scratchpad, `build30/`)
+
+| Sweep | What | Result |
+|---|---|---|
+| `sweep1-random-worlds.mjs`, no pumps | 1000 random worlds (4 to 24 wide, 3 to 14 tall) × 200 ticks | Energy never rose by itself (worst +6.8e-13); water made or lost, worst 1.7e-13; fullest cell `FULL` + 2.7e-14; credited work + carried push − energy lost, worst 0 |
+| `sweep1-random-worlds.mjs`, pumps | 1000 worlds with pumps all four ways at 0.3 to 3.5 batteries, switched at random | Water worst 2.6e-13; fullest cell `FULL` + 5.2e-14; ledger worst 0; energy gained beyond the pumps' counted work, worst 4.5e-13; `DROP_POWER ×` pump work never above `0.9 ×` electricity |
+| `sweep5-towers.mjs` (new) | 2 × 500 worlds of towers, pipes with wheels in and at the end of them (1880 wheels), valves flipped and pumps switched at random, 700 ticks, the last 300 untouched | Ledger worst +1.2e-14; energy beyond pump work worst 4.5e-13; water worst 1.8e-13; pump work ≤ 0.9 × electricity at every tick; no world flickered at the end (most turn-backs of any cell in the last 100 ticks: 3) |
+| `sweep6-steady.mjs` (new) | 13 whole-game machines with steady flows (faucets, drains, pumps, a sealed ring, the wiki's hydro dam), 800 ticks then 200 watched | Every cell's water and every wheel's speed hold still (worst swing 1.8e-15) |
+| `fuzz-whole-game.mjs` (new) | 700 random whole-game worlds with sand, crates, iron, ropes, winches, pumps, faucets, burners and chillers, blocks built in at random | No cell over `FULL` after any pack's turn in any tick; no water made (worst 9.7e-14) |
+| `old/law/sweep3-waterloops.mjs` (the #17 loops, as the motor–generator pass left them) | 2 × 400 closed pump → wheels → generator → pump loops (channel, ring, tall; any gearing; primed, as built or flooded) and steam plant → pump → wheel chains | 0 bad: all wind down and stay down, no water made or lost (591 really ran before the power went) |
+| `old/law/sweep2-soup.mjs`, `sweep4-winch.mjs`, `sweep5-feedback.mjs`, `sweep7-wheels-batteries.mjs` | 400 soups with wire loops; 300 winch towers; 750 plants feeding a motor on their own shaft; 400 wheel and turbine builds with batteries | 0 bad in each |
+| `old/turbine/sweep1-steam-ledger.mjs` | 1200 random worlds × 250 ticks with burners and chillers | 0 bad; the moves never raised the steam's energy (worst +5.7e-14) |
+| `old/repair/sweep-lift.mjs` (addendum 2 of the turbine spec) | 400 runs × 2000 ticks | The ledger never climbed back above an earlier low (worst +0.0000) |
+| `old/r3fix/sweep.mjs` (addendum 3) | 1200 runs × 2000 ticks | The same: worst +0.0000 |
+
+The turbine pass's own plant, soup and feedback scripts (`old/turbine/sweep2` to `4`) test "heat ≤ 8 tenths of the shaft work", which the motor–generator law replaced; they give exactly the same output on the commit before this pass and after it (656, 62 and 448 "bad" by that old rule), so the new water changed nothing in them. The motor–generator pass's versions of those sweeps are the ones in the table.
+
+In those sweeps the water that started over-full (the old scripts poured in up to 1.3 a cell) was capped at 1: `makeRoom` would otherwise lift it at the first tick, which is a hand's work and not the machine's.
+
+### Speed (ms a tick, `stepFluids` only, on the build machine, after the code has warmed up)
+
+| World (24 × 14) | Before | Now |
+|---|---|---|
+| Empty | 0.08 | 0.11 |
+| Brim full of still water | 0.82 | 0.52 (no solves) |
+| Brim full, 3 columns emptied (levelling all the time) | 0.85 | 1.7 (worst tick 3.0) |
+| Two big tanks joined by a pipe, one full | 0.62 | 1.2 (worst 2.0) |
+| Maze of full pipes | 0.58 | 0.47 |
+| Tower sweep worlds, mean | | 0.41 |
+| Brim full of water with a pump in the middle of it | | 5.5 (worst 6.2) |
+| Random worlds with dozens of pumps | | mean 1.7, 99 in 100 ticks under 9.3, worst 15.5 |
+
+The 3 ms target is met by every world without a pump in a sea. A pump standing in a world that is brim full (335 points in one body, six rounds of sums each small step) is the costly case: it is the one that starting from last step's answer would have fixed (see "Known edges"). The first few ticks after the page loads run 3 to 4 times slower, until the browser has warmed the code up.
+
+### Measured on the code as built
+
+Ten cells in a shaft stand 10.000 (bottom cell 1.000); a 10-cell shaft takes 10.00; a 4 × 13 tank holds 52.00. Wheel under a faucet: speed 1.000, strength 2.000; in a level stream 0.317 and 0.633 (best work 0.0501). Pump with 1, 2, 3 batteries: 4.50, 9.47, 13.00 cells of water standing over it; 3 cells up after 94, 37, 24 ticks. Sealed full loop, 2 batteries: flow 0.049 a tick, wheel speed 0.156. Sand and iron dropped into a settled 12-deep shaft reach the bottom; a crate stays on top. Levelling (within 5% / 1%, ticks): the U-tube 7 / 9, tower and pipe 9 / 12, 22 cells of pipe 14 / 21; no arm turned back in any of them. Nozzle (second tick, fall ÷ head): 3 wide, 2 of pipe, 4.31 of 5.6 and 7.10 of 9.3; 8 of pipe 5.30 of 9.5; the wheel in the middle of the pipe 0.61 of 5.7.
+
+### Pictures
+
+`u-tube` (20 ticks), `water-tower` (8 ticks), `pump-uphill`, `hydro-dam` and `power-plant` changed and were looked at; `sand-in-water` and `well` came out the same file. `CACHE_NAME` stays `caleb-v8`.
