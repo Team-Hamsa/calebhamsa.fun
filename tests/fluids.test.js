@@ -9,7 +9,7 @@ import { createWorld, getFluid, setBlock, setFluid } from '../js/world.js';
 import { REFERENCE_CURRENT } from '../js/circuit.js';
 import {
   BOIL_RATE, CONDENSE_RATE, DROP_POWER, FAUCET_RATE, FULL, FULL_SLACK, PIPE_EASE, PUMP_HEAD, PUMP_RATE, RISE_POWER, SQUIRT_EASE,
-  STEAM_SQUEEZE, SURFACE_EASE, allOpenSides, fallEnergy, flowTable, flowWater, headOf, makeRoom, openSides, placeBlock, pressWork, pumpAmount,
+  STEAM_SQUEEZE, SURFACE_EASE, allOpenSides, fallEnergy, flowChecker, flowTable, flowWater, headOf, makeRoom, openSides, placeBlock, pressWork, pumpAmount,
   solveBanded, stableBelow, stepFluids, storedEnergy,
 } from '../js/fluids.js';
 
@@ -741,6 +741,34 @@ function smallStep(world) {
   return flowWater(world, table, () => {});
 }
 
+test('flowTable gives the same answers as flowChecker, for every cell and side of lots of random worlds', () => {
+  const random = randomFrom(17);
+  const names = Object.keys(TEST_BLOCKS);
+  const sideNames = ['up', 'right', 'down', 'left'];
+  for (let trial = 0; trial < 60; trial++) {
+    const world = createWorld(3 + Math.floor(random() * 8), 2 + Math.floor(random() * 8));
+    world.cells.forEach((_, index) => {
+      if (random() < 0.6) setBlock(world, index % world.width, Math.floor(index / world.width), names[Math.floor(random() * names.length)]);
+    });
+    const sides = allOpenSides(world, blockInfo);
+    const canFlow = flowChecker(world, sides, blockInfo);
+    const table = flowTable(world, sides, blockInfo);
+    world.cells.forEach((name, index) => {
+      const pump = Boolean(blockInfo(name)?.fluid?.pump);
+      assert.equal(table.pump[index], pump ? 1 : 0);
+      assert.equal(table.floor[index], world.height - 1 - Math.floor(index / world.width));
+      assert.equal(table.sky[index], index < world.width && sides[index].includes('up') ? 1 : 0);
+      sideNames.forEach((side, k) => {
+        const next = canFlow(index, side);
+        assert.equal(table.to[index * 4 + k], next, `world ${trial}, cell ${index} (${name}), ${side}`);
+        // "joined": open both ways, and neither cell a pump.
+        const both = next >= 0 && !pump && !blockInfo(world.cells[next])?.fluid?.pump;
+        assert.equal(table.joined[index * 4 + k], both ? next : -1, `world ${trial}, cell ${index} (${name}), ${side}: joined`);
+      });
+    });
+  }
+});
+
 test('the settings of the water circuit are what the energy sums rely on', () => {
   assert.equal(PIPE_EASE, 1);
   // A quarter at a surface (and at a hole) is the most that can never overshoot.
@@ -1279,4 +1307,6 @@ test('in lots of random worlds with pumps, wheels get no more than the water gav
     }
     assert.ok(Math.abs(total(world, 'water') - water) < 1e-9, `world ${trial}: water ${water} → ${total(world, 'water')}`);
   }
+  // And in all the worlds of this file, the water circuit always settled.
+  assert.equal(pressWork.stuck, 0);
 });

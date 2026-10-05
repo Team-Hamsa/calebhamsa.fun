@@ -638,8 +638,8 @@ function clamp(value, low, high) {
 
 /**
  * Work out, once for the whole tick, where fluid can go from every cell
- * through every side, as plain lists of numbers (asking flowChecker
- * again and again is slow). For cell `i` and side number `s` (see
+ * through every side, as plain lists of numbers (the same answers as
+ * flowChecker gives, but asking it again and again is slow). For cell `i` and side number `s` (see
  * SIDE_INDEX), look at place `i * 4 + s`:
  *
  *   to      the neighbor fluid may flow INTO from here (pumps are
@@ -661,22 +661,36 @@ function clamp(value, low, high) {
 export function flowTable(world, sides, blockInfo) {
   const { width, height } = world;
   const size = world.cells.length;
-  const canFlow = flowChecker(world, sides, blockInfo);
-  const to = new Int32Array(size * 4);
-  const joined = new Int32Array(size * 4);
+  const to = new Int32Array(size * 4).fill(-1);
+  const joined = new Int32Array(size * 4).fill(-1);
   const pump = new Uint8Array(size);
   const sky = new Uint8Array(size);
   const floor = new Int32Array(size);
+  const open = new Uint8Array(size);  // which sides each cell is open on: one bit for each side
+  const front = new Int8Array(size);  // for a pump, the side number of its front; else −1
   for (let index = 0; index < size; index++) {
-    pump[index] = blockInfo(world.cells[index])?.fluid?.pump ? 1 : 0;
+    for (const side of sides[index]) open[index] |= 1 << SIDE_INDEX[side];
+    const name = world.cells[index];
+    const way = name === AIR ? undefined : blockInfo(name)?.fluid?.pump;
+    front[index] = way ? SIDE_INDEX[way] : -1;
+    pump[index] = way ? 1 : 0;
     floor[index] = height - 1 - Math.floor(index / width);
-    sky[index] = index < width && sides[index].includes('up') ? 1 : 0;
+    sky[index] = index < width && (open[index] & 1) ? 1 : 0;
   }
+  const across = [-width, 1, width, -1]; // how far away the neighbor on each side is
   for (let index = 0; index < size; index++) {
+    if (!open[index]) continue;
+    const x = index % width;
     for (let side = 0; side < 4; side++) {
-      const next = canFlow(index, SIDES[side]);
+      if (!(open[index] & (1 << side))) continue;
+      if ((side === 1 && x === width - 1) || (side === 3 && x === 0)) continue; // the edge of the world
+      const next = index + across[side];
+      if (next < 0 || next >= size || !(open[next] & (1 << ((side + 2) % 4)))) continue;
+      // A pump is a one-way door: out through its front only, in through its back only.
+      if (front[index] >= 0 && front[index] !== side) continue;
+      if (front[next] >= 0 && front[next] !== side) continue;
       to[index * 4 + side] = next;
-      joined[index * 4 + side] = next >= 0 && !pump[index] && !pump[next] ? next : -1;
+      if (!pump[index] && !pump[next]) joined[index * 4 + side] = next;
     }
   }
   return { to, joined, pump, sky, floor };
@@ -695,6 +709,7 @@ export function flowTable(world, sides, blockInfo) {
 export function workingPumps(world, blockInfo, sides) {
   const pumps = [];
   for (let index = 0; index < world.cells.length; index++) {
+    if (world.cells[index] === AIR) continue;
     const front = blockInfo(world.cells[index])?.fluid?.pump;
     if (!front) continue;
     // The real current (not `level`, which stops at 2 so lamps don't get
@@ -746,6 +761,9 @@ export function workingPumps(world, blockInfo, sides) {
  */
 export function flowSteam(world, canFlow, onMove) {
   const before = world.fluid.steam;
+  let none = true;
+  for (let index = 0; index < before.length && none; index++) if (before[index] > 0) none = false;
+  if (none) return 0; // not a puff anywhere: nothing to do
   const after = Float64Array.from(before);
   const water = world.fluid.water;
   let moved = 0;
@@ -838,9 +856,11 @@ export function flowSteam(world, canFlow, onMove) {
  * (like `work` in circuit.js). `solves` goes up by one every time
  * pressWater works out the pressures in one body of water, and `points`
  * by how many cells were in it. Still water costs nothing: a settled
- * pond is never counted here.
+ * pond is never counted here. `stuck` counts the times a body of water
+ * could not be settled in PRESS_ROUNDS tries and was left alone for one
+ * small step (hardly ever: once in millions of sums).
  */
-export const pressWork = { solves: 0, points: 0 };
+export const pressWork = { solves: 0, points: 0, stuck: 0 };
 
 /** Surfaces whose heights differ by less than this are level (see the still-water short cut in pressWater). */
 const STILL = 1e-12;
@@ -1303,6 +1323,7 @@ function pressWater(world, w, table, pumps, onMove, press) {
       }
       if (!ok) {
         // It didn't settle: this group moves nothing in this small step.
+        pressWork.stuck += 1;
         for (const i of nodes) {
           H[i] = floor[i] + 1;
           local[i] = -1;
@@ -1558,6 +1579,14 @@ export function flowWater(world, table, onMove, pumps = []) {
   const start = world.fluid.water;
   const size = start.length;
   const { to } = table;
+  if (world.signals.press?.length !== size) world.signals.press = new Float64Array(size);
+  const press = world.signals.press;
+  let dry = true;
+  for (let index = 0; index < size && dry; index++) if (start[index] > 0) dry = false;
+  if (dry) { // not a drop anywhere: nothing to do
+    press.fill(0);
+    return { moved: 0, pumpWork: 0 };
+  }
   let moved = 0;
   /**
    * Tell onMove about a list of moves, with the energy each gave up.
@@ -1610,8 +1639,6 @@ export function flowWater(world, table, onMove, pumps = []) {
   report(start, falls);
 
   // 2. PRESS.
-  if (world.signals.press?.length !== size) world.signals.press = new Float64Array(size);
-  const press = world.signals.press;
   const pressed = pressWater(world, fallen, table, pumps, onMove, press);
   moved += pressed.moved;
   const squeezed = pressed.after;
