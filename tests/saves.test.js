@@ -4,7 +4,9 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AIR, createWorld, defaultWorld, getBlock, setBlock } from '../js/world.js';
+import { AIR, createWorld, defaultWorld, getBlock, setBlock, tick } from '../js/world.js';
+import { allSystems, blockInfo } from '../js/blocks/registry.js';
+import { makeRoom } from '../js/fluids.js';
 import {
   CURRENT_KEY, SAVE_VERSION, WORLD_COUNT, deserializeWorld, loadCurrent, loadThumbnail,
   loadWorld, saveCurrent, saveWorld, serializeWorld, thumbKey, worldKey,
@@ -190,4 +192,50 @@ test('water in a smaller old save lines up at the bottom-left too', () => {
   const water = [0, 0, 0.5, 0]; // 2 × 2: water in the bottom-left cell
   const world = deserializeWorld(saveText({ width: 2, height: 2, blocks: ['air'], cells: [0, 0, 0, 0], water }), SMALL);
   assert.equal(world.fluid.water[2 * 4 + 0], 0.5);
+});
+
+test('an old save with squashed water loads with every cell at most full, and all the water that was drawn', () => {
+  // What the old game saved for a tank 2 wide with 10 cells of water in it:
+  // deep water squashed into fewer cells (more than 1 in a cell).
+  const width = 4;
+  const height = 8;
+  const blocks = ['air', 'stone'];
+  const cells = [];
+  const water = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const wall = x === 0 || x === 3 || y === 7;
+      cells.push(wall ? 1 : 0);
+      water.push(wall || y < 3 ? 0 : [0.7, 1.1, 1.2, 1.3][y - 3] ?? 0);
+    }
+  }
+  water[3 * width + 1] = 0.7;
+  const text = JSON.stringify({ version: SAVE_VERSION, width, height, blocks, cells, water, steam: new Array(width * height).fill(0) });
+  const world = deserializeWorld(text, { width, height, isKnown: () => true });
+  const saved = world.fluid.water.reduce((sum, amount) => sum + amount, 0);
+  assert.ok(Math.max(...world.fluid.water) > 1, 'the save really holds squashed water');
+  assert.equal(makeRoom(world, blockInfo), 0); // what build.js does to every world it loads (see openWorld)
+  assert.ok(Math.max(...world.fluid.water) <= 1);
+  assert.ok(Math.abs(world.fluid.water.reduce((sum, amount) => sum + amount, 0) - saved) < 1e-9, 'none of it was lost');
+  // It is level, and stays put: the extra went back on top of the water it was squashed under.
+  const systems = allSystems();
+  const before = Array.from(world.fluid.water);
+  for (let i = 0; i < 20; i++) tick(world, systems, blockInfo);
+  world.fluid.water.forEach((amount, index) => assert.ok(Math.abs(amount - before[index]) < 1e-6, `cell ${index} moved`));
+});
+
+test('a new save never holds more than one cell of water in a cell', () => {
+  const world = createWorld(6, 9);
+  for (let y = 0; y < 9; y++) {
+    setBlock(world, 0, y, 'stone');
+    setBlock(world, 3, y, 'stone');
+    for (const x of [1, 2]) world.fluid.water[y * 6 + x] = 1;
+  }
+  setBlock(world, 3, 8, 'pipe');
+  const systems = allSystems();
+  for (let i = 0; i < 60; i++) {
+    tick(world, systems, blockInfo);
+    const saved = JSON.parse(serializeWorld(world));
+    assert.ok(Math.max(...saved.water) <= 1, `tick ${i}: the save holds ${Math.max(...saved.water)}`);
+  }
 });

@@ -669,6 +669,74 @@ test('loose blocks pay for the water they lift too: a loose crate floats, sand a
   assert.ok(blockInfo('sand').weight > WATER_WEIGHT, 'sand is heavier than water');
 });
 
+/**
+ * A shaft 1 wide with `depth` cells of water standing in it, and `above`
+ * rows of the picture on top (each 3 letters wide, the shaft in the middle).
+ * @param {string[]} above - the rows over the water
+ * @param {number} depth - how many cells of water
+ * @returns {object} the world
+ */
+function deepShaft(above, depth) {
+  const rows = [...above];
+  for (let i = 0; i < depth; i++) rows.push('#.#');
+  rows.push('###');
+  const world = make(rows);
+  for (let i = 0; i < depth; i++) setFluid(world, 'water', 1, above.length + i, 1);
+  return world;
+}
+
+/**
+ * All the water in a world.
+ * @param {object} world - the world
+ * @returns {number} the total
+ */
+const waterIn = (world) => world.fluid.water.reduce((sum, amount) => sum + amount, 0);
+
+test('sand and an iron weight sink right to the bottom of a 12-deep tank, loose and on a rope, and the water is all still there', () => {
+  // (When deep water was squashed into fewer cells, the squashed water was "heavier" and they stopped part way down.)
+  for (const name of ['sand', 'ironWeight']) {
+    const world = run(deepShaft(['#.#', '#.#'], 12), 20);
+    setBlock(world, 1, 0, name);
+    run(world, 300);
+    assert.equal(rowOf(world, 1, name), 13, `the loose ${name} is on the floor`);
+    assert.ok(Math.abs(waterIn(world) - 12) < 1e-9, `${name}: water ${waterIn(world)}`);
+    assert.ok(Math.max(...world.fluid.water) <= 1 + 1e-9, 'and none of it is squashed');
+  }
+  const hung = make(['#Qw#', '##|#', '##I#', '##.#', '##.#', '##.#', '##.#', '##.#', '##.#', '##.#', '##.#', '##.#', '##.#', '##.#', '##.#', '####']);
+  for (let y = 3; y <= 14; y++) setFluid(hung, 'water', 2, y, 1);
+  run(hung, 600);
+  assert.equal(rowOf(hung, 2, 'ironWeight'), 14, 'the iron weight on its rope is on the floor');
+  assert.ok(Math.abs(waterIn(hung) - 12) < 1e-9, `water ${waterIn(hung)}`);
+  assert.ok(Math.max(...hung.fluid.water) <= 1 + 1e-9);
+});
+
+test('an iron weight pulls the same at every depth: deep water is no heavier than shallow water', () => {
+  const pulls = [2, 6, 11].map((down) => {
+    // A full shaft 13 deep, with the weight hanging `down` cells below the winch on a held crank.
+    const rows = ['#Xw#'];
+    for (let y = 1; y <= 13; y++) rows.push(y < down ? '##|#' : y === down ? '##I#' : '##.#');
+    rows.push('####');
+    const world = make(rows);
+    for (let y = 1; y <= 13; y++) if (y !== down) setFluid(world, 'water', 2, y, 1);
+    run(world, 30);
+    assert.equal(rowOf(world, 2, 'ironWeight'), down, 'the crank is held, so it hangs where it was');
+    return winchLoad(world, 2, 0, blockInfo).pull;
+  });
+  assert.equal(pulls[0], -(4 - WATER_WEIGHT));
+  assert.equal(pulls[1], pulls[0]);
+  assert.equal(pulls[2], pulls[0]);
+});
+
+test('a crate floats on a deep tank and on a shallow one alike', () => {
+  for (const depth of [1, 3, 12]) {
+    const world = run(deepShaft(['#.#', '#.#'], depth), 20);
+    setBlock(world, 1, 0, 'crate');
+    run(world, 200);
+    assert.equal(rowOf(world, 1, 'crate'), 1, `over ${depth} cells of water the crate floats on top`);
+    assert.ok(Math.abs(waterIn(world) - depth) < 1e-9);
+  }
+});
+
 test('a load going up through steam is heavier: it has to push the steam down', () => {
   const world = make(['Rw', '.|', '.|', '.c', '##']);
   setFluid(world, 'steam', 1, 2, 0.2);

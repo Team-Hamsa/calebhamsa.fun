@@ -1,12 +1,13 @@
 /**
  * water-picture.test.js — checks that water LOOKS as tall as the amount
- * there really is (issue #20), and that DIG and pour act on one full
- * cell at the most.
+ * there really is (issues #20 and #30), and that DIG and pour act on
+ * one full cell at the most.
  *
- * Real water doesn't squish: ten buckets poured into a tube stand ten
- * buckets tall. In the game deep water IS squished into fewer cells (the
- * solver needs that to push water up U-tubes), so waterPicture in
- * fluids.js works out how much to DRAW in each cell instead.
+ * Real water can't be squashed: ten buckets poured into a tube stand
+ * ten buckets tall. In the game that is true of the water itself (a
+ * cell never holds more than one cell of water), so THE PICTURE IS THE
+ * WATER: waterPicture in fluids.js draws every cell with what it holds,
+ * and only works out which water is falling.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -98,28 +99,21 @@ function shaft(cells) {
 test('N cells of water in a 1-wide shaft look N cells tall, for 1 to 13 cells, at every moment', () => {
   for (let cells = 1; cells <= 13; cells++) {
     const world = shaft(cells);
-    for (let tick = 0; tick < 400; tick++) {
+    for (let tick = 0; tick < 100; tick++) {
       stepFluids(world, blockInfo);
       const { shown } = waterPicture(world, blockInfo);
-      // While it settles, the picture never strays more than a tenth of a cell.
-      assert.ok(Math.abs(total(shown) - cells) < 0.1, `${cells} cells, tick ${tick}: drawn ${total(shown)}`);
+      // The picture is the water, at every moment (only specks too small to see are left out).
+      assert.ok(Math.abs(total(shown) - cells) < 0.01, `${cells} cells, tick ${tick}: drawn ${total(shown)}`);
     }
     const { shown } = waterPicture(world, blockInfo);
     assert.ok(Math.abs(total(world.fluid.water) - cells) < 1e-9, 'no water was made or lost');
-    assert.ok(Math.abs(total(shown) - cells) < 0.01, `${cells} cells are drawn ${total(shown)} tall`);
-    // The drawn water is one solid column from the floor up: full cells, with no gaps.
+    assert.ok(Math.abs(total(shown) - cells) < 1e-9, `${cells} cells are drawn ${total(shown)} tall`);
+    // The water is one solid column from the floor up: full cells, with no gaps. And it is REALLY there.
     for (let up = 0; up < cells; up++) {
       assert.ok(shown[(13 - up) * 3 + 1] > 0.99, `${cells} cells: the cell ${up} up from the floor is drawn full`);
+      assert.ok(Math.abs(world.fluid.water[(13 - up) * 3 + 1] - 1) < 1e-9, `${cells} cells: the cell ${up} up from the floor holds one cell of water`);
     }
   }
-});
-
-test('the real water is still squished: the picture, not the solver, was changed', () => {
-  const world = shaft(10);
-  run(world, 400);
-  const wet = Array.from(world.fluid.water).filter((amount) => amount >= MIN_AMOUNT).length;
-  assert.equal(wet, 8); // ten cells' worth really sits in eight cells...
-  assert.ok(Math.abs(total(waterPicture(world, blockInfo).shown) - 10) < 0.01); // ...and is drawn ten tall
 });
 
 test('pouring ten cells into a shaft, one tap at a time, shows 1, 2, 3 ... 10 cells', () => {
@@ -131,7 +125,37 @@ test('pouring ten cells into a shaft, one tap at a time, shows 1, 2, 3 ... 10 ce
   }
 });
 
-test('shallow water with nothing squished is drawn just as it is', () => {
+test('waterPicture gives only `shown` and `falling`, and every cell is drawn with just what it holds', () => {
+  assert.deepEqual(Object.keys(waterPicture(shaft(3), blockInfo)).sort(), ['falling', 'shown']);
+  let seed = 5;
+  /**
+   * The next make-believe random number (the same ones every run).
+   * @returns {number} from 0 up to 1
+   */
+  const random = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  for (let trial = 0; trial < 40; trial++) {
+    const world = createWorld(5 + Math.floor(random() * 6), 4 + Math.floor(random() * 6));
+    world.cells.forEach((_, index) => {
+      const pick = random();
+      const name = pick < 0.6 ? 'air' : pick < 0.75 ? 'stone' : pick < 0.9 ? 'pipe' : 'rope';
+      setBlock(world, index % world.width, Math.floor(index / world.width), name);
+      if (name !== 'stone' && random() < 0.6) world.fluid.water[index] = random() < 0.5 ? 1 : random();
+    });
+    for (let tick = 0; tick < 30; tick++) {
+      stepFluids(world, blockInfo);
+      const { shown, falling } = waterPicture(world, blockInfo);
+      world.fluid.water.forEach((amount, index) => {
+        assert.equal(shown[index], amount >= MIN_AMOUNT ? Math.min(amount, FULL) : 0, `world ${trial} tick ${tick} cell ${index}`);
+        assert.ok(falling[index] >= 0 && falling[index] <= 1);
+      });
+    }
+  }
+});
+
+test('shallow water is drawn just as it is', () => {
   const world = worldFrom([
     '#....#',
     '#....#',
@@ -139,14 +163,13 @@ test('shallow water with nothing squished is drawn just as it is', () => {
     '######',
   ]);
   run(world, 200);
-  const { shown, source } = waterPicture(world, blockInfo);
+  const { shown } = waterPicture(world, blockInfo);
   world.fluid.water.forEach((amount, index) => {
     assert.ok(Math.abs(shown[index] - amount) < 1e-9);
-    assert.equal(source[index], -1);
   });
 });
 
-test('a wide tank with a deep end is drawn level, and as tall as its water', () => {
+test('a wide tank with a deep end is level, and as tall as its water: in the world, and so in the picture', () => {
   const world = worldFrom([
     '#.....#',
     '#.....#',
@@ -161,9 +184,13 @@ test('a wide tank with a deep end is drawn level, and as tall as its water', () 
     '#~~####',
     '#######',
   ]);
-  run(world, 600);
+  for (let tick = 0; tick < 100; tick++) {
+    stepFluids(world, blockInfo);
+    assert.ok(Math.abs(total(waterPicture(world, blockInfo).shown) - 25) < 0.01, `tick ${tick}`);
+  }
   const { shown } = waterPicture(world, blockInfo);
-  assert.ok(Math.abs(total(shown) - 25) < 0.01, `drawn ${total(shown)}`);
+  assert.ok(Math.abs(total(shown) - 25) < 1e-6, `drawn ${total(shown)}`);
+  assert.ok(Math.max(...world.fluid.water) <= FULL + 1e-9);
   // Every column's surface is at the same height: 3 cells above the shallow floor.
   for (let x = 1; x <= 5; x++) {
     const depth = x <= 2 ? 8 : 3;
@@ -171,7 +198,7 @@ test('a wide tank with a deep end is drawn level, and as tall as its water', () 
   }
 });
 
-test('a U-tube is drawn level in both arms, and as tall as its water, while it settles and after', () => {
+test('a U-tube is level in both arms, and drawn as tall as its water, while it settles and after', () => {
   const world = worldFrom([
     '#.###.#',
     '#~###.#',
@@ -183,21 +210,18 @@ test('a U-tube is drawn level in both arms, and as tall as its water, while it s
     '#~~~~~#',
     '#######',
   ]);
-  for (let tick = 0; tick < 400; tick++) {
+  for (let tick = 0; tick < 100; tick++) {
     stepFluids(world, blockInfo);
     const { shown } = waterPicture(world, blockInfo);
-    // While the water is still rushing round, the squished-in extra under
-    // the lid has no level surface to be drawn on yet: a little may be
-    // missing from the picture, but water is never drawn that isn't there.
-    assert.ok(total(shown) < 11.1 && total(shown) > 10.4, `tick ${tick}: drawn ${total(shown)}`);
-    if (tick >= 250) assert.ok(Math.abs(total(shown) - 11) < 0.01, `tick ${tick}: drawn ${total(shown)}`);
+    // All of the water is in the picture at every tick, rushing or still.
+    assert.ok(Math.abs(total(shown) - 11) < 0.01, `tick ${tick}: drawn ${total(shown)}`);
   }
   const { shown } = waterPicture(world, blockInfo);
   assert.ok(Math.abs(total(shown) - 11) < 0.01);
   assert.ok(Math.abs(drawnHeight(world, shown, 1) - 4) < 0.01, `left arm ${drawnHeight(world, shown, 1)}`);
   assert.ok(Math.abs(drawnHeight(world, shown, 5) - 4) < 0.01, `right arm ${drawnHeight(world, shown, 5)}`);
   // The water under the lid in the middle is drawn full, never more.
-  for (let x = 2; x <= 4; x++) assert.equal(shown[7 * 7 + x], FULL);
+  for (let x = 2; x <= 4; x++) assert.ok(Math.abs(shown[7 * 7 + x] - FULL) < 1e-9);
 });
 
 test('a deep U-tube with a wide arm and a narrow arm is still drawn level', () => {
@@ -214,7 +238,7 @@ test('a deep U-tube with a wide arm and a narrow arm is still drawn level', () =
     '#~~~~~#',
     '#######',
   ]);
-  run(world, 800);
+  run(world, 100);
   const { shown } = waterPicture(world, blockInfo);
   assert.ok(Math.abs(total(shown) - 29) < 0.01, `drawn ${total(shown)}`);
   const heights = [1, 2, 3, 5].map((x) => drawnHeight(world, shown, x));
@@ -235,105 +259,11 @@ test('water in a pipe beside a tower is drawn level with the tower, and the tota
     '#~PPP.',
     '######',
   ]);
-  run(world, 800);
+  run(world, 100);
   const { shown } = waterPicture(world, blockInfo);
   assert.ok(Math.abs(total(shown) - 9) < 0.01, `drawn ${total(shown)}`);
   assert.ok(Math.abs(drawnHeight(world, shown, 1) - drawnHeight(world, shown, 4)) < 0.02,
     `tower ${drawnHeight(world, shown, 1)}, pipe ${drawnHeight(world, shown, 4)}`);
-});
-
-test('a sealed full tank is drawn full and no more: nothing is drawn outside it', () => {
-  const world = worldFrom([
-    '.......',
-    '.#####.',
-    '.#~~~#.',
-    '.#~~~#.',
-    '.#~~~#.',
-    '.#####.',
-  ]);
-  // Squeeze in half as much again: the solver allows it, the picture can't show it.
-  world.fluid.water.forEach((amount, index) => { if (amount > 0) world.fluid.water[index] = 1.5; });
-  run(world, 100);
-  const { shown } = waterPicture(world, blockInfo);
-  assert.ok(Math.abs(total(world.fluid.water) - 13.5) < 1e-9);
-  assert.ok(Math.abs(total(shown) - 9) < 1e-9, 'nine cells, drawn full');
-  shown.forEach((amount, index) => {
-    assert.ok(amount <= FULL);
-    if (world.fluid.water[index] === 0) assert.equal(amount, 0);
-  });
-});
-
-test('water is never drawn standing above the rim of its tank, or on top of a pipe end', () => {
-  // A brim-full shaft with extra squeezed in, standing in the open.
-  const world = worldFrom([
-    '.....',
-    '.....',
-    '.#~#.',
-    '.#~#.',
-    '.#~#.',
-    '.#~#.',
-    '.#~#.',
-    '#####',
-  ]);
-  [1, 1.1, 1.2, 1.3, 1.4].forEach((amount, down) => setFluid(world, 'water', 2, 2 + down, amount));
-  const { shown } = waterPicture(world, blockInfo);
-  assert.equal(shown[1 * 5 + 2], 0, 'no pillar of water above the rim');
-  assert.equal(shown[0 * 5 + 2], 0);
-  assert.ok(Math.abs(total(shown) - 5) < 1e-9);
-});
-
-test('extra is only drawn straight above real water of the same body: never over dry ground or in another tank', () => {
-  const world = worldFrom([
-    '#.#.#....',
-    '#.#.#....',
-    '#~#.#....',
-    '#~#.#....',
-    '#~#.#....',
-    '#~#.#....',
-    '#~#.#....',
-    '#~#~#....',
-    '#########',
-  ]);
-  run(world, 300);
-  const { shown, source } = waterPicture(world, blockInfo);
-  assert.ok(Math.abs(drawnHeight(world, shown, 1) - 6) < 0.01);
-  assert.ok(Math.abs(drawnHeight(world, shown, 3) - 1) < 1e-9, 'the tank next door is not raised');
-  for (let x = 5; x < 9; x++) assert.equal(drawnHeight(world, shown, x), 0);
-  shown.forEach((amount, index) => {
-    if (amount > 0 && world.fluid.water[index] < MIN_AMOUNT) {
-      const top = source[index];
-      assert.ok(top >= 0 && top % world.width === index % world.width && top > index, 'it sits straight above its real water');
-      assert.ok(world.fluid.water[top] >= MIN_AMOUNT);
-    }
-  });
-});
-
-test('a tower emptying through a pipe onto the ground: its squished-in extra is drawn on the tower, not on the puddle', () => {
-  const world = worldFrom([
-    '#.#.......',
-    '#~#.......',
-    '#~#.......',
-    '#~#.......',
-    '#~#.......',
-    '#~#.......',
-    '#~#.......',
-    '#~PP......',
-    '##########',
-  ]);
-  for (let tick = 0; tick < 60; tick++) {
-    stepFluids(world, blockInfo);
-    const { shown } = waterPicture(world, blockInfo);
-    // The tower is drawn as tall as its water (within half a cell while it rushes out)...
-    let inTower = 0;
-    for (let y = 0; y < 8; y++) inTower += world.fluid.water[y * 10 + 1];
-    assert.ok(Math.abs(drawnHeight(world, shown, 1) - inTower) < 0.5, `tick ${tick}: tower drawn ${drawnHeight(world, shown, 1)}, holds ${inTower}`);
-    // ...and the puddle just as it is.
-    for (let x = 4; x < 10; x++) {
-      const amount = world.fluid.water[7 * 10 + x];
-      const real = amount >= MIN_AMOUNT ? Math.min(1, amount) : 0;
-      assert.ok(Math.abs(drawnHeight(world, shown, x) - real) < 0.02, `tick ${tick}: the puddle in column ${x} is drawn as it is`);
-    }
-  }
 });
 
 test('the drawn level never shimmers: while a U-tube settles each arm moves one way only', () => {
@@ -354,8 +284,8 @@ test('the drawn level never shimmers: while a U-tube settles each arm moves one 
     const { shown } = waterPicture(world, blockInfo);
     const now = [drawnHeight(world, shown, 1), drawnHeight(world, shown, 5)];
     if (last) {
-      assert.ok(now[0] <= last[0] + 0.005, `tick ${tick}: the full arm only goes down (${last[0]} → ${now[0]})`);
-      assert.ok(now[1] >= last[1] - 0.005, `tick ${tick}: the empty arm only goes up (${last[1]} → ${now[1]})`);
+      assert.ok(now[0] <= last[0] + 0.001, `tick ${tick}: the full arm only goes down (${last[0]} → ${now[0]})`);
+      assert.ok(now[1] >= last[1] - 0.001, `tick ${tick}: the empty arm only goes up (${last[1]} → ${now[1]})`);
     }
     last = now;
   }
@@ -363,12 +293,12 @@ test('the drawn level never shimmers: while a U-tube settles each arm moves one 
 
 test('the drawn level never shimmers: a settled column is drawn exactly the same every tick', () => {
   const world = shaft(10);
-  run(world, 600);
+  run(world, 100);
   const before = waterPicture(world, blockInfo).shown;
   for (let tick = 0; tick < 50; tick++) {
     stepFluids(world, blockInfo);
     const { shown } = waterPicture(world, blockInfo);
-    shown.forEach((amount, index) => assert.ok(Math.abs(amount - before[index]) < 0.002, `tick ${tick}, cell ${index}`));
+    shown.forEach((amount, index) => assert.equal(amount, before[index], `tick ${tick}, cell ${index}`));
   }
 });
 
@@ -378,7 +308,7 @@ test('a deep shaft filling up slowly: the drawn level rises smoothly, never dips
   for (let tick = 0; tick < 700; tick++) {
     // A steady trickle, let in at the water's own surface (or the floor, to begin with).
     let top = 13 * 3 + 1;
-    while (world.fluid.water[top] >= FULL && top > 3) top -= 3;
+    while (world.fluid.water[top] > FULL - 0.02 && top > 3) top -= 3;
     if (tick < 650) world.fluid.water[top] += 0.02; // 13 cells' worth in all
     stepFluids(world, blockInfo);
     const drawn = total(waterPicture(world, blockInfo).shown);
@@ -414,25 +344,6 @@ test('the picture is the same in a mirrored world', () => {
   }
 });
 
-test('a pump holds water back, so the water behind it is not drawn up to the level in front', () => {
-  const world = worldFrom([
-    '#.#',
-    '#~#',
-    '#~#',
-    '#~#',
-    '#~#',
-    '#~#',
-    '#^#',
-    '#.#',
-    '#.#',
-    '###',
-  ]);
-  setFluid(world, 'water', 1, 8, 0.5);
-  const { shown } = waterPicture(world, blockInfo);
-  assert.equal(shown[8 * 3 + 1], 0.5);
-  assert.equal(shown[7 * 3 + 1], 0);
-});
-
 test('working out the picture never changes the world', () => {
   const world = shaft(9);
   run(world, 30);
@@ -445,15 +356,15 @@ test('working out the picture never changes the world', () => {
 // DIG and pour: one full cell at the most
 // ---------------------------------------------------------------
 
-test('one scoop from the bottom of a 12-deep column takes exactly one cell of water, not 1.77', () => {
+test('one scoop from the bottom of a 12-deep column takes exactly one cell of water', () => {
   const world = shaft(12);
-  run(world, 400);
+  run(world, 100);
   const bottom = world.fluid.water[13 * 3 + 1];
-  assert.ok(bottom > 1.5, 'the bottom cell is squished');
-  assert.equal(scoop(world, 1, 13, blockInfo), true);
+  assert.ok(Math.abs(bottom - 1) < 1e-9, `the bottom cell holds one cell of water, however deep it is: ${bottom}`);
+  assert.equal(scoop(world, 1, 13), true);
   assert.ok(Math.abs(total(world.fluid.water) - 11) < 1e-9, `left: ${total(world.fluid.water)}`);
-  assert.ok(Math.abs(world.fluid.water[13 * 3 + 1] - (bottom - 1)) < 1e-9, 'the rest stays in the cell');
-  run(world, 200);
+  assert.equal(world.fluid.water[13 * 3 + 1], 0, 'the cell is empty (until the water above falls into it)');
+  run(world, 100);
   assert.ok(Math.abs(total(waterPicture(world, blockInfo).shown) - 11) < 0.01, 'and the column looks one cell shorter');
 });
 
@@ -461,47 +372,23 @@ test('a scoop takes at most one cell of steam too, and all of a cell that holds 
   const world = worldFrom(['...', '...']);
   setFluid(world, 'steam', 0, 0, 1.6);
   setFluid(world, 'water', 1, 1, 0.4);
-  assert.equal(scoop(world, 0, 0, blockInfo), true);
+  assert.equal(scoop(world, 0, 0), true);
   assert.ok(Math.abs(world.fluid.steam[0] - 0.6) < 1e-9);
-  assert.equal(scoop(world, 1, 1, blockInfo), true);
+  assert.equal(scoop(world, 1, 1), true);
   assert.equal(world.fluid.water[4], 0);
-  assert.equal(scoop(world, 2, 0, blockInfo), false); // nothing there
+  assert.equal(scoop(world, 2, 0), false); // nothing there
+  assert.equal(scoop(world, 9, 9), false); // outside the world
 });
 
-test('digging at water you can see always takes that water, even where it is only drawn', () => {
-  const world = shaft(10);
-  run(world, 400);
-  const { shown } = waterPicture(world, blockInfo);
-  const cell = 4 * 3 + 1; // the top of the drawn column: the real water stops lower down
-  assert.ok(world.fluid.water[cell] < MIN_AMOUNT && shown[cell] > 0.99);
-  assert.equal(scoop(world, 1, 4, blockInfo), true);
-  assert.ok(Math.abs(total(world.fluid.water) - 9) < 1e-9, `left: ${total(world.fluid.water)}`);
-  run(world, 200);
-  assert.ok(Math.abs(total(waterPicture(world, blockInfo).shown) - 9) < 0.01);
-  // Above the drawn water there is nothing to take.
-  assert.equal(scoop(world, 1, 0, blockInfo), false);
-});
-
-test('a speck of real water in a cell that is drawn full does not swallow the scoop', () => {
-  const world = shaft(10);
-  run(world, 400);
-  const cell = 4 * 3 + 1; // drawn full, but its water is really squished into the cells below
-  world.fluid.water[cell] = 2e-15; // a leftover far too small to see or draw
-  const { shown } = waterPicture(world, blockInfo);
-  assert.ok(shown[cell] > 0.99, `drawn ${shown[cell]}`);
-  const before = total(world.fluid.water);
-  assert.equal(scoop(world, 1, 4, blockInfo), true);
-  assert.ok(Math.abs(before - total(world.fluid.water) - shown[cell]) < 1e-9, `the scoop took ${before - total(world.fluid.water)} of the ${shown[cell]} drawn there`);
-  assert.equal(world.fluid.water[cell], 0, 'and the speck is gone too');
-});
-
-test('DIG on the Build page takes the block and one scoop; water over a full cell stays behind', () => {
+test('DIG on the Build page takes the block and one scoop; squeezed steam over a full cell stays behind', () => {
   const world = createWorld(3, 3);
-  setFluid(world, 'water', 1, 1, 1.6);
-  assert.equal(applyTool(world, 'dig', 1, 1, 'stone'), true);
-  assert.ok(Math.abs(world.fluid.water[4] - 0.6) < 1e-9);
+  setFluid(world, 'water', 1, 1, 1);
+  setFluid(world, 'steam', 1, 1, 1.6);
   assert.equal(applyTool(world, 'dig', 1, 1, 'stone'), true);
   assert.equal(world.fluid.water[4], 0);
+  assert.ok(Math.abs(world.fluid.steam[4] - 0.6) < 1e-9);
+  assert.equal(applyTool(world, 'dig', 1, 1, 'stone'), true);
+  assert.equal(world.fluid.steam[4], 0);
   assert.equal(applyTool(world, 'dig', 1, 1, 'stone'), false);
 });
 
@@ -514,14 +401,15 @@ test('pour never adds more than one full cell, and never overfills a cell', () =
   assert.equal(world.fluid.water[4], FULL);
 });
 
-test('you cannot pour into a cell that already looks full; pour just above the water instead', () => {
+test('you cannot pour into a full cell; pour just above the water instead', () => {
   const world = shaft(10);
-  run(world, 400);
+  run(world, 100);
   const { shown } = waterPicture(world, blockInfo);
-  assert.ok(shown[4 * 3 + 1] > 0.99 && world.fluid.water[4 * 3 + 1] < MIN_AMOUNT);
-  assert.equal(pour(world, 'water', 1, 4, blockInfo), false); // looks full: no room
-  assert.equal(pour(world, 'water', 1, 3, blockInfo), true);  // the first cell above the drawn water
-  run(world, 200);
+  assert.ok(shown[4 * 3 + 1] > 0.99 && world.fluid.water[4 * 3 + 1] > 0.99, 'the top cell of the column looks full, and is');
+  assert.equal(pour(world, 'water', 1, 4, blockInfo), false); // full: no room
+  assert.equal(pour(world, 'water', 1, 13, blockInfo), false); // the same at the bottom
+  assert.equal(pour(world, 'water', 1, 3, blockInfo), true);  // the first cell above the water
+  run(world, 100);
   assert.ok(Math.abs(total(waterPicture(world, blockInfo).shown) - 11) < 0.01);
 });
 
@@ -540,16 +428,17 @@ function steppedTank(wide, deep, step) {
   return worldFrom(rows);
 }
 
-test('an open tank with a step in it keeps rising as it is filled: every cell poured in is drawn, on the step too', () => {
+test('an open tank with a step in it keeps rising as it is filled: every cell poured in stands in it, on the step too', () => {
   for (const [wide, deep, step, pours] of [[6, 9, 3, 26], [10, 13, 7, 81]]) {
     const world = steppedTank(wide, deep, step);
     let before = 0;
     for (let poured = 1; poured <= pours; poured++) {
       assert.equal(pour(world, 'water', 1, 0, blockInfo), true);
-      run(world, 500);
+      run(world, 120);
       const { shown } = waterPicture(world, blockInfo);
       const real = total(world.fluid.water);
       assert.ok(Math.abs(real - poured) < 1e-6, 'no water was lost');
+      assert.ok(Math.max(...world.fluid.water) <= FULL + 1e-9, 'and none is squashed');
       assert.ok(Math.abs(total(shown) - real) < 0.02, `${wide} wide, pour ${poured}: drawn ${total(shown)} of ${real}`);
       assert.ok(total(shown) > before + 0.9, `${wide} wide, pour ${poured}: the picture did not rise (${before} → ${total(shown)})`);
       before = total(shown);
@@ -560,68 +449,6 @@ test('an open tank with a step in it keeps rising as it is filled: every cell po
         assert.ok(Math.max(...tops) - Math.min(...tops) < 0.02, `${wide} wide, pour ${poured}: not level: ${tops.map((top) => top.toFixed(3)).join(' ')}`);
       }
     }
-  }
-});
-
-test('water drawn on a step or ledge can be dug: the scoop comes out of the real water beside it', () => {
-  const world = steppedTank(6, 9, 3);
-  for (let poured = 1; poured <= 16; poured++) {
-    pour(world, 'water', 1, 0, blockInfo);
-    run(world, 500);
-  }
-  const { shown, source } = waterPicture(world, blockInfo);
-  const ledge = 5 * 8 + 6; // the cell on top of the step
-  assert.ok(world.fluid.water[ledge] < MIN_AMOUNT, 'the real (squished) water has not reached the step yet');
-  assert.ok(shown[ledge] > 0.1, `only ${shown[ledge]} is drawn on the step`);
-  assert.ok(source[ledge] >= 0 && world.fluid.water[source[ledge]] >= MIN_AMOUNT, 'it knows which real water it stands for');
-  const real = total(world.fluid.water);
-  assert.equal(scoop(world, 6, 5, blockInfo), true);
-  assert.ok(Math.abs(real - total(world.fluid.water) - shown[ledge]) < 1e-9, 'the scoop took what was drawn there');
-});
-
-test('a ledge only counts beside calm water: no film is drawn on the floor beside a falling tower of water', () => {
-  const world = worldFrom([
-    '#......#',
-    '#~.....#',
-    '#~.....#',
-    '#~.....#',
-    '#~.....#',
-    '#~.....#',
-    '#~.....#',
-    '########',
-  ]);
-  [1, 1.05, 1.1, 1.15, 1.2, 1.25].forEach((amount, down) => setFluid(world, 'water', 1, 1 + down, amount));
-  const { shown } = waterPicture(world, blockInfo);
-  for (let x = 2; x <= 6; x++) assert.equal(drawnHeight(world, shown, x), 0, `water drawn in column ${x}`);
-});
-
-test('a tower joined by a pipe to an open spout: no water is drawn standing in the air over the spout, and the tower is drawn level with the pool beside it', () => {
-  // The pipe runs from the foot of the tower, along the ground and up one
-  // cell to an open mouth. Water that comes out stands in a pool on top of
-  // the pipes (between the tower's wall and the pipe's riser) and runs
-  // off over the ground on the right. When it has all settled, the
-  // tower, the pool and the mouth are level: the mouth is as high as the
-  // water can stand, like the rim of a full glass.
-  const rows = [];
-  for (let y = 0; y < 7; y++) rows.push('#~~#...........');
-  rows.push('#~~#..P........');
-  rows.push('#~~PPPP........');
-  rows.push('###############');
-  for (const picture of [rows, mirrored(rows)]) {
-    const world = worldFrom(picture);
-    const flip = picture === rows ? (x) => x : (x) => 14 - x;
-    run(world, 2500);
-    const { shown } = waterPicture(world, blockInfo);
-    const at = (x, y) => shown[y * world.width + flip(x)];
-    assert.ok(world.fluid.water[8 * world.width + flip(1)] > 1.05, 'the water at the foot of the tower is squished');
-    assert.equal(at(6, 6), 0, 'nothing is drawn in the open air over the pipe\'s mouth');
-    const tower = drawnHeight(world, shown, flip(1));
-    const pool = 1 + drawnHeight(world, shown, flip(4)) - at(4, 8); // the pool stands on a pipe, one cell up
-    assert.ok(Math.abs(tower - drawnHeight(world, shown, flip(2))) < 1e-6, 'the tower is level across');
-    assert.ok(Math.abs(tower - pool) < 0.02, `the tower is drawn ${tower} tall, the pool beside it ${pool}`);
-    // Nothing is drawn that isn't there.
-    assert.ok(total(shown) <= total(world.fluid.water) + 1e-6, `drawn ${total(shown)} of ${total(world.fluid.water)}`);
-    for (let x = 7; x < 15; x++) assert.equal(at(x, 7), 0, 'and nothing floats over the ground');
   }
 });
 
@@ -649,8 +476,8 @@ test('water falling off a ledge is never drawn as more water than there is', () 
     stepFluids(world, blockInfo);
     const { shown, falling } = waterPicture(world, blockInfo);
     assert.ok(total(shown) <= total(world.fluid.water) + 1e-9, `tick ${tick}: ${total(world.fluid.water)} cells of water, drawn as ${total(shown)}`);
-    // (While it is still rushing, a little squished-in water has no level surface to be drawn on yet.)
-    assert.ok(total(shown) >= total(world.fluid.water) - 0.3, `tick ${tick}: ${total(world.fluid.water)} cells of water, only ${total(shown)} drawn`);
+    // (Only specks too small to see are left out of the picture.)
+    assert.ok(total(shown) >= total(world.fluid.water) - 0.05, `tick ${tick}: ${total(world.fluid.water)} cells of water, only ${total(shown)} drawn`);
     falling.forEach((share) => assert.ok(share >= 0 && share <= 1));
   }
   // Once it lies still, nothing is falling.
@@ -678,13 +505,13 @@ test('a trickle falling onto a puddle: the trickle is marked as falling, the pud
 
 test('water lying on full water is not falling: a settled deep column has no streams in it', () => {
   const world = shaft(10);
-  run(world, 400);
+  run(world, 100);
   const { falling } = waterPicture(world, blockInfo);
   assert.equal(total(falling), 0);
 });
 
 test('falling and lying change over smoothly: the fuller the cell below, the less of the water above counts as falling', () => {
-  const shares = [0, 0.5, 0.9, 0.96, 0.98, 0.99, 1, 1.2].map((below) => {
+  const shares = [0, 0.5, 0.9, 0.96, 0.98, 0.99, 1, 1 - 1e-12].map((below) => {
     const world = worldFrom(['#.#', '#.#', '###']);
     setFluid(world, 'water', 1, 0, 0.3);
     setFluid(world, 'water', 1, 1, below);
@@ -696,5 +523,5 @@ test('falling and lying change over smoothly: the fuller the cell below, the les
   for (let k = 3; k < shares.length; k++) assert.ok(shares[k] <= shares[k - 1], `shares ${shares.join(' ')}`);
   assert.ok(shares[4] > 0 && shares[4] < 1, `part falling, part lying: ${shares[4]}`);
   assert.equal(shares[6], 0);
-  assert.equal(shares[7], 0);
+  assert.equal(shares[7], 0, 'a cell that is full but for a rounding speck counts as full');
 });

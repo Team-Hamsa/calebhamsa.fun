@@ -46,7 +46,8 @@ export const GROUND_DEPTH = 4;
  *
  * And one more thing that IS saved:
  *   fluid      how much water and steam each cell holds: 0 = empty,
- *              1 = full, a little over 1 = squished by the weight above
+ *              1 = full. Water never holds more than 1 (it can't be
+ *              squashed); steam squeezed in under a lid can hold a little more
  *
  * @param {number} width - how many blocks across
  * @param {number} height - how many blocks down

@@ -16,7 +16,7 @@ import { AIR, WORLD_HEIGHT, WORLD_WIDTH, defaultWorld, getBlock, swapBlock, tick
 import {
   AIR_INFO, PACKS, allSystems, blockInfo, blocksInPack, drawLayers, isKnownBlock, refreshSignals,
 } from './blocks/registry.js';
-import { placeBlock, pour, scoop } from './fluids.js';
+import { makeRoom, placeBlock, pour, scoop } from './fluids.js';
 import { blockCanvas, drawWorld } from './block-art.js';
 import { initGuide } from './guide.js';
 import { WORLD_COUNT, loadCurrent, loadThumbnail, loadWorld, saveCurrent, saveWorld, worldKey } from './saves.js';
@@ -167,7 +167,7 @@ export function applyTool(world, tool, x, y, selected) {
   if (tool === 'dig') {
     // Digging takes the block, and ONE scoop of water: at most a full cell.
     // (swapBlock, not setBlock: any water left over stays where it is.)
-    const scooped = scoop(world, x, y, blockInfo);
+    const scooped = scoop(world, x, y);
     return swapBlock(world, x, y, AIR) || scooped;
   }
   return false;
@@ -189,6 +189,21 @@ export function saveDelay(now, firstUnsaved) {
 // =============================================================
 
 /**
+ * Load a saved world, ready to draw. A world saved by an older version
+ * of the game may hold deep water squashed into fewer cells (more than
+ * one cell of water in a cell). Water can't be squashed any more, so
+ * that extra is given room first: it goes back on top of the water it
+ * was squashed under (see makeRoom in fluids.js).
+ * @param {number} n - which world slot
+ * @returns {object|null} the world, or null if nothing is saved there
+ */
+export function openWorld(n) {
+  const world = loadWorld(n, storage(), loadOptions());
+  if (world) makeRoom(world, blockInfo);
+  return world;
+}
+
+/**
  * Set up the whole page. build.html calls this once.
  * @returns {void}
  */
@@ -199,7 +214,7 @@ export function initBuild() {
 
   // Open the world Caleb had last time (or a fresh one).
   state.current = loadCurrent(storage());
-  state.world = loadWorld(state.current, storage(), loadOptions()) ?? defaultWorld();
+  state.world = openWorld(state.current) ?? defaultWorld();
   buildWorldButtons();
   byId('photo').addEventListener('click', savePhoto);
   byId('new-world').addEventListener('click', newWorld);
@@ -486,7 +501,7 @@ function saveIfChanged() {
  */
 function reloadIfNewer() {
   if (unsaved) return;
-  const saved = loadWorld(state.current, storage(), loadOptions());
+  const saved = openWorld(state.current);
   if (!saved) return;
   state.world = saved;
   draw();
@@ -553,7 +568,7 @@ function switchWorld(n) {
   if (n === state.current) return;
   saveIfChanged();
   state.current = n;
-  state.world = loadWorld(n, storage(), loadOptions()) ?? defaultWorld();
+  state.world = openWorld(n) ?? defaultWorld();
   saveCurrent(n, storage());
   draw();
   updateWorldButtons();

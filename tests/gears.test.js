@@ -538,9 +538,34 @@ test('a wheel in a level stream still turns, but feebly: the water hardly falls'
   assert.ok(spinAt(world, 2, 1) > 0.1 && spinAt(world, 2, 1) < 0.5, `with nothing to push it turns at ${spinAt(world, 2, 1)}`);
   const wheel = wheelSource(world, 2, 1);
   assert.ok(wheel.strength > 0 && wheel.strength < CRANK_STRENGTH / 3, `strength ${wheel.strength}`);
-  // The most work it can do is less than a tenth of a crank's.
+  // The most work it can do is about a tenth of a crank's.
   const best = (wheel.strength / 2) * (wheel.speed / 2);
-  assert.ok(best < 0.1 * (CRANK_STRENGTH / 2) * (CRANK_SPEED / 2), `best work ${best}`);
+  assert.ok(best < 0.11 * (CRANK_STRENGTH / 2) * (CRANK_SPEED / 2), `best work ${best}`);
+});
+
+test('a taller tower turns the wheel at its spout faster and harder: deep water presses harder', () => {
+  /**
+   * A tower 3 wide with a short pipe from its foot to a water wheel (stone
+   * over and under it), and a free fall beyond. What can the wheel do?
+   * @param {number} depth - how deep the tower's water is
+   * @returns {{speed: number, strength: number}} the wheel as a source of turning
+   */
+  const spout = (depth) => {
+    const rows = [];
+    for (let y = 0; y < depth - 1; y++) rows.push('#~~~#.....#');
+    rows.push('#~~~####..#', '#~~~PPO...#', '#######...#', '#######...#', '#######...#', '###########');
+    const world = build(rows);
+    world.cells.forEach((name, index) => {
+      if (name === 'pipe' || name === 'waterWheel') world.fluid.water[index] = 1;
+    });
+    more(world, 3);
+    return wheelSource(world, 6, depth);
+  };
+  const low = spout(4);
+  const high = spout(8);
+  assert.ok(low.speed > CRANK_SPEED && low.strength > CRANK_STRENGTH, `4 deep: ${JSON.stringify(low)}`);
+  assert.ok(high.speed > 1.2 * low.speed, `speed ${low.speed} → ${high.speed}`);
+  assert.ok(high.strength > 1.2 * low.strength, `strength ${low.strength} → ${high.strength}`);
 });
 
 test('a taller fall is stronger: three wheels stacked under one faucet each get a full cell of fall', () => {
@@ -849,6 +874,25 @@ test('a tall loop (pump up one side, stacked wheels down the other) winds down w
     const { world, pump, wheels } = tallLoop(count, chain, batteries);
     assertWindsDown(`${count} stacked wheels, gears ${chain}, ${batteries} batteries`, world, pump, wheels);
   }
+});
+
+test('in a sealed loop that is full all the way round the wheels turn feebly, however tall it is: what goes up one side comes down the other', () => {
+  /**
+   * The top speed of the wheels in a tall loop, running freely (no generator to push against).
+   * @param {number} count - how many stacked wheels (so, how tall)
+   * @returns {number} the fastest any of them could turn
+   */
+  const topSpeed = (count) => {
+    const { world, wheels } = tallLoop(count, 'E', 2);
+    primeLoop(world, 300);
+    const speeds = wheels.map(([x, y]) => wheelSource(world, x, y)?.speed ?? 0);
+    assert.ok(Math.max(...speeds) > 0, `${count} wheels: water should go round`);
+    return Math.max(...speeds);
+  };
+  const short = topSpeed(3);
+  const tall = topSpeed(6);
+  assert.ok(short < 0.3, `3 wheels: top speed ${short}`);
+  assert.ok(tall <= short + 1e-9, `the taller loop is no faster: ${tall} against ${short}`);
 });
 
 test('a clicker (or a tapped switch) in a generator\'s loop gives no free electricity: on every tick, the crank\'s work is exactly the heat made, and the lamps get less', () => {

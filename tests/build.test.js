@@ -6,7 +6,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AIR, createWorld, getBlock, setBlock, setFluid, tick } from '../js/world.js';
 import { allSystems, blockInfo } from '../js/blocks/registry.js';
-import { applyTool, fitCellSize, saveDelay } from '../js/build.js';
+import { applyTool, fitCellSize, openWorld, saveDelay } from '../js/build.js';
+import { serializeWorld, worldKey } from '../js/saves.js';
 
 test('blocks are as big as fits, and always square', () => {
   assert.equal(fitCellSize(960, 560, 24, 14), 40);  // fits exactly
@@ -103,12 +104,58 @@ test('a rock built into a tank of water pushes the water up: the level RISES and
   assert.ok(topRow > 0.5, `only ${topRow} rose above the old level`);
 });
 
+test('a rock built into a full tank: the water it pushes aside goes on top at once, and no cell is ever over full', () => {
+  const tank = wetWorld(['#...#', '#...#', '#~~~#', '#~~~#', '#~~~#', '#####']);
+  assert.equal(applyTool(tank, 'build', 2, 4, 'stone'), true); // at the very bottom
+  assert.ok(Math.max(...tank.fluid.water) <= 1, `a cell holds ${Math.max(...tank.fluid.water)}`);
+  assert.ok(Math.abs(allWater(tank) - 9) < 1e-12);
+  // The cell of water that was pushed out stands on top of the column over the rock.
+  assert.equal(tank.fluid.water[1 * 5 + 2], 1);
+  const systems = allSystems();
+  for (let i = 0; i < 100; i++) tick(tank, systems, blockInfo);
+  // Then it levels out: the level has risen by exactly one cell's worth, shared over the surface.
+  for (const x of [1, 2, 3]) assert.ok(Math.abs(tank.fluid.water[1 * 5 + x] - 1 / 3) < 1e-3, `column ${x} stands ${tank.fluid.water[1 * 5 + x]} above the old level`);
+  assert.ok(Math.abs(allWater(tank) - 9) < 1e-9);
+});
+
+test('a block built into a sealed full tank loses that cell of water and no more', () => {
+  const tank = wetWorld(['#####', '#~~~#', '#~~~#', '#####']);
+  assert.equal(applyTool(tank, 'build', 2, 2, 'stone'), true);
+  assert.ok(Math.abs(allWater(tank) - 5) < 1e-12, `6 cells of water became ${allWater(tank)}`);
+  assert.ok(Math.max(...tank.fluid.water) <= 1);
+  // A pipe carries water, so building one loses nothing.
+  assert.equal(applyTool(tank, 'build', 1, 1, 'pipe'), true);
+  assert.ok(Math.abs(allWater(tank) - 5) < 1e-12);
+});
+
+test('opening an old save with squashed water gives every cell room before the first picture', () => {
+  // A world as the old game saved it: ten cells of water squashed into a shaft's bottom eight cells.
+  const old = createWorld(24, 14);
+  for (let y = 0; y < 14; y++) {
+    setBlock(old, 4, y, 'stone');
+    setBlock(old, 6, y, 'stone');
+  }
+  [0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6].forEach((amount, k) => setFluid(old, 'water', 5, 6 + k, amount));
+  const items = new Map([[worldKey(1), serializeWorld(old)]]);
+  const before = globalThis.window;
+  globalThis.window = { localStorage: { getItem: (key) => items.get(key) ?? null, setItem: (key, value) => items.set(key, value) } };
+  try {
+    const world = openWorld(1);
+    assert.ok(Math.max(...world.fluid.water) <= 1, `a cell holds ${Math.max(...world.fluid.water)}`);
+    assert.ok(Math.abs(allWater(world) - 10) < 1e-9, 'all ten cells are still there');
+    for (let y = 0; y < 14; y++) assert.ok(Math.abs(world.fluid.water[y * 24 + 5] - (y >= 4 ? 1 : 0)) < 1e-9, `row ${y}`);
+    assert.equal(openWorld(2), null); // nothing saved there
+  } finally {
+    globalThis.window = before;
+  }
+});
+
 test('a block that carries water (pipe, valve, water wheel, pump, turbine, rope) keeps the water when built into it', () => {
   for (const name of ['pipe', 'valveOpen', 'waterWheel', 'pumpRight', 'turbine', 'rope']) {
     const tank = wetWorld(['#...#', '#~~~#', '#~~~#', '#####']);
-    setFluid(tank, 'water', 1, 2, 1.09); // squished, like at the bottom of a tank
     assert.equal(applyTool(tank, 'build', 1, 2, name), true);
-    assert.equal(tank.fluid.water[2 * 5 + 1], 1.09, `${name} lost its water`);
+    assert.equal(tank.fluid.water[2 * 5 + 1], 1, `${name} lost its water`);
+    assert.equal(allWater(tank), 6);
   }
 });
 
