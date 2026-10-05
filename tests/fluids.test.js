@@ -1973,3 +1973,22 @@ test('steam comes out the same in a mirror too: water that is half a cell but fo
     sameInMirror(rows, 30, `world ${trial} (${rows.join('/')})`);
   }
 });
+
+test('worlds whose sums once went round in circles (so a body of water stood still for a small step) now settle', () => {
+  // Each world was caught by a sweep of random worlds: in one small step the
+  // water circuit kept changing its mind (a hole open, shut, open...; a
+  // surface giving all it could, taking all it could, giving...) and gave up.
+  const worlds = JSON.parse(readFileSync(new URL('./fixtures/stuck-worlds.json', import.meta.url), 'utf8'));
+  for (const { why, rows, water, current } of worlds) {
+    const world = worldFrom(rows);
+    water.forEach((amount, index) => {
+      world.fluid.water[index] = amount;
+    });
+    world.signals.electric = { cells: new Map(current.map(([index, amps]) => [index, { current: amps }])) };
+    const before = pressWork.stuck;
+    const had = total(world, 'water');
+    run(world, 3);
+    assert.equal(pressWork.stuck, before, why);
+    assert.ok(Math.abs(total(world, 'water') - had) < 1e-9, why);
+  }
+});

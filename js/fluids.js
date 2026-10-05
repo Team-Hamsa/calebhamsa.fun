@@ -1469,6 +1469,13 @@ function pressWater(world, w, table, pumps, onMove, onFill, press) {
             state = 2;
             q = 0;
           }
+          if (end.low < 0 && end.state === 1 && state === 1 && q !== end.q && (end.q === end.high || end.q === end.low)) {
+            // ONE STEP AT A TIME, for a surface too: from "gives all it can"
+            // it does not jump straight to "takes all it can" (or back). The
+            // answer may lie in between, so it is tried free first.
+            state = 0;
+            q = 0;
+          }
           if (end.ease2 > 0) {
             // ONE STEP AT A TIME. A hole goes: shut, then its first line (the
             // one that starts from nothing), then its second line, then held
