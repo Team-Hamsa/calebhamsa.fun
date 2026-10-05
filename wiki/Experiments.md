@@ -25,6 +25,8 @@ And three to do on the Build page, with no code at all (they are on the [⚙️ 
 2. **Help the crank:** two batteries wired against a cranked generator drive it faster than the crank can go.
 3. **Swap them:** swap a generator block for a motor block. It works just the same.
 
-And one for the [💧 Water](Water) page:
+And three for the [💧 Water](Water) page:
 
 1. **How deep can you make it squirt?** Build a tall tank of water. Dig one hole in its side near the top, and one near the bottom. Which squirts harder? (Deep water presses harder.)
+2. **Pipe first, or water first?** Build a tall tank with a pipe out of its foot. Do it once laying the pipe before you pour the water in, and once after. Does the water run out just as fast? (It should: only how the build stands now matters, not how you got there.)
+3. **Where does the wheel go?** Put a water wheel (with a block on top of it) at the end of that pipe, with a drop right after it. Fill the tank and watch how fast the wheel turns. Then put the wheel in the middle of the pipe instead. Where is it faster? (At the end: that is where the water's push is used up. Now make the tank taller.)
