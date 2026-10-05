@@ -196,7 +196,7 @@ Call the steam's energy `E` (the sum over all cells of `storedEnergy(amount) + a
 5. **Only three things raise E:** a burner (it puts steam low down, under whatever is above it), the BUILD tool (pouring steam, or building a block into steam), and a block moving through steam (see the last note below). No electric or spinning block makes steam or moves it: pumps move only water. So electricity and turning can never be turned back into steam energy, and no loop closes without a fire or a hand.
 6. **The whole round trip is paid for by the fire.** Boil at the bottom, rise H cells (the turbine gets up to `RISE_POWER × H`), chill at the top, fall H cells (a wheel gets up to `DROP_POWER × H`). That is a heat engine: the burner is the hot end, the chiller the cold end, and the burner is an outside source like a faucet, a battery or a hand on a crank. Turn the burner off and it all winds down.
 
-**Known gap, not opened and not closed by this pass:** blocks trade places with fluid for free (`moveBlock`; the lifting guide already says "nothing floats here"). Sand sinking through water lifts the water without paying for it today. With a steam ledger the mirror case now also counts: a load winched UP through steam pushes that steam down a cell. Worth its own issue for the whole family (water and steam together); it needs buoyancy in the lifting pack, which is out of scope here.
+**Known gap, not opened and not closed by this pass:** blocks trade places with fluid for free (`moveBlock`; the lifting guide already says "nothing floats here"). Sand sinking through water lifts the water without paying for it today. With a steam ledger the mirror case now also counts: a load winched UP through steam pushes that steam down a cell. Worth its own issue for the whole family (water and steam together); it needs buoyancy in the lifting pack, which is out of scope here. **(Closed for loads on a rope in the review repairs: see the second addendum. A review turned the gap into a working machine, so it could not wait.)**
 
 ## Known side effect: no wire crossing
 
@@ -320,3 +320,51 @@ Built as specified. The numbers in "What a prototype measured" came out the same
 ### Found, not caused and not fixed here: a motor helping its own generator (#14/#15)
 
 In the feedback sweep, when the motor is geared so that it HELPS the train its generator is on (for example turbine, big gear, small gear, generator, small gear, big gear, motor, with the generator and motor joined by plain wire), the heat in the loop comes to as much as 1.28 times the work the turbine does on the shaft. A hand crank in place of the turbine gives the same 1.28 on the commit before this pass, so it is the motor–generator coupling and not the steam: the motor's push is recycled electricity that the motor never pays for (it is a plain resistor with no push-back of its own). It is not perpetual motion (the loop gives back less than it takes each time round, so it still winds down the moment the source stops), but it is more heat out than work in while the source runs. This is exactly what the joint circuit + spin solve of #14/#15 is for; no patch was added here.
+
+## Addendum 2026-10-05 (2): review repairs
+
+A review of the built pass found six things. What was done about each, and where the law in this spec changed.
+
+### 1. Blocks no longer move fluid for free on a rope (the "known gap" above, now closed for winches)
+
+**The machine the review built:** a sealed shaft with 4.0 of steam and no burner, a winch with a weightless pulley hook, a turbine in a side loop. Each stroke up carried the steam above the hook to below it for nothing (`moveBlock`), it rose through the turbine, and a generator lit a lamp: 0.70 of heat per cycle for ever, with the hand crank doing 0.00 work. The water mirror was there too, and older than this pass: a hook and crate dipped into a pool lift the water two cells, it runs off over a water wheel and back under (wheel best work 134 for crank work 0.25 in 20 dips).
+
+**The law now.** A load on a winch's rope pays for the fluid it has to move the hard way:
+
+- going **up**, the steam in the cell above it is pushed down: the load is heavier to lift by `STEAM_PUSH × steam × share`;
+- going **down**, the water in the cell below it is lifted: the load pulls less by `WATER_WEIGHT × water × share`, and if that leaves nothing, it **floats** (it is `resting`, like a load on the ground: slack rope, no help, and it will not go down);
+- `WATER_WEIGHT = DROP_POWER × ROPE_PER_TURN ÷ TICKS_PER_SECOND` and `STEAM_PUSH` is the same with `RISE_POWER`: 2.5 crates for a full cell. They are not free numbers: they make one cell of rope pay exactly what the fluid's ledger gains.
+- `share` is the load's cells ÷ the rope cells per move: a hook and its load move the fluid two cells, and a hook's rope moves two cells per cell of load.
+- Going the easy way gives nothing back (water over a rising load, steam under a sinking one): that is lossy, never a gain. It also keeps `lifting ≥ weight ≥ pull`, which is what makes part-wound rope safe (rope wound back always costs at least what it gave).
+
+**So "nothing floats" (#24's stated simplification) is no longer true for a load on a rope.** A crate (1) floats on anything deeper than 0.4 of a cell; an iron weight (4) sinks and pulls 1.5 in full water; a hook with a load under it floats sooner than the load alone. The lifting guide and wiki say so, with the reason.
+
+**How it is built.** `inTheWay` (lifting.js) reads the two cells. `winchLoad` returns `{pull, lifting, resting, topSpeed}`; `loadsOf` (spin.js, was `loadOf`) turns that into the existing kind of load plus a second one with limit 0 for the extra while lifting, so the balance solver itself is unchanged. `liftSystem` keeps what each rope has paid for fluid in `world.signals.lift.aside`, and a load only moves once that covers the fluid that is in the way at the moment it moves (steam or water that drifted in late makes it wait and keep paying; rope wound back takes its share out). Two things in `liftSystem` changed with it: rope let out faster than falling is cut to one cell before it is added (it was cut afterwards, which threw away part-wound rope the winch had been helped for), and a load that lands with more than a cell of rope out keeps it instead of forgetting it.
+
+**Not done, and why:**
+
+- **Loose blocks still sink for free** (falling sand, a crate with its rope dug away). No machine can let a block go: it takes a hand digging a rope or building a block, which is already a source of energy in this game. Making loose blocks float as well would need sand to have a weight, and meets the next point head on.
+- **Deep water is squeezed** (a cell 10 deep holds about 2.0), so by the ledger it weighs more: an iron weight on a rope stops sinking about 6 cells down a full tank. That is #30's subject (pressure from depth instead of extra water), not a new law.
+- **A crate under water does not bob up.** Rope cannot push, and a block does not move by itself.
+
+**Measured after the repair:** the review's machine, 200 cycles: crank 870 in, turbine best work 350, steam energy unchanged. The water mirror: a crate floats on the 1.5 pool (no dips); in 0.5 of water, crank 74 in for wheel best work 59. A new sweep (400 random runs of 2000 ticks: five shafts with turbine and water-wheel side loops, five kinds of load, random water and steam poured in, a crank flipped at random, no fire or pump) keeps a ledger of fluid energy + carried push + load height + part-wound rope + work credited to wheels and turbines − crank work: it never climbed back above an earlier low (worst +0.0000). On the commit before, 53 of 60 runs climbed, by up to 57. The sweep found two leaks in the first cut of the repair itself (the two `liftSystem` changes above).
+
+### 2. A chiller right on a turbine
+
+Steam chilled inside a turbine's cell never left it by a move, so `gross` stayed 0 and the turbine stood still with steam cycling through it. Now `runSpecials` reports what the chillers took from each cell, and `stepFluids` counts steam chilled in a turbine as steam that left it, the way that tick's steam came in. Its work was already credited when it landed. The counts gained `into` and `inWay` for this.
+
+### 3. A choking turbine raced
+
+`work` is credited mostly when steam lands on the turbine, `gross` when it leaves. With the exit choking, more landed than left and `work ÷ gross` ballooned (4.8 where the chimney's steady speed is 2.5). Now `rise = work ÷ max(gross, into)`: the push is shared over all the steam that came in. Speed stays under what the steam really rose and falls as the exit chokes; `through × rise ≤ work` still holds, so the power cap is as before.
+
+### 4. Round a corner, the push is gone
+
+Kept: it is the wheel's "landed in a pool" rule upside down, and the wiki already said steam under a ceiling has no push. The words were wrong, not the law. The `stepFluids` comment now says the first turbine the steam meets *while still rising*; the guide and wiki say to stand a turbine upright in the chimney. A pipe elbow that keeps its push is a model change for #29.
+
+### 5. No run-down without a load
+
+Not changed. A turbine with nothing to turn runs at its no-load speed for as long as any steam goes through, then stops: speed comes from how far the steam rises, not from how much there is, and nothing in the game has inertia or bearing drag (the water wheel and the crank stop the same way). With a load it fades properly. Inertia belongs with the joint solve of #14/#15.
+
+### 6. "More burners make it stronger"
+
+True only when each burner's steam can get to the chimney. Steam cannot push sideways through water, so a second burner in the corner of one pot fills its corner with steam and stops boiling (strength exactly as with one burner). The fluid rule is #29/#30's; the wiki and guide now say "more steam", and to give each burner its own pot with open air above it. A test pins the corner case.
