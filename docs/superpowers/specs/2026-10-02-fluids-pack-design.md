@@ -370,3 +370,8 @@ Rule 1 of the drawing kept the old look "a cell with water standing on it is dra
 ## Addendum 2026-10-05: the turbine is a spin source now (issue #21)
 
 See `2026-10-05-turbine-spin-source-design.md`. The turbine is no longer an electric part: rising steam gives it a top speed and a strength (like the water wheel), and it needs a generator to make electricity. `world.signals.used`, `steamOut`, `turbineFlow`, `turbinePush`, `TURBINE_GAIN` and `MAX_TURBINE_PUSH` are gone; `world.signals.rising` and `stepFluids(...).turbines` (`{out, gross, work}`) replace them. Everything above about the turbine's `pushNow`, its electric axis and "steam only gives its push once" is history.
+
+
+## Addendum 2026-10-05: water can't be squashed (issue #30)
+
+See `2026-10-05-water-pressure-from-depth-design.md`. Water no longer squishes: a cell never holds more than one cell of water, and the push of deep water is worked out from its depth each small step (`pressWater`, a circuit for water). `SQUISH`, rule 3 ("UP") for water, the pump round of `runSpecials`, and the #20 picture rules (extra drawn back on top, steps and ledges, brims, `source`) are all replaced: `waterPicture` now draws each cell with what it holds. Steam is a gas and keeps its squeeze (`STEAM_SQUEEZE`, `flowSteam`).
