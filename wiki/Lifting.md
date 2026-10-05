@@ -96,13 +96,13 @@ cost nothing, a hand flipping a crank to and fro could light a lamp for ever
 without doing any work. The load pays for the water or steam with every bit of
 rope, and it only moves once it has paid.
 
-Three places where the game is still simpler than the real world: going the
+Two places where the game is still simpler than the real world: going the
 *easy* way gives nothing back (water over a load doesn't help lift it, so a
-crate under water does not bob up by itself); a block is always in one whole
-square, so a floating crate sits in the square **above** the water, even over
-a puddle half a block deep; and water deep down in a tall tank is squeezed, so
-it weighs a bit more than water at the top (sand and iron stop sinking about
-6 blocks down a full tank).
+crate under water does not bob up by itself); and a block is always in one
+whole square, so a floating crate sits in the square **above** the water, even
+over a puddle half a block deep. (Water can't be squashed, so it weighs the
+same at the top of a tank and at the bottom: sand and iron sink right to the
+bottom of the deepest tank.)
 
 **Ropes that cross are tied.** If one winch's rope runs on *through* the end of
 another winch's rope, that end is tied into it and can't be wound in (its winch

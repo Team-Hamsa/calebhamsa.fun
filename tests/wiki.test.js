@@ -99,6 +99,13 @@ test('the wiki says deep water presses harder, and no longer says it is squished
   assert.match(water, /Deep water presses harder/);
   assert.match(water, /can't be squashed/);
   assert.match(water, /doesn't suck/);
+  assert.match(water, /no power is a shut door/);
+  assert.match(water, /Two pumps in a row/);
+  // Only steam is squeezed now, and nothing stops sinking part way down a tank.
+  const lifting = readPage('Lifting');
+  assert.doesNotMatch(lifting, /squeezed|stop sinking/i, 'wiki/Lifting.md still says deep water is squeezed');
+  assert.match(lifting, /sink right to the\s+bottom/);
+  for (const name of ['Machines-to-build', 'Experiments']) assert.doesNotMatch(readPage(name), /squeezed/i);
   assert.doesNotMatch(water, /issue #30/, 'the note about needing a new water engine can go: this is it');
   const readme = readFileSync(new URL('README.md', ROOT), 'utf8');
   assert.doesNotMatch(readme, /squish/i);
