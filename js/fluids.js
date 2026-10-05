@@ -1090,9 +1090,12 @@ const BOIL_STEAM_CAP = FULL + SQUISH;
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @param {string[][]} sides - open sides by cell index
+ * @param {Map<number, number>} [chilled] - if given, it is filled in with
+ *   how much steam the chillers turned back into water in each cell (by
+ *   cell index): stepFluids uses it for steam chilled inside a turbine
  * @returns {number} the total amount that changed
  */
-export function runSpecials(world, blockInfo, sides) {
+export function runSpecials(world, blockInfo, sides, chilled) {
   const { water, steam } = world.fluid;
   let changed = 0;
   /**
@@ -1139,6 +1142,7 @@ export function runSpecials(world, blockInfo, sides) {
         steam[next] -= cool;
         water[next] += cool;
         changed += cool;
+        if (chilled && cool > 0) chilled.set(next, (chilled.get(next) ?? 0) + cool);
       }
     }
   }
@@ -1218,15 +1222,28 @@ export function wheelTurn(wheel) {
  * RISING STEAM CARRIES ITS PUSH WITH IT, just the same, upside down
  * (world.signals.rising). The energy steam gives up while it rises
  * stays with it for as long as it keeps rising, and the first turbine
- * it meets gets all of it. Each bit of energy goes to ONE turbine at
+ * it meets WHILE IT IS STILL RISING gets all of it. Steam that stops
+ * under a ceiling, or turns a corner and goes sideways, has lost its
+ * push (like water that has splashed into a pool): so a turbine lying
+ * on its side at the end of a pipe only gets the little its steam gives
+ * up on that last step. Each bit of energy goes to ONE turbine at
  * the most: so turbines one after the other in a chimney share what the
  * steam gave up rising past them, and never get more.
+ *
+ * STEAM CHILLED INSIDE A TURBINE HAS GONE THROUGH IT. A chiller right
+ * next to a turbine turns the steam back into water while it is still
+ * in the turbine's cell. That steam came in through the blades and gave
+ * up its push there, so it is counted as steam that went through, the
+ * way it was going (a real power plant's turbine blows straight into
+ * its condenser, just like this).
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {{moved: number, turbines: Map<number, object>, waterOut: Map<number, number>, waterWork: Map<number, number>, wheels: Map<number, object>, sides: string[][]}}
- *   how much changed in total, each turbine's count ({out, gross, work}:
- *   the steam that left it, + up or right and − down or left; all the
- *   steam that left it; and the energy that steam gave up there), the
+ *   how much changed in total, each turbine's count ({out, gross, work,
+ *   into, inWay}: the steam that left it (or was chilled inside it), + up
+ *   or right and − down or left; all the steam that left it; the energy
+ *   the steam gave up there; all the steam that came into it; and the
+ *   steam that came into it, + going up or right and − down or left), the
  *   turning flow of each water wheel (see wheelTurn), how much energy the
  *   water gave up at each water wheel, each wheel's full count
  *   ({lean, sideOut, down, gross, work}), and every cell's open sides
@@ -1239,10 +1256,10 @@ export function stepFluids(world, blockInfo) {
   /**
    * The count for one turbine, made empty the first time.
    * @param {number} index - the turbine's cell index
-   * @returns {{out: number, gross: number, work: number}} its count
+   * @returns {{out: number, gross: number, work: number, into: number, inWay: number}} its count
    */
   const turbineAt = (index) => {
-    if (!turbines.has(index)) turbines.set(index, { out: 0, gross: 0, work: 0 });
+    if (!turbines.has(index)) turbines.set(index, { out: 0, gross: 0, work: 0, into: 0, inWay: 0 });
     return turbines.get(index);
   };
   // The push that rising steam is carrying, by cell (see above).
@@ -1257,9 +1274,9 @@ export function stepFluids(world, blockInfo) {
   let riseTaken = new Float64Array(size); // how much of each cell's steam moved away in this step
   /**
    * Count steam going through a turbine: countWheels (below) upside
-   * down. How much leaves it and which way, and the ENERGY the steam
-   * gives up leaving a turbine, or brings with it landing on one from
-   * somewhere that isn't a turbine. Each bit of energy is only ever
+   * down. How much leaves it and which way, how much comes in and which
+   * way, and the ENERGY the steam gives up leaving a turbine, or brings
+   * with it landing on one from somewhere that isn't a turbine. Each bit of energy is only ever
    * given to ONE turbine: when steam goes straight from one turbine into
    * another, the one it leaves gets it.
    *
@@ -1276,11 +1293,17 @@ export function stepFluids(world, blockInfo) {
   const countTurbines = (from, to, amount, energy, drop, part) => {
     const leaves = Boolean(blockInfo(world.cells[from])?.turbine);
     const lands = Boolean(blockInfo(world.cells[to])?.turbine);
+    // Up (drop 1) and right count +, down and left −.
+    const way = (drop === 0 ? to > from : drop === 1) ? amount : -amount;
     if (leaves) {
       const turbine = turbineAt(from);
       turbine.gross += amount;
-      // Up (drop 1) and right count +, down and left −.
-      turbine.out += (drop === 0 ? to > from : drop === 1) ? amount : -amount;
+      turbine.out += way;
+    }
+    if (lands) {
+      const turbine = turbineAt(to);
+      turbine.into += amount;
+      turbine.inWay += way;
     }
     // What this steam has to give: what it carried, and what it gave up just now.
     const brought = rising[from] * part;
@@ -1374,7 +1397,17 @@ export function stepFluids(world, blockInfo) {
   }
   world.signals.falling = falling;
   world.signals.rising = rising;
-  moved += runSpecials(world, blockInfo, sides);
+  const chilled = new Map();
+  moved += runSpecials(world, blockInfo, sides, chilled);
+  // Steam chilled inside a turbine has gone through it (see above): it
+  // counts as leaving the way this tick's steam came in (or, if none
+  // came in just now, the way the rest is leaving; or else up).
+  for (const [index, amount] of chilled) {
+    if (!blockInfo(world.cells[index])?.turbine) continue;
+    const turbine = turbineAt(index);
+    turbine.gross += amount;
+    turbine.out += (Math.sign(turbine.inWay) || Math.sign(turbine.out) || 1) * amount;
+  }
   const waterOut = new Map();
   const waterWork = new Map();
   for (const [index, wheel] of wheels) {

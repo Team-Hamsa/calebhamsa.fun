@@ -42,8 +42,9 @@ and its wheel turns the other way, just as fast.
 In a level stream it still turns, but only feebly: that water hardly falls.
 A **turbine** is a water wheel upside down: its push comes from **how much
 steam** goes through it and **how far that steam rises**. One burner's steam
-rising one block makes it just like a crank too. More burners make it
-stronger; a taller chimney under it makes it faster and stronger. It has no
+rising one block makes it just like a crank too. More steam (more burners,
+each under its own pot of water) makes it stronger; a taller chimney under it
+makes it faster and stronger. It has no
 left or right of its own, so it helps whichever way its gears already go (↻
 if nothing else is turning them). A motor gets
 stronger with more electricity. Two of them on the same gears **add up**. Two

@@ -58,7 +58,7 @@ const MIN_TURBINE_FLOW = 0.0025;
 const MIN_SOURCE = 0.05;
 
 /** A turbine's counts when no steam goes through it (see stepFluids in fluids.js). */
-const NO_STEAM = Object.freeze({ out: 0, gross: 0, work: 0 });
+const NO_STEAM = Object.freeze({ out: 0, gross: 0, work: 0, into: 0, inWay: 0 });
 
 /** Smoothed steam counts smaller than this are dropped (they would shrink for ever and never reach 0). */
 const TURBINE_MIN = 1e-9;
@@ -99,6 +99,13 @@ const PUMP_TURNS = { pumpRight: 'pumpDown', pumpDown: 'pumpLeft', pumpLeft: 'pum
  * energy the steam gave up, and never more. Steam that didn't rise (or
  * un-squeeze) gives no push, however much of it there is.
  *
+ * Steam gives up most of its push as it comes IN, so when more comes in
+ * than can get out (the room above is filling up), the push is shared
+ * over all the steam that came in, not just the trickle that got out.
+ * That way a turbine whose way out is choking slows down and gets
+ * weaker. It never races: no steam can turn it faster than that steam
+ * really rose.
+ *
  * A turbine makes TURNING, not electricity: it needs a generator beside
  * it. It reads nothing from the circuit.
  * @param {object} world - the world
@@ -112,7 +119,7 @@ export function turbineSource(world, x, y) {
   if (!turbine || turbine.gross <= 0 || turbine.work <= 0) return null;
   const through = Math.min(turbine.gross, Math.abs(turbine.out)); // less than all of it when it leaves both ways
   if (through < MIN_TURBINE_FLOW) return null;
-  const rise = turbine.work / turbine.gross;                      // cells risen, for each unit of steam
+  const rise = turbine.work / Math.max(turbine.gross, turbine.into); // cells risen, for each unit of steam
   const speed = TURBINE_SPEED * Math.sqrt(rise);
   if (speed < MIN_SOURCE) return null;
   return { speed, strength: TURBINE_STRENGTH * through * Math.sqrt(rise), eitherWay: true };
@@ -568,7 +575,7 @@ const guide = {
     drain: { does: 'Water that flows into it disappears.' },
     burnerOn: { does: 'Boils the water just above it into steam.', use: 'on ↔ off' },
     chiller: { does: 'Very cold: steam touching it turns back into water. It rains!' },
-    turbine: { does: 'A fan in a pipe. Steam rising through it spins it. It makes TURNING, not electricity: put a generator (⚙️ tab) beside it and wire the generator to a lamp. More steam = stronger. A taller chimney under it = faster and stronger. If the steam has nowhere to go, it stops.' },
+    turbine: { does: 'A fan in a pipe. Steam rising through it spins it. It makes TURNING, not electricity: put a generator (⚙️ tab) beside it and wire the generator to a lamp. More steam = stronger. A taller chimney under it = faster and stronger. Stand it upright in the chimney: steam that turns a corner first has lost most of its push. If the steam has nowhere to go, it stops.' },
     pumpRight: {
       does: 'Uses electricity to push water the way its arrow points, even uphill. Wire it into a loop with a battery. Uphill is hard work: the higher, the slower. If the water stops part way up, add a battery.',
       use: 'turns it: → ↓ ← ↑',

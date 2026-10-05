@@ -112,9 +112,9 @@ const levelAt = (world, x, y) => world.signals.electric?.cells?.get(y * world.wi
  * @param {object} world - the world
  * @param {number} x - column
  * @param {number} y - row
- * @returns {{out: number, gross: number, work: number}} the count (all 0 with no steam)
+ * @returns {{out: number, gross: number, work: number, into: number, inWay: number}} the count (all 0 with no steam)
  */
-const countAt = (world, x, y) => world.signals.water?.turbines?.get(y * world.width + x) ?? { out: 0, gross: 0, work: 0 };
+const countAt = (world, x, y) => world.signals.water?.turbines?.get(y * world.width + x) ?? { out: 0, gross: 0, work: 0, into: 0, inWay: 0 };
 
 /**
  * The power all the lamps in a world use: each one's current, squared (a lamp's resistance is 1).
@@ -233,6 +233,37 @@ test('more burners make a turbine stronger, not faster', () => {
   assert.ok(two.strength > 1.8 * one.strength && two.strength < 2.2 * one.strength, `strengths ${one.strength} and ${two.strength}`);
 });
 
+test('a second burner in the corner of ONE pot adds nothing: steam can\'t push sideways through water (so the wiki says "own pot")', async () => {
+  /**
+   * One wide pot under a turbine, with burners under it.
+   * @param {string} burners - the bottom row
+   * @returns {{speed: number, strength: number}} the turbine as a source
+   */
+  const source = (burners) => turbineSource(run(worldFrom(['#CCC#', '#...#', '##T##', '#~~~#', burners]), 600), 2, 2);
+  const one = source('##F##');
+  const two = source('#FF##');
+  assert.ok(Math.abs(two.strength - one.strength) < 0.05 * one.strength, `strengths ${one.strength} and ${two.strength}`);
+  const { readFileSync } = await import('node:fs');
+  const wiki = readFileSync(new URL('../wiki/Water.md', import.meta.url), 'utf8');
+  assert.match(wiki, /own pot/);
+  assert.doesNotMatch(wiki, /more burners\*\* make it stronger/);
+});
+
+test('steam piped round a corner into a turbine has lost most of its push: the guide says to stand it upright', () => {
+  /**
+   * The most work a turbine can do each tick: half its strength at half its speed.
+   * @param {object|null} source - from turbineSource
+   * @returns {number} its best power
+   */
+  const best = (source) => (source ? source.strength / 2 * source.speed / 2 : 0);
+  // The same pot and the same 3 cells of rise: upright on top of it, or round a corner at the end of a pipe.
+  const upright = best(turbineSource(run(worldFrom(['#C####', '#T####', '#~####', '#~####', '#~####', '#F####']), 400), 1, 1));
+  const corner = best(turbineSource(run(worldFrom(['######', '#.TPPC', '#~####', '#~####', '#~####', '#F####']), 400), 2, 1));
+  assert.ok(upright > 1.4, `upright ${upright}`);
+  assert.ok(corner < upright / 4, `round the corner ${corner}, upright ${upright}`);
+  assert.match(water.guide.blocks.turbine.does, /upright/);
+});
+
 test('nowhere for the steam to go: in a sealed box the turbine stops and the lamp goes dark', () => {
   const world = run(worldFrom(PLANT.map((row) => row.replace('CC', '##'))), 2000);
   assert.equal(turbineSource(world, 2, 3), null);
@@ -257,6 +288,54 @@ test('lying down a turbine is feeble: steam in a level duct hardly rises at all'
   const world = run(worldFrom(['######', '#~TP.C', '#F####']), 400);
   const source = turbineSource(world, 2, 1);
   assert.ok(source === null || (source.speed < 0.3 && source.strength < 1), JSON.stringify(source));
+});
+
+test('a chiller right on top of the turbine does not stop it: steam chilled inside the turbine has gone through it', () => {
+  // A real plant's turbine blows straight into its condenser. Here the
+  // steam never LEAVES the turbine's cell (it turns back into water in
+  // it), but it came in through the blades and gave up its push there.
+  const world = run(worldFrom(['#C#', '#T#', '#.#', '#.#', '#~#', '#F#']), 400);
+  const count = countAt(world, 1, 1);
+  assert.ok(Math.abs(count.gross - BOIL_RATE) < 1e-6, `all the burner's steam counts as going through: ${count.gross}`);
+  assert.ok(Math.abs(count.out - BOIL_RATE) < 1e-6, `and it counts as going up, the way it came in: ${count.out}`);
+  assert.ok(Math.abs(count.into - BOIL_RATE) < 1e-6 && Math.abs(count.inWay - BOIL_RATE) < 1e-6, JSON.stringify(count));
+  const source = turbineSource(world, 1, 1);
+  // The steam rose 3 cells into the turbine: √3 times a crank's speed, and never more work than it gave up.
+  assert.ok(Math.abs(source.speed - TURBINE_SPEED * Math.sqrt(3)) < 1e-3, `speed ${source.speed}`);
+  assert.ok(source.strength / 2 * source.speed / 2 <= RISE_POWER * count.work + 1e-9);
+  assert.ok(Math.abs(spinAt(world, 1, 1) - source.speed) < 1e-9, 'with nothing to turn it runs at its top speed');
+  // The same with the chiller one cell higher: the steam rises one cell more, and that is all the difference.
+  const gap = run(worldFrom(['#C#', '#.#', '#T#', '#.#', '#.#', '#~#', '#F#']), 400);
+  assert.ok(Math.abs(turbineSource(gap, 1, 2).speed - TURBINE_SPEED * 2) < 1e-3);
+  // And with a chiller BESIDE the turbine as well, on either side: both turn just alike.
+  const right = turbineSource(run(worldFrom(['#C#', '#.#', '#TC', '#~#', '#F#']), 400), 1, 2);
+  const left = turbineSource(run(worldFrom(['#C#', '#.#', 'CT#', '#~#', '#F#']), 400), 1, 2);
+  assert.ok(right && left && Math.abs(right.speed - left.speed) < 1e-9 && Math.abs(right.strength - left.strength) < 1e-9, JSON.stringify([right, left]));
+});
+
+test('a plant with its chiller right on the turbine lights its lamp', () => {
+  const world = run(worldFrom(['#CWWWW.', '#TE..L.', '#~WWWW.', '#F#....']), 400);
+  assert.ok(levelAt(world, 5, 1) > 0.2, `lamp level ${levelAt(world, 5, 1)}`);
+});
+
+test('a turbine whose way out is choking slows down and fades: it never races', () => {
+  // A sealed room over the turbine fills up with steam. More and more
+  // comes in than can get out, until nothing moves at all.
+  const world = worldFrom(['####', '#..#', '##T#', '##.#', '##.#', '##.#', '##~#', '##~#', '##~#', '##F#']);
+  const real = Math.sqrt(world.height); // no steam can have risen further than the world is tall
+  let steady = null;
+  let last = Infinity;
+  for (let i = 1; i <= 200; i++) {
+    run(world, 1);
+    const source = turbineSource(world, 2, 2);
+    const speed = source?.speed ?? 0;
+    assert.ok(speed <= real, `tick ${i}: it turns at ${speed}, faster than any steam here could make it`);
+    if (i === 40) steady = speed; // by now it is running steadily (about 2.5)
+    if (i > 40) assert.ok(speed <= last + 1e-3, `tick ${i}: it sped up from ${last} to ${speed} while its way out choked`);
+    if (i >= 40) last = speed;
+  }
+  assert.ok(steady > 2 && steady < 2.7, `steady speed ${steady}`);
+  assert.equal(turbineSource(world, 2, 2), null, 'and in the end it stops');
 });
 
 test('a mirrored plant works just the same', () => {
