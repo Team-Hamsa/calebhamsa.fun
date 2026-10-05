@@ -39,6 +39,14 @@
  * rules, water going round and round through a pump and some wheels
  * can never give back more than the pump put in.
  *
+ * ONE BUILD, ONE ANSWER. How fast water runs out of a hole, or through
+ * a pipe, depends only on how the build stands now: how deep the water
+ * is and how long the pipe. It never depends on whether the pipe was
+ * laid before or after the water was poured. (PRESS only ever ADDS to
+ * what SPREAD does, both rules meet with no jump where a cell becomes
+ * full, and a hole lets through the same amount whatever is in the
+ * cell outside. See pressWater.)
+ *
  * Fluid only moves between two cells if BOTH let it through on the
  * sides that touch: air lets it through everywhere, solid blocks never
  * do, and pipes only along their open sides (see openSides). A PUMP IS
@@ -85,24 +93,27 @@ export const FULL_SLACK = 1e-9;
 export const PIPE_EASE = 1;
 
 /**
- * How easily the top of some water moves up or down: how much flows in
- * one small step, for each cell of difference between the push from
- * below and the height of the top.
- * 🧪 Try this! Anything over 1/4 lets a level shoot past where it
- * belongs, and the water starts to wobble.
- */
-export const SURFACE_EASE = 1 / 4;
-
-/**
  * How much EXTRA water squirts out of a hole in one small step, for
  * each cell of pressure behind it. (With no pressure, water just
- * spreads out of the hole the usual way.)
+ * spreads out of the hole the usual way: a quarter of the difference.)
+ * A hole is the narrow place: however hard the water is pressed, no
+ * more than a quarter of a cell plus this much for each cell of
+ * pressure gets through it in one small step.
  * 🧪 Try this! 1/4 makes a water tower empty in a blink.
  */
 export const SQUIRT_EASE = 1 / 32;
 
+/**
+ * The same thing, the way pressWater needs it. PRESS only moves what
+ * pressure ADDS. SPREAD then moves its usual quarter of the difference,
+ * and that quarter comes out a little smaller for every bit PRESS has
+ * just put in the cell beside (a quarter of that bit smaller). So PRESS
+ * takes a third more, and the two together come to what SQUIRT_EASE says.
+ */
+const HOLE_EASE = SQUIRT_EASE * 4 / 3;
+
 /** How many tries pressWater has at one set of sums before giving up for this small step. */
-const PRESS_ROUNDS = 8;
+const PRESS_ROUNDS = 16;
 
 /** How many times pressWater may change its mind about which cells are pressed, in one small step. */
 const PRESS_PASSES = 64;
@@ -993,12 +1004,13 @@ let bandScratch = new Float64Array(0);
  *   • Two full cells that touch are joined by a LINK, like a resistor:
  *     flow = PIPE_EASE × the difference of their heads.
  *   • Where a full cell touches a cell that isn't full, there is an END:
- *     a place where the head is known. Above it, that is a SURFACE:
- *     flow = SURFACE_EASE × (head − the height of the surface), either
- *     way. Beside or under it, it is a HOLE: water squirts out, harder
- *     the more pressure is behind it (SQUIRT_EASE), and never comes back
- *     in that way. The top row of the world is open SKY: water there
- *     may sink, but nothing rises past it.
+ *     a place where the head is known. Above it, that is a SURFACE: one
+ *     more link, to the top of the water there:
+ *     flow = PIPE_EASE × (head − the height of the surface), either
+ *     way. Beside or under it, it is a HOLE: pressure pushes water out,
+ *     and it never comes back in that way (see THE HOLE LAW below). The
+ *     top row of the world is open SKY: water there may sink, but
+ *     nothing rises past it.
  *   • A PUMP that is switched on is like a battery: it joins the cell
  *     behind it to the cell in front, and pushes (see pumpAmount). A
  *     pump doesn't suck: if the water behind it isn't pressed toward
@@ -1011,7 +1023,25 @@ let bandScratch = new Float64Array(0);
  *     into.
  *   • The rule for every point: what flows in, flows out.
  *
- * Solving that (solveBanded) gives every point's head, and so every
+ * THE HOLE LAW. PRESS only moves what pressure ADDS: the plain
+ * spreading (a quarter of the difference, pressed or not) is always
+ * left to SPREAD, which comes next. So a full cell with no pressure on
+ * it does here exactly what a pressed one does with its pressure taken
+ * away: nothing. With `pressure` for how far the cell's head is above
+ * its own top, and `there` for what the cell beside holds already:
+ *
+ *     flow = PIPE_EASE × pressure                (as through any link)
+ *     but never more than
+ *            HOLE_EASE × pressure + there ÷ 3    (a hole is narrow)
+ *
+ * The second line is what makes PRESS and SPREAD together come to "a
+ * quarter of a cell, plus SQUIRT_EASE × pressure" and no more, whatever
+ * is in the cell outside (see HOLE_EASE). The first line is what makes
+ * a cell that is nearly full count the same as one that is just full:
+ * there is NO JUMP where a cell fills up, so the same tank and the same
+ * hole can never have two different steady flows.
+ *
+ * Solving all that (solveBanded) gives every point's head, and so every
  * flow. Then each end is checked: a hole that would suck is shut; an end
  * that would give its cell more water than it has room for gives just
  * that much. And A CELL THAT FILLS RIGHT UP PASSES THE REST OF THE PUSH
@@ -1021,7 +1051,13 @@ let bandScratch = new Float64Array(0);
  * tank with a hole at its foot floods the floor outside, faster the
  * deeper the tank, and is never held back by its own puddle. Water
  * squirting into air that has room for it is NOT pressed on: its
- * pressure is used up at the spout, where a water wheel can catch it.
+ * pressure is used up at the spout.
+ *
+ * (The last cell of a pipe that is running full loses a quarter of its
+ * water out of the open end in SPREAD, every small step. PRESS fills it
+ * up again in the next one, and it passes the push on again. So a pipe
+ * running full is found afresh in every small step, from the pressure
+ * that is there now, and never remembered from the step before.)
  *
  * STILL WATER COSTS NOTHING: a body of water whose surfaces all stand
  * level, with no hole letting water out and no pump, is not solved at
@@ -1030,6 +1066,10 @@ let bandScratch = new Float64Array(0);
  * THE BOOKS. Every flow runs from more head to less, and gives up
  * amount × (the head it lost). That is told to `onMove`, so a water
  * wheel in a pipe gets exactly what the water gave up going through it.
+ * And the water that FILLS A CELL UP under pressure arrives pushed, and
+ * then just sits there: the push it had left is used up in that cell.
+ * That is told to `onFill`, and it is what a water wheel in the last
+ * cell of a pipe catches (the water leaves it un-pressed, by SPREAD).
  * Nothing here can raise the water's energy except a pump, and the work
  * each pump did on the water is added up in `pumpWork`.
  *
@@ -1044,19 +1084,19 @@ let bandScratch = new Float64Array(0);
  * @param {{joined: Int32Array, pump: Uint8Array, sky: Uint8Array, floor: Int32Array}} table - from flowTable
  * @param {Array<{back: number, ahead: number, level: number, count: number}>} pumps - from workingPumps
  * @param {Function} onMove - told (from, to, amount, energy, drop, 0, true) for every pressed move
+ * @param {Function} onFill - told (cell, energy) for every cell that was filled
+ *   up under pressure: the push its new water used up in that cell
  * @param {Float64Array} press - filled in with every cell's pressure: for a
  *   point, how tall the water standing over its floor is (a full cell
  *   with 3 full cells on it reads 4); for any other cell, its own amount
- * @returns {{after: Float64Array, moved: number, carried: Uint8Array, pumpWork: number}}
- *   the water after PRESS; how much moved; for cell `i` and side number
- *   `s`, 1 at place i × 4 + s if pressed water (more than a rounding speck) left the cell that way;
- *   and the energy the pumps gave the water
+ * @returns {{after: Float64Array, moved: number, pumpWork: number}}
+ *   the water after PRESS; how much moved; and the energy the pumps
+ *   gave the water
  */
-function pressWater(world, w, table, pumps, onMove, press) {
+function pressWater(world, w, table, pumps, onMove, onFill, press) {
   const { width, height } = world;
   const size = w.length;
   const { joined, pump: isPump, sky, floor } = table;
-  const carried = new Uint8Array(size * 4);
   const full = new Uint8Array(size);
   let any = false;
   for (let i = 0; i < size; i++) {
@@ -1067,7 +1107,7 @@ function pressWater(world, w, table, pumps, onMove, press) {
     }
   }
   // Nothing full and no pump running: nothing is pressed.
-  if (!any && pumps.length === 0) return { after: w, moved: 0, carried, pumpWork: 0 };
+  if (!any && pumps.length === 0) return { after: w, moved: 0, pumpWork: 0 };
 
   const promoted = new Uint8Array(size); // cells that fill up in this step: points too
   const banned = new Uint8Array(size);   // cells that were tried as points and weren't really pressed
@@ -1187,7 +1227,7 @@ function pressWater(world, w, table, pumps, onMove, press) {
       const top = floor[i] + 1;
       if (sky[i]) {
         // Open sky: this cell is its own surface. It can sink; nothing rises past it.
-        ends.push({ i, j: i, side: 0, sky: true, ease: SURFACE_EASE, head: top, phi: top, least: -Infinity, state: 0, q: 0, room: 0, high: 0, low: -Math.min(MAX_FLOW, w[i]) });
+        ends.push({ i, j: i, side: 0, sky: true, ease: PIPE_EASE, head: top, ease2: 0, head2: 0, phi: top, least: -Infinity, state: 0, opens: 0, q: 0, room: 0, high: 0, low: -Math.min(MAX_FLOW, w[i]) });
       }
       for (let side = 0; side < 4; side++) {
         const j = joined[i * 4 + side];
@@ -1196,14 +1236,16 @@ function pressWater(world, w, table, pumps, onMove, press) {
         const phi = floor[j] + w[j];
         if (side === 0) {
           // A surface: the water above goes up or down with the head below it.
-          ends.push({ i, j, side, sky: false, ease: SURFACE_EASE, head: phi, phi, least: -Infinity, state: 0, q: 0, room, high: Math.min(MAX_FLOW, room), low: -Math.min(MAX_FLOW, w[j] + w[i]) });
+          ends.push({ i, j, side, sky: false, ease: PIPE_EASE, head: phi, ease2: 0, head2: 0, phi, least: -Infinity, state: 0, opens: 0, q: 0, room, high: Math.min(MAX_FLOW, room), low: -Math.min(MAX_FLOW, w[j] + w[i]) });
         } else if (side === 2) {
           // A hole underneath: it squirts by all the pressure on the cell's floor.
-          ends.push({ i, j, side, sky: false, ease: SQUIRT_EASE, head: floor[i], phi, least: floor[i], state: 0, q: 0, room, high: Math.min(MAX_FLOW, room), low: 0 });
+          ends.push({ i, j, side, sky: false, ease: SQUIRT_EASE, head: floor[i], ease2: 0, head2: 0, phi, least: floor[i], state: 0, opens: 0, q: 0, room, high: Math.min(MAX_FLOW, room), low: 0 });
         } else {
-          // A hole in the side: un-pressed water already spreads a quarter of
-          // the difference (see SPREAD in flowWater); pressure adds to that.
-          ends.push({ i, j, side, sky: false, ease: SQUIRT_EASE, head: top - (top - phi) / (4 * SQUIRT_EASE), phi, least: top, state: 0, q: 0, room, high: Math.min(MAX_FLOW, room), low: 0 });
+          // A hole in the side (see THE HOLE LAW above): two straight lines.
+          // `ease` and `head` are the one in use, `ease2` and `head2` the other.
+          // It starts on the narrow-hole line; the link line starts from
+          // nothing at `least`, where the cell is just pressed.
+          ends.push({ i, j, side, sky: false, ease: HOLE_EASE, head: top - w[j] / (3 * HOLE_EASE), ease2: PIPE_EASE, head2: top, phi, least: top, state: 0, opens: 0, q: 0, room, high: Math.min(MAX_FLOW, room), low: 0 });
         }
       }
     }
@@ -1394,9 +1436,25 @@ function pressWater(world, w, table, pumps, onMove, press) {
         // Check every end and pump against its limits.
         let changed = false;
         for (const end of ends) {
-          if (end.state === 2) continue; // a way that is shut stays shut for this small step
+          // (A hole that is shut may open again, but only where there is
+          // something to measure the push from: in a shut-in part the heads
+          // are only right compared with each other. And only twice: a hole
+          // with no pressure to speak of behind it would flap for ever.)
+          if (end.state === 2 && (end.opens >= 2 || !held[partOf(local[end.i])])) continue;
           const head = x[local[end.i]];
           let want = end.ease * (head - end.head);
+          let swapped = false;
+          const wasFar = end.state === 1 || (end.state === 0 && end.head !== end.least);
+          if (end.ease2 > 0) {
+            // A hole has two straight lines, and the one that gives less is the law.
+            const other = end.ease2 * (head - end.head2);
+            if (other < want - 1e-13) {
+              [end.ease, end.ease2] = [end.ease2, end.ease];
+              [end.head, end.head2] = [end.head2, end.head];
+              want = other;
+              swapped = true;
+            }
+          }
           if (head < end.least - 1e-12) want = -1; // not pressed: it only spreads (or falls) the usual way
           let state = 0;
           let q = want;
@@ -1411,7 +1469,25 @@ function pressWater(world, w, table, pumps, onMove, press) {
             state = 2;
             q = 0;
           }
-          if (state !== end.state || (state === 1 && Math.abs(q - end.q) > 1e-15)) changed = true;
+          if (end.ease2 > 0) {
+            // ONE STEP AT A TIME. A hole goes: shut, then its first line (the
+            // one that starts from nothing), then its second line, then held
+            // at "all the room there is". Jumping straight from shut to the
+            // far end of that (or back) can miss the answer in between for
+            // ever, so such a jump stops at the first line.
+            const far = state === 1 || (state === 0 && end.head !== end.least);
+            if ((end.state === 2 && far) || (wasFar && state === 2)) {
+              if (end.head !== end.least) {
+                [end.ease, end.ease2] = [end.ease2, end.ease];
+                [end.head, end.head2] = [end.head2, end.head];
+              }
+              state = 0;
+              q = 0;
+              changed = true;
+            }
+          }
+          if (state !== end.state || (state === 1 && Math.abs(q - end.q) > 1e-15) || (state === 0 && swapped)) changed = true;
+          if (end.state === 2 && state !== 2) end.opens += 1;
           end.state = state;
           end.q = state === 2 ? 0 : q;
         }
@@ -1663,15 +1739,20 @@ function pressWater(world, w, table, pumps, onMove, press) {
       const j = flow.end.j;
       if (linAt[j] > 0) energy -= extraEnd[j] * lin / linAt[j];
     }
-    const side = flow.to === flow.from - width ? 0 : flow.to === flow.from + 1 ? 1 : flow.to === flow.from + width ? 2 : 3;
-    // (A move this small is only rounding being tidied up: not worth
-    // telling, and it doesn't count as water pushed out of that side. Its
-    // direction is a coin toss, and must not decide what SPREAD does next.)
+    // (A move this small is only rounding being tidied up: not worth telling.)
     if (q <= FULL_SLACK) continue;
-    carried[flow.from * 4 + side] = 1;
-    onMove(flow.from, flow.to, q, energy, side === 2 ? 1 : side === 0 ? -1 : 0, 0, true);
+    onMove(flow.from, flow.to, q, energy, flow.to === flow.from + width ? 1 : flow.to === flow.from - width ? -1 : 0, 0, true);
   }
-  return { after, moved, carried, pumpWork };
+  // A CELL THAT WAS FILLED UP UNDER PRESSURE: the water that filled it came
+  // in pushed (at the cell's head), and now just sits there, full. The push
+  // it had left over is used up IN that cell: that is what a water wheel
+  // in the last cell of a pipe catches.
+  for (let cell = 0; cell < size; cell++) {
+    if (!node[cell] || !(after[cell] > w[cell] + FULL_SLACK)) continue;
+    const lost = (after[cell] - w[cell]) * H[cell] - (energyOf(cell, after[cell]) - energyOf(cell, w[cell]));
+    if (lost > 0) onFill(cell, lost);
+  }
+  return { after, moved, pumpWork };
 }
 
 /**
@@ -1685,14 +1766,16 @@ function pressWater(world, w, table, pumps, onMove, press) {
  *      goes down).
  *   2. PRESS. Deep water presses harder: see pressWater. It moves water
  *      between full cells, in and out of surfaces, out of holes and
- *      through pumps.
+ *      through pumps. It only moves what pressure ADDS: the plain
+ *      spreading is rule 3's job, pressed or not.
  *   3. SPREAD. Water evens out with its left and right neighbors, by a
- *      quarter of the difference. Both sides are worked out from the
- *      SAME amount, so neither is the favorite: a stream landing on the
+ *      quarter of the difference. It is the same rule for every cell,
+ *      whatever PRESS did. Both sides are worked out from the SAME
+ *      amount, so neither is the favorite: a stream landing on the
  *      middle of a ridge splits exactly in half. Water that only just
- *      arrived in this step doesn't spread yet, so a falling stream
- *      stays a stream. And water doesn't spread through a side that
- *      PRESS just pushed water out of (PRESS has done that already).
+ *      FELL into a cell in this step doesn't spread yet, so a falling
+ *      stream stays a stream. (Water that PRESS has just pushed in does
+ *      spread: a squirt keeps going sideways.)
  *
  * No part ever puts more than FULL in a cell: water can't be squashed.
  *
@@ -1711,10 +1794,13 @@ function pressWater(world, w, table, pumps, onMove, press) {
  *   start of the small step this move took (0 to 1; always 0 for a
  *   pressed move), and `pressed` is true for water moved by pressure
  * @param {Array<{back: number, ahead: number, level: number, count: number}>} [pumps] - the pumps that are running (from workingPumps)
+ * @param {Function} [onFill] - told (cell, energy) for every cell that was
+ *   filled up under pressure: the push its new water used up in that
+ *   cell (see pressWater)
  * @returns {{moved: number, pumpWork: number}} the total amount that
  *   moved, and the energy the pumps gave the water
  */
-export function flowWater(world, table, onMove, pumps = []) {
+export function flowWater(world, table, onMove, pumps = [], onFill = () => {}) {
   const { width, height } = world;
   const start = world.fluid.water;
   const size = start.length;
@@ -1736,9 +1822,11 @@ export function flowWater(world, table, onMove, pumps = []) {
    * shares out of one cell in one small step never add up to more than 1.
    * @param {Float64Array} had - what every cell held before these moves
    * @param {number[]} moves - the moves, four numbers each: from, to, amount, drop
+   * @param {Float64Array} [old] - for each cell, how much of the water these
+   *   moves took was there when the small step began (0 to 1; left out, all of it)
    * @returns {void}
    */
-  const report = (had, moves) => {
+  const report = (had, moves, old) => {
     if (moves.length === 0) return;
     const gone = new Float64Array(size);
     const came = new Float64Array(size);
@@ -1765,13 +1853,17 @@ export function flowWater(world, table, onMove, pumps = []) {
     settleShares(from, into, energy, size);
     for (let k = 0; k < count; k++) {
       const amount = moves[k * 4 + 2];
-      onMove(from[k], into[k], amount, energy[k], moves[k * 4 + 3], Math.min(1, amount / start[from[k]]), false);
+      // (A cell that began the step dry had no push of its own to hand on.)
+      const began = start[from[k]];
+      const part = began > 0 ? Math.min(1, amount * (old ? old[from[k]] : 1) / began) : 0;
+      onMove(from[k], into[k], amount, energy[k], moves[k * 4 + 3], part, false);
     }
   };
 
   // 1. FALL (bottom row first, so a stack of water slides down together).
   const fallen = Float64Array.from(start);
-  const fell = new Float64Array(size);
+  const fell = new Float64Array(size);   // what fell OUT of each cell
+  const fellIn = new Float64Array(size); // what fell INTO each cell
   const falls = [];
   for (let y = height - 2; y >= 0; y--) {
     for (let x = 0; x < width; x++) {
@@ -1785,26 +1877,32 @@ export function flowWater(world, table, onMove, pumps = []) {
       fallen[index] -= flow;
       fallen[below] += flow;
       fell[index] = flow;
+      fellIn[below] = flow;
       falls.push(index, below, flow, 1);
     }
   }
   report(start, falls);
 
   // 2. PRESS.
-  const pressed = pressWater(world, fallen, table, pumps, onMove, press);
+  const pressed = pressWater(world, fallen, table, pumps, onMove, onFill, press);
   moved += pressed.moved;
   const squeezed = pressed.after;
 
   // 3. SPREAD: water that was already here, and did not fall, evens out sideways.
   const water = Float64Array.from(squeezed);
   const spreads = [];
+  const old = new Float64Array(size); // how much of what may spread was here when the step began
   for (let index = 0; index < size; index++) {
-    const level = Math.min(start[index] - fell[index], squeezed[index]);
+    // What may spread: the water that was here and did not fall, and what
+    // PRESS has just pushed in (but not what has just fallen in).
+    const stayed = Math.min(start[index] - fell[index], squeezed[index]);
+    const level = squeezed[index] >= fallen[index] ? squeezed[index] - fellIn[index] : stayed;
     if (level <= 0) continue;
+    old[index] = Math.max(0, stayed) / level;
     let remaining = level;
     for (let side = 3; side >= 1; side -= 2) { // left, then right
       const beside = to[index * 4 + side];
-      if (beside < 0 || pressed.carried[index * 4 + side]) continue;
+      if (beside < 0) continue;
       const flow = clamp((level - squeezed[beside]) / 4, 0, remaining);
       if (flow <= FULL_SLACK / 4) continue;
       water[index] -= flow;
@@ -1813,7 +1911,7 @@ export function flowWater(world, table, onMove, pumps = []) {
       spreads.push(index, beside, flow, 0);
     }
   }
-  report(squeezed, spreads);
+  report(squeezed, spreads, old);
   for (let index = 0; index < size; index++) {
     if (water[index] < 0) water[index] = 0;
     // A cell that isn't pressed reads its own amount (see pressWater).
@@ -2040,8 +2138,10 @@ export function wheelTurn(wheel) {
  * jobs once.
  *
  * WATER MOVED BY PRESSURE GIVES ITS PUSH WHERE IT IS USED UP. Pressed
- * water going through a water wheel (in a pipe, or at a spout) gives
- * the wheel what it lost on the way through, and no more. It carries no
+ * water going through a water wheel in a pipe gives the wheel what it
+ * lost on the way through, and no more. A wheel in the LAST cell of a
+ * pipe (a spout) gets all the push the water still had as it filled
+ * that cell: it came in pressed, and leaves just spreading. It carries no
  * push onward: water that fell into the top of a full pipe has splashed
  * its push away in the pool, like any water that lands, and what comes
  * out at the bottom is pushed by pressure.
@@ -2231,10 +2331,20 @@ export function stepFluids(world, blockInfo) {
     else if (lands) wheelAt(to).work += gives;
     else if (drop === 1) next[to] += gives; // still falling: it keeps its push
   };
+  /**
+   * Water that filled a cell up under pressure used up its push IN that
+   * cell (see pressWater). If the cell is a water wheel, the wheel gets it.
+   * @param {number} cell - the cell that was filled
+   * @param {number} energy - the push that was used up there
+   * @returns {void}
+   */
+  const countFill = (cell, energy) => {
+    if (blockInfo(world.cells[cell])?.wheel) wheelAt(cell).work += energy;
+  };
   let moved = 0;
   let pumpWork = 0;
   for (let step = 0; step < FLUID_STEPS; step++) {
-    const flowed = flowWater(world, table, countWheels, pumps);
+    const flowed = flowWater(world, table, countWheels, pumps, countFill);
     moved += flowed.moved;
     pumpWork += flowed.pumpWork;
     // Water that stayed behind in a column that is still falling keeps its

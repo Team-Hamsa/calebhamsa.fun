@@ -10,7 +10,7 @@ import { createWorld, getFluid, setBlock, setFluid } from '../js/world.js';
 import { REFERENCE_CURRENT } from '../js/circuit.js';
 import {
   BOIL_RATE, CONDENSE_RATE, DROP_POWER, FAUCET_RATE, FULL, FULL_SLACK, PIPE_EASE, PUMP_HEAD, PUMP_RATE, RISE_POWER, SQUIRT_EASE,
-  STEAM_SQUEEZE, SURFACE_EASE, allOpenSides, fallEnergy, flowTable, flowWater, makeRoom, openSides, placeBlock, pressWork, pumpAmount,
+  STEAM_SQUEEZE, allOpenSides, fallEnergy, flowTable, flowWater, makeRoom, openSides, placeBlock, pressWork, pumpAmount,
   settleShares, solveBanded, stableBelow, stepFluids, storedEnergy, workingPumps,
 } from '../js/fluids.js';
 
@@ -801,10 +801,12 @@ test('flowTable gives the same answers as the rule written out plainly, for ever
 });
 
 test('the settings of the water circuit are what the energy sums rely on', () => {
+  // (The top of the water is a link like any other: there is no setting of
+  // its own for it. With a link's ease of 1 a level goes straight to where
+  // it belongs and never past it; more than 1 would overshoot.)
   assert.equal(PIPE_EASE, 1);
-  // A quarter at a surface (and at a hole) is the most that can never overshoot.
-  assert.ok(SURFACE_EASE <= 1 / 4);
-  assert.ok(SQUIRT_EASE <= 1 / 4);
+  // A hole is narrower than a pipe.
+  assert.ok(SQUIRT_EASE <= 1 / 4 && SQUIRT_EASE < PIPE_EASE);
   assert.ok(FULL_SLACK > 0 && FULL_SLACK < 1e-6);
 });
 
@@ -980,6 +982,17 @@ test('a hole squirts harder the deeper it is, and with no pressure it is just sp
   smallStep(pressed);
   const out = getFluid(pressed, 'water', 4, 2);
   assert.ok(out > 0.25 + SQUIRT_EASE && out <= 0.25 + 2 * SQUIRT_EASE + 1e-12, `it gave ${out}`);
+  // A hole is the narrow place: that is the most that gets through it, however
+  // much water is in the cell outside already (and with some there, it is all of it:
+  // the hole is not held back by what stands outside it).
+  for (const outside of [0.2, 0.5, 0.7]) {
+    const puddled = worldFrom(['#~~~#.', '#~~~#.', '#~~~.#', '######']);
+    setFluid(puddled, 'water', 4, 2, outside);
+    smallStep(puddled);
+    const through = getFluid(puddled, 'water', 4, 2) - outside;
+    assert.ok(through <= 0.25 + 2 * SQUIRT_EASE + 1e-12, `with ${outside} outside it gave ${through}`);
+    if (outside >= 0.5) assert.ok(through > 0.25 + SQUIRT_EASE || getFluid(puddled, 'water', 4, 2) >= FULL - FULL_SLACK, `with ${outside} outside it gave ${through}`);
+  }
 });
 
 /**
@@ -1747,6 +1760,175 @@ test('a pump with nothing behind it moves nothing, and does not hold up the wate
   assert.ok(Math.abs(column(fed, 1, 0, 4) - column(fed, 5, 3, 4)) < 0.05, `with a trickle through the pump the tank stands ${column(fed, 1, 0, 4)}, the far side ${column(fed, 5, 3, 4)}`);
   assert.ok(Math.abs(total(fed, 'water') - (6 + 20 * FAUCET_RATE)) < 1e-9);
   assert.ok(column(fed, 4, 1, 2) < 3 * FAUCET_RATE, `the pump is not keeping up with its trickle: ${column(fed, 4, 1, 2)} is waiting behind it`);
+});
+
+/**
+ * A tank 3 wide, KEPT a number of cells deep (it is topped up before
+ * every tick), with a way out through its left wall, the water then
+ * falling away into drains. Run it until it is steady.
+ * @param {string[]} rows - the picture
+ * @param {number} left - the first of the tank's three columns of water
+ * @param {number} top - the tank's top row of water
+ * @param {number} bottom - the tank's bottom row of water
+ * @param {number} ticks - how long to run it
+ * @returns {{flow: number, world: object, last: object}} how much water had to be topped up before the last
+ *   tick (the steady flow out), the world, and what the last stepFluids said
+ */
+function keptFull(rows, left, top, bottom, ticks) {
+  const world = worldFrom(rows);
+  let flow = 0;
+  let last = null;
+  for (let tick = 0; tick < ticks; tick++) {
+    flow = 0;
+    for (let y = top; y <= bottom; y++) {
+      for (let x = left; x <= left + 2; x++) {
+        flow += FULL - getFluid(world, 'water', x, y);
+        setFluid(world, 'water', x, y, FULL);
+      }
+    }
+    last = stepFluids(world, blockInfo);
+  }
+  return { flow, world, last };
+}
+
+/**
+ * A tank kept 10 deep with a pipe (or a bare hole) through its wall,
+ * some cells below the top of the water.
+ * @param {number} depth - which row of the tank's water the way out is in (1 = the top row)
+ * @param {number} length - how many cells long the way out is
+ * @param {string} letter - what it is made of: `P` an empty pipe, `p` a pipe full of water, `.` or `~` a bare hole, empty or full
+ * @returns {number} the steady flow out, in cells a tick
+ */
+function tankFlow(depth, length, letter) {
+  const rows = [];
+  // (Two open columns on the left for the water to fall down.)
+  for (let y = 0; y < 12; y++) rows.push(`..${'#'.repeat(length)}${y >= 2 ? '~~~' : '...'}#`);
+  rows[1 + depth] = `..${letter.repeat(length)}~~~#`;
+  rows.push(`DD${'#'.repeat(length + 4)}`);
+  return keptFull(rows, 2 + length, 2, 11, 300).flow;
+}
+
+test('the same tank and the same hole have ONE steady flow, whether the hole began empty or full, and it grows smoothly with the depth', () => {
+  // (Once, a hole that began full ran about twice as fast as the very same
+  // hole that began empty, for ever, and the flow jumped to double between
+  // 6 and 7 cells deep.)
+  for (const [length, empty, full] of [[1, '.', '~'], [3, 'P', 'p']]) {
+    const flows = [];
+    for (let depth = 1; depth <= 8; depth++) {
+      const fromEmpty = tankFlow(depth, length, empty);
+      const fromFull = tankFlow(depth, length, full);
+      assert.ok(Math.abs(fromEmpty - fromFull) < 1e-6, `${length} of ${empty}, ${depth} deep: ${fromEmpty} from empty, ${fromFull} from full`);
+      flows.push(fromEmpty);
+    }
+    for (let depth = 2; depth <= 8; depth++) {
+      const [before, now] = [flows[depth - 2], flows[depth - 1]];
+      assert.ok(now > before, `${length} of ${empty}: deeper is faster (${flows})`);
+      // From the second row down, each cell deeper adds a little (not a jump).
+      if (depth > 2) assert.ok(now < 1.3 * before, `${length} of ${empty}: ${before} at ${depth - 1} deep, ${now} at ${depth} (${flows})`);
+    }
+    // The top row is the odd one out: water there is not pressed at all, it
+    // only spills over the lip, half a hole deep. A real tank does the same
+    // (a weir against a hole that runs full). (Along a pipe, with nothing
+    // to push it, such a spill only creeps: the longer the pipe the slower.)
+    if (length === 1) assert.ok(flows[1] < 3 * flows[0], `${flows}`);
+  }
+});
+
+test('a long pipe gives one steady flow too, and more for every cell deeper the tank is', () => {
+  // (Once, a pipe that began empty and one that began full gave different
+  // steady flows over a band of depths that moved with the pipe's length.)
+  const flows = [];
+  for (let depth = 1; depth <= 8; depth++) {
+    const fromEmpty = tankFlow(depth, 9, 'P');
+    const fromFull = tankFlow(depth, 9, 'p');
+    assert.ok(Math.abs(fromEmpty - fromFull) < 1e-6, `${depth} deep: ${fromEmpty} from empty, ${fromFull} from full`);
+    if (depth > 1) assert.ok(fromEmpty > flows[flows.length - 1], `deeper is faster: ${flows}, then ${fromEmpty}`);
+    flows.push(fromEmpty);
+  }
+  // A long pipe rubs: with little head over it the water gets through slower than out of a bare hole.
+  assert.ok(flows[1] < tankFlow(2, 1, 'P'), `${flows}`);
+});
+
+/**
+ * A tank kept `depth` deep, two cells of pipe out of its foot, and a
+ * water wheel with stone over and under it; the water then falls away.
+ * @param {number} depth - how deep the tank is kept
+ * @param {string} way - the three cells out of the tank: `PPO` a wheel at the end, `POP` a wheel in the middle; small letters for full of water
+ * @returns {{work: number, gross: number}} what the wheel got in the last tick, and how much water went through it
+ */
+function wheelUnderTank(depth, way) {
+  const rows = [];
+  for (let y = 0; y < 11; y++) rows.push(`..###${y >= 11 - depth ? '~~~' : '...'}#`);
+  rows[10] = `..${[...way].reverse().join('')}${rows[10].slice(5)}`;
+  rows.push('..#######', 'DD#######');
+  const { last, world } = keptFull(rows, 5, 11 - depth, 10, 200);
+  return last.wheels.get(world.cells.indexOf('waterWheel'));
+}
+
+test('a wheel at the end of a pipe gets the same push whether the pipe began empty or full, and more for every cell the tower is taller', () => {
+  // (Once, the same machine gave the wheel 7 times the power if its pipe had
+  // been full of water when the tank was filled.)
+  let before = null;
+  for (const depth of [2, 3, 4, 5, 6, 8]) {
+    const fromEmpty = wheelUnderTank(depth, 'PPO');
+    const fromFull = wheelUnderTank(depth, 'ppo');
+    assert.ok(Math.abs(fromEmpty.work - fromFull.work) < 1e-6 && Math.abs(fromEmpty.gross - fromFull.gross) < 1e-6, `${depth} deep: ${JSON.stringify(fromEmpty)} from empty, ${JSON.stringify(fromFull)} from full`);
+    const fall = fromEmpty.work / fromEmpty.gross;
+    assert.ok(fall <= depth, `${depth} deep: each bit of water gave ${fall}`);
+    if (before) {
+      assert.ok(fromEmpty.gross > before.gross && fall > before.fall, `${depth} deep: more water, and more push in each bit of it`);
+      assert.ok(fall - before.fall <= depth - before.depth, `${depth} deep: fall ${fall}, after ${before.fall} at ${before.depth} deep`);
+    }
+    before = { depth, fall, gross: fromEmpty.gross };
+  }
+});
+
+test('a wheel in the middle of a pipe is weaker than one at the end, but a taller tower never makes it weaker', () => {
+  // (Once, doubling the tower from 4 to 8 halved such a wheel's speed: under
+  // the lower tower the pipe after it did not run full, so it was the spout.)
+  let before = 0;
+  for (let depth = 1; depth <= 8; depth++) {
+    const middle = wheelUnderTank(depth, 'POP');
+    const fromFull = wheelUnderTank(depth, 'pop');
+    assert.ok(Math.abs(middle.work - fromFull.work) < 1e-6, `${depth} deep: ${middle.work} from empty, ${fromFull.work} from full`);
+    assert.ok(middle.work > before, `${depth} deep: the wheel got ${middle.work}, after ${before} under a lower tower`);
+    before = middle.work;
+    if (depth >= 3) assert.ok(middle.work < wheelUnderTank(depth, 'PPO').work, `${depth} deep: the wheel at the end gets more`);
+  }
+});
+
+test('a riser has one steady flow too: a pipe up from a tank\'s foot, running over at the top', () => {
+  // The riser's top is 3 cells above the tank's floor. The tank is kept deeper and deeper.
+  /**
+   * The steady flow over the top of the riser.
+   * @param {number} depth - how deep the tank is kept
+   * @param {boolean} full - does the riser begin full of water?
+   * @returns {number} cells a tick
+   */
+  const over = (depth, full) => {
+    const rows = [];
+    for (let y = 0; y < 12; y++) rows.push(`####${y >= 12 - depth ? '~~~' : '...'}#`.replace(/^/, '#'));
+    const p = full ? 'p' : 'P';
+    rows[11] = `###${p}${p}~~~#`;
+    rows[10] = `###${p}#~~~#`;
+    rows[9] = `###${p}#${rows[9].slice(5)}`;
+    rows[8] = `..${full ? '~' : '.'}.#${rows[8].slice(5)}`; // the riser's top cell, open to both sides, under a stone lid
+    rows[9] = `..#${p}#${rows[9].slice(5)}`;
+    rows[10] = `..#${p}#~~~#`;
+    rows[11] = `DD#${p}${p}~~~#`;
+    rows.push('#########');
+    return keptFull(rows, 5, 12 - depth, 11, 300).flow;
+  };
+  let before = -1;
+  for (let depth = 3; depth <= 10; depth++) {
+    const fromEmpty = over(depth, false);
+    const fromFull = over(depth, true);
+    assert.ok(Math.abs(fromEmpty - fromFull) < 1e-6, `${depth} deep: ${fromEmpty} from empty, ${fromFull} from full`);
+    assert.ok(fromEmpty >= before, `${depth} deep: ${fromEmpty}, after ${before} with a lower tank`);
+    before = fromEmpty;
+  }
+  assert.ok(over(3, false) < 0.05, 'a tank no higher than the riser\'s top hardly runs over');
+  assert.ok(before > 1, `a tank 7 cells higher than the riser's top runs over fast (${before})`);
 });
 
 test('steam comes out the same in a mirror too: water that is half a cell but for a rounding speck counts as half', () => {
