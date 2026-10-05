@@ -482,12 +482,13 @@ export function solveSpin(world, blockInfo) {
       }
     }
     // A source marked `eitherWay` (a water wheel with water falling dead
-    // straight through it, or a turbine) helps whichever way its gears go. Which way is
-    // that? We ask, in this order:
+    // straight through it, or a turbine) helps whichever way its gears
+    // go. Which way is that? We ask, in this order:
     //   1. the other sources with a mind of their own (a crank, a wheel
     //      with water coming off one side, a motor that runs on
-    //      batteries alone): it joins in the way they push. So two wheels on one shaft never fight,
-    //      and a mirrored build works the same.
+    //      batteries alone): it joins in the way they push. So two
+    //      wheels on one shaft never fight, and a mirrored build works
+    //      the same.
     //   2. the way it was already turning: a turning wheel keeps going.
     //      A source marked `echo` (a motor with a generator's current
     //      in it) gets no say in step 1, because its push may only be

@@ -298,3 +298,25 @@ Checked on the prototype: lamp level 0.805 at tick 40, 0.815 from then on, still
 3. gears tests: second-pump crossing, new turbine tests.
 4. Guide text, wiki, older-spec addenda.
 5. Pictures.
+
+## Addendum 2026-10-05: as built
+
+Built as specified. The numbers in "What a prototype measured" came out the same on the real code (1 lamp 0.815; 1/2/4/8 lamps 0.603/0.682/0.630/0.456 of a steam power of 1.000; every chimney in the table). Where the build differs from the text above:
+
+- **`drawWaterLayer` only borrows the spin record's `sides` for a turbine**, not for every spinning fluid block. Every spin record of a fluid block has `sides` (the water wheel's too, as specified), but if the water layer used them for the wheel it would start painting a cross of water over the wheel's paddles, which it never did before. The wheel looks as it did.
+- **`MARK` (the gears' yellow) is exported from gears.js** as well as `drawJam`, so the turbine's blade tip is the very same color.
+- **Smoothed turbine counts under 1e-9 are dropped** (`TURBINE_MIN`), so a turbine with no steam has no entry in `world.signals.water.turbines` instead of numbers that halve for ever. `turbineSource` is null long before that (`MIN_TURBINE_FLOW`).
+- **"More burners make it stronger, not faster" is tested with two pots under one room** (`#...#` over `#~#~#` over `#F#F#`: speed 1.39, strength 5.57, as in the spec). Two burners under ONE wide pot (`#~~~#` over `#F#F#`) do not run steadily: the steam beside the chimney is held under the pot's water until it burps, so the turbine gets its steam in puffs about every 22 ticks. That is how the fluids already moved before this pass (steam may not spread sideways into a cell that is mostly water); the old turbine's push pulsed the same way. Not changed here; worth a look in #29 or #30.
+- **Commits:** the fluids, water and gears-test steps went in as one commit (the tree would not pass its tests in between), then the docs, then the pictures.
+- **Extra tests** beyond the list: a random-worlds steam ledger (60 worlds, the twin of the water one), "the plant holds steady: no flicker", the turbine drawn with its spin record and its marked blade stepping the right way round.
+
+### Sweeps (throwaway node scripts, not committed)
+
+- Steam ledger in 1200 random worlds with burners and chillers (moves and special blocks booked separately): the moves never raised the steam's energy (worst +4e-14), and credited work + carried push never passed what the moves took out (worst excess 0).
+- 900 random plants (chimneys of turbines, pipes and gaps; gear trains; 1 to 8 lamps side by side or in a row): heat never passed 8 tenths of the turbines' shaft work in any tick (worst 0.797) or of the steam's counted work over a run (worst 0.794); none flickered once the steam was steady; all stopped with the burner off.
+- 750 plants whose generator feeds a motor on the plant's own gear train, a third of them with no fire at all (poured steam only): all wind down and stay down; heat never passed 8 tenths of ALL the work done on the shaft (turbine + motor).
+- Random soups of blocks with wire loops in them: nothing ran on after the burners went off, and water + steam was never made or lost.
+
+### Found, not caused and not fixed here: a motor helping its own generator (#14/#15)
+
+In the feedback sweep, when the motor is geared so that it HELPS the train its generator is on (for example turbine, big gear, small gear, generator, small gear, big gear, motor, with the generator and motor joined by plain wire), the heat in the loop comes to as much as 1.28 times the work the turbine does on the shaft. A hand crank in place of the turbine gives the same 1.28 on the commit before this pass, so it is the motor–generator coupling and not the steam: the motor's push is recycled electricity that the motor never pays for (it is a plain resistor with no push-back of its own). It is not perpetual motion (the loop gives back less than it takes each time round, so it still winds down the moment the source stops), but it is more heat out than work in while the source runs. This is exactly what the joint circuit + spin solve of #14/#15 is for; no patch was added here.
