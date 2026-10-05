@@ -1734,6 +1734,42 @@ test('a lamp in a row with a motor is bright when the motor is stalled and nearl
   assert.ok(lampLevel(free, 2, 2) < 0.1 && lampLevel(stalled, 2, 2) > 0.6);
 });
 
+test('the wiki\'s tell-tale lamp experiment works as written: two batteries, a lamp and a motor show three different lamps, and the crate goes up', async () => {
+  /**
+   * The experiment's picture: batteries (or wire) down the left, a lamp on the right, the motor on top.
+   * @param {string} load - 'c' (a crate), 'I' (an iron weight) or '.' (no rope at all)
+   * @param {string} second - the second battery: 'B', or 'W' for just one
+   * @returns {string[]} the picture
+   */
+  const rig = (load, second) => {
+    const rope = load === '.' ? '.' : 'r';
+    return ['.s-Z', `WMW${rope}`, `B.L${rope}`, `${second}.W${rope}`, `WWW${load}`, '....', '####'];
+  };
+  const free = run(rig('.', 'B'), 2);
+  const lifting = run(rig('c', 'B'), 2);
+  const stalled = run(rig('I', 'B'), 2);
+  // Worked out from the law: 2 volts, and 0.45 + 1 + 0.1 (and a little wire) in the loop.
+  assert.ok(Math.abs(currentAt(free, 2, 2) - 0.173) < 0.01, `free: the lamp gets ${currentAt(free, 2, 2)}`);
+  assert.ok(Math.abs(currentAt(lifting, 2, 2) - 1.04) < 0.02, `lifting: the lamp gets ${currentAt(lifting, 2, 2)}`);
+  assert.ok(Math.abs(currentAt(stalled, 2, 2) - 1.29) < 0.02, `stalled: the lamp gets ${currentAt(stalled, 2, 2)}`);
+  assert.ok(lampLevel(free, 2, 2) < 0.25 && lampLevel(lifting, 2, 2) > 0.9 && lampLevel(stalled, 2, 2) > lampLevel(lifting, 2, 2) + 0.2);
+  assert.ok(spinAt(lifting, 3, 0) > 0.3, `the crate's winch turns ${spinAt(lifting, 3, 0)}`);
+  more(lifting, 20);
+  assert.ok(!lifting.cells.slice(4 * 4).includes('crate'), 'the crate did not go up');
+  assert.equal(spinAt(stalled, 3, 0), 0);
+  // With ONE battery the lamp holds too much current back: a crate stalls it just like an iron weight.
+  const oneCrate = run(rig('c', 'W'), 2);
+  const oneIron = run(rig('I', 'W'), 2);
+  assert.equal(spinAt(oneCrate, 3, 0), 0);
+  assert.ok(Math.abs(currentAt(oneCrate, 2, 2) - currentAt(oneIron, 2, 2)) < 1e-9 && currentAt(oneCrate, 2, 2) < 0.7);
+  // And the wiki says so.
+  const { readFile } = await import('node:fs/promises');
+  const wiki = await readFile(new URL('../wiki/Gears.md', import.meta.url), 'utf8');
+  const recipe = wiki.slice(wiki.indexOf('**The tell-tale lamp.**'), wiki.indexOf('**Help the crank.**'));
+  assert.match(recipe, /\*\*Two\*\* batteries/);
+  assert.match(wiki, /use \*\*two\*\* batteries/);
+});
+
 test('a battery spins a generator just as fast as it spins a motor, the other way round', () => {
   const motor = run(['WMW', 'B.W', 'WWW'], 2);
   const generator = run(['WEW', 'B.W', 'WWW'], 2);

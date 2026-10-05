@@ -21,6 +21,6 @@ Search the code for `🧪 Try this!` to find them all. Some favorites:
 
 And three to do on the Build page, with no code at all (they are on the [⚙️ Gears](Gears) page):
 
-1. **The tell-tale lamp:** a lamp in a row with a motor is bright when the motor is stuck and nearly dark when it runs free.
+1. **The tell-tale lamp:** a lamp in a row with a motor (and two batteries) is nearly dark when the motor runs free, bright while it lifts a crate and brightest when it is stuck.
 2. **Help the crank:** two batteries wired against a cranked generator drive it faster than the crank can go.
 3. **Swap them:** swap a generator block for a motor block. It works just the same.

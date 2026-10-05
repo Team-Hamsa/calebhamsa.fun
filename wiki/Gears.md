@@ -91,7 +91,10 @@ job is:
 Put a lamp in the loop and you can **see** it: the lamp is bright while the
 motor is stuck and nearly dark while it runs free. (Real motors do exactly
 this. It is why the lights dim for a moment when a big machine starts up, and
-why a jammed motor burns out.)
+why a jammed motor burns out.) But the lamp is in the way: it holds current
+back, like one more coil in the row. One battery, a lamp and a motor can't
+lift even a crate (two thirds of an amp is the most that gets through, and a
+crate takes one). So for the lamp experiment below, use **two** batteries.
 
 **A battery and a crank on the same machine** add up or fight, like two cranks:
 
@@ -114,9 +117,13 @@ moment you wire it up, and a clicker or a switch can't catch anything out.
 
 **Three things to try:**
 
-1. **The tell-tale lamp.** Battery, lamp and motor in one loop, with a gear
-   and an axle from the motor to a winch. Let the winch lift a crate, then an
-   iron weight, then nothing at all. Watch the lamp each time.
+1. **The tell-tale lamp.** **Two** batteries in a row, a lamp and a motor in
+   one loop, with a gear and an axle from the motor to a winch. Let the winch
+   turn with nothing on its rope, then lift a crate, then try an iron weight.
+   Watch the lamp each time: nearly dark (0.2 amps), bright (1 amp, and the
+   crate goes up), brightest (1.3 amps, and the weight stays put). Then take
+   one battery away. Now the crate stays put too, and the lamp can't tell it
+   from the iron weight. Why? (The lamp holds too much current back.)
 2. **Help the crank.** Crank a generator that is wired to one battery. Tap the
    crank to turn it the other way. Which way is easy? Now use two batteries in
    a row and watch how fast it goes.
