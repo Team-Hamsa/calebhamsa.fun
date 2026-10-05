@@ -46,7 +46,7 @@ After this pass:
 | Buoyancy | No code change. Water is never more than 1 a cell, so iron and sand (4) always beat `WATER_WEIGHT` × water (2.5 at most) | The "stops about 6 cells down" leftover came only from squashed water |
 | World's top edge | Open sky. A full cell in the top row is its own surface: it can sink, nothing rises past it | Otherwise a tower built to the top of the world is "sealed" and will not drain |
 | Does a pump suck? | No. If the water behind a pump is not pressed toward it, the pump empties the cell behind it and no more | As today. A real pump can't pull water up more than a little either; and it stops a sealed pot from "stretching" |
-| A pump that is switched off | Holds pressure back, both ways. Water still trickles through it forwards by falling and spreading | A stopped pump is a shut door to pressure. (Today squish leaks through it forwards; nothing in the tests or the wiki leans on that) |
+| A pump that is switched off | Holds pressure back, both ways. Water still trickles through it forwards by falling and spreading. **(Changed after review: nothing gets past it at all. See the last addendum)** | A stopped pump is a shut door to pressure. (Today squish leaks through it forwards; nothing in the tests or the wiki leans on that) |
 
 ## The physical law
 
@@ -138,7 +138,7 @@ An unpowered pump is no link at all: it holds pressure back, both ways. Water st
 
 That is one set of straight-line equations for each group of joined points: `solveBanded` (below). After solving, each end and pump is checked against the table ("Limits"), and then the water is moved.
 
-**The lid rule: cells that fill up pass the push on.** A hole or surface that wants to give its cell `j` more than `j` has room for gives it exactly its room. If `j` has a **lid** (no open way up, or the cell above it is a point) and is not the cell behind or in front of a pump, `j` then counts as a point for this small step: its own equation says "takes in exactly my room", and the rest of the push goes on through it. Solve again; repeat while new cells fill (at most `PRESS_PASSES` times, then carry on with what there is). A cell counted this way must come out really pressed (`H ≥ floor + 1`); if it does not, it goes back to being an end and is not tried again this step.
+**The lid rule: cells that fill up pass the push on.** *(Changed after review: the rule no longer needs a lid. See the last addendum.)* A hole or surface that wants to give its cell `j` more than `j` has room for gives it exactly its room. If `j` has a **lid** (no open way up, or the cell above it is a point) and is not the cell behind or in front of a pump, `j` then counts as a point for this small step: its own equation says "takes in exactly my room", and the rest of the push goes on through it. Solve again; repeat while new cells fill (at most `PRESS_PASSES` times, then carry on with what there is). A cell counted this way must come out really pressed (`H ≥ floor + 1`); if it does not, it goes back to being an end and is not tried again this step.
 
 Why a lid: without the rule, a pipe whose cells are all 0.99 full would only pass pressure one cell further each small step, because SPREAD keeps taking a little out of each. With no lid over it (open air above), water that gets more than its room simply fills its cell and rises next step; it is not pressed. That is what makes a spout work like a nozzle: the pressure is used up at the hole, where a wheel can catch it, not smeared over a blob of air outside.
 
@@ -435,7 +435,7 @@ Built as specified, with the changes below. `npm test`: 863 pass (837 before: 13
 
 ### What was built differently, and why
 
-1. **A new rule, `NO_ROOM` (0.01): a cell with no room to speak of passes the push on even in open air.** The prototype had a flaw the spec's table did not show. Water pressed sideways into the bottom of a pond that is *almost* full to the next row (a tall column beside a basin, a tank emptying into a pit) could only give each cell its last speck of room in each small step, and SPREAD then took a little out of that cell again. So the cell never counted as full, the push never got past it, and the column stood too high until every cell of the row had crept to within `FULL_SLACK`: about 110 ticks (14 seconds) for a 7-deep column beside a 5-wide basin, then a sudden rush. Now a hole whose cell has less than `NO_ROOM` of room counts as lidded for the lid rule: it fills and passes the push on (and must still come out really pressed, like any cell under a lid, so the books are unchanged). The same scene levels in 22 ticks with no pause. A spout into open air is still a nozzle (the cells outside it are nowhere near full), and the nozzle numbers of the spec's table came out the same to two decimals. One number moved: the 3 × 7 tank through a valve into a 3-wide pit is half gone after 15 ticks (prototype 47, squished water 68), because once the pit has filled to the valve the two are a U-tube.
+1. **A new rule, `NO_ROOM` (0.01): a cell with no room to speak of passes the push on even in open air.** *(Gone again after review: every cell that fills up passes the push on. See the next addendum.)* The prototype had a flaw the spec's table did not show. Water pressed sideways into the bottom of a pond that is *almost* full to the next row (a tall column beside a basin, a tank emptying into a pit) could only give each cell its last speck of room in each small step, and SPREAD then took a little out of that cell again. So the cell never counted as full, the push never got past it, and the column stood too high until every cell of the row had crept to within `FULL_SLACK`: about 110 ticks (14 seconds) for a 7-deep column beside a 5-wide basin, then a sudden rush. Now a hole whose cell has less than `NO_ROOM` of room counts as lidded for the lid rule: it fills and passes the push on (and must still come out really pressed, like any cell under a lid, so the books are unchanged). The same scene levels in 22 ticks with no pause. A spout into open air is still a nozzle (the cells outside it are nowhere near full), and the nozzle numbers of the spec's table came out the same to two decimals. One number moved: the 3 × 7 tank through a valve into a 3-wide pit is half gone after 15 ticks (prototype 47, squished water 68), because once the pit has filled to the valve the two are a U-tube.
 2. **`flowWater(world, table, onMove, pumps)`**, not `(world, canFlow, onMove, pumps, sides)`. `flowTable(world, sides, blockInfo)` works out once a tick, as typed arrays, where fluid may go from every cell (`to`, one-way through pumps), which cells stand as one body (`joined`), and each cell's `pump`, `sky` and `floor`. `workingPumps(world, blockInfo, sides)` lists the pumps that are running. Both are exported, with `solveBanded`, for the tests. Steam's `canFlow` is now a look-up in the same table. A test checks the table against `flowChecker` in 60 random worlds.
 3. **`makeRoom` puts the extra of joined over-full cells in one pot and searches from all of them at once** (the spec had each cell search by itself, bottom row first). The answer is the same in the four saved worlds of the table, but it no longer depends on which over-full cell comes first, so a mirrored world always gets the mirrored answer (tested on a lop-sided world). Two smaller points: the extra of an over-full *pump* cell may leave through the pump's front (the spec would have dropped it), and extra of `1e-12` or less is left alone as rounding.
 4. **The still-water short cut is a little wider than "no holes".** A body of water is skipped when it has no pump, nothing over or under full (to `1e-12`), every surface and sky cell at one head (to `1e-12`), no hole underneath, and no hole in the side that this head would press on (`head < the hole's own top`). So a settled pond with a step in it is skipped too. Checked against the same code with the short cut switched off, in 800 random worlds (half with pumps): the same to rounding (worst 2.7e-12) in 799. The short cut leaves specks of `1e-15` untidied, and in one world such a speck tipped one of the law's own hard limits a tick sooner: the two runs then differed by 0.0008 of a cell for a while.
@@ -495,3 +495,95 @@ Ten cells in a shaft stand 10.000 (bottom cell 1.000); a 10-cell shaft takes 10.
 ### Pictures
 
 `u-tube` (20 ticks), `water-tower` (8 ticks), `pump-uphill`, `hydro-dam` and `power-plant` changed and were looked at; `sand-in-water` and `well` came out the same file. `CACHE_NAME` stays `caleb-v8`.
+
+## Addendum 2026-10-05 (review): what the review found and what was done
+
+Three reviewers ran the code as built and reported seven findings. All seven were real. Fixing them, and sweeping every tick of every world (not only the running totals), turned up four more faults in the same places; those are fixed here too. `npm test`: 878 pass (863 before).
+
+### The seven findings
+
+1. **Free push from a waterfall (high).** A cell that dropped nearly all its water and then spread the last drop sideways handed its carried push out up to 1.5 times: the FALL share was measured against what the cell began with, the SPREAD share against the little that was left. *Fixed:* every share is measured against what the cell held when the small step began, so the shares out of one cell never add up to more than 1. The reviewer's dropped cellful now gives its three wheels 0.99, 0.89, 0.99 and 0.98 of what the water lost (1.43, 1.17, 1.39, 1.40 before); the steady 23 × 14 machine 0.92 (1.33).
+2. **A mirrored build gave a different answer (medium).** A flow of `1e-17` between two full cells, whose direction is a coin toss, switched SPREAD off on one side. *Fixed:* a pressed move of `FULL_SLACK` or less is not a move at all, for SPREAD as well as for the books. 300 symmetric worlds stay symmetric (12 went lop-sided before).
+3. **A switched-off pump held pressure back but let the same water fall or spread straight through it (medium).** *Fixed, as the shut door the spec meant:* nothing goes into a pump by itself, from any side (`flowTable`'s `to` is closed into a pump). The only water that gets past a pump is what the pump law moves from the cell behind it to the cell in front. A tank no longer runs out through a dead pump in its wall or floor; a U-tube with a dead pump for its bend does not level. Steam can't get through a pump at all (it could go through forwards before; nothing in the game used that). Water that is already inside a pump (an old save, a pump built into a pond) may leave by its front.
+4. **A hole at ground level ran no faster for a deep tank than for a puddle (low).** See "The law changed" below.
+5. **Two pumps one on top of the other moved nothing (medium).** `workingPumps` dropped both. *Fixed:* pumps standing nose to tail, facing the same way, are one link from the cell behind the first to the cell in front of the last. Like batteries in a row their pushes add (stall height `PUMP_HEAD ×` the levels added up), and the water has to get through every one (ease `÷` how many). So `n` pumps lift `n` times as high and move no more on the level than one. One pump of the row switched off shuts the row; so do two pumps nose to nose. The books: the most a row can give the water is `0.75 × (the levels added up)² ÷ n`, which is never more than `0.75 ×` the levels squared and added up, so it stays under the electricity (tested tick by tick). Measured: 4.77, 9.55 and 14.32 cells of water over 1, 2 and 3 pumps with a battery's worth each.
+6. **wiki/Lifting.md still said deep water is squeezed.** *Fixed*, and the wiki test now reads the Lifting page for "squeezed" and "stop sinking".
+7. **`flowChecker` and `headOf` were left in fluids.js for the tests only.** *Fixed:* both are gone. The test checks `flowTable` against the rule written out plainly in the test file.
+
+### The law changed: a cell that fills up passes the push on, lid or no lid
+
+Finding 4 was the flaw the first addendum half-mended with `NO_ROOM`. A hole could give the cell outside it only the room it had; SPREAD then took a little out of that cell again; so in open air the cell never counted as full and the push never got past it. With a floor to run off over, the cell hovered at 0.97 for ever: a 10-deep tank on the ground dribbled at 0.09 a tick, the same as a puddle, and **a tank with a hole at its foot, filled by three faucets, filled right to the top of the world.**
+
+Now a cell that is given more than it has room for fills up and counts as a point for the rest of that small step, whatever is over it. (Still not the open sky, nor the cells right behind and in front of a running pump; and a cell counted this way must still come out really pressed.) `NO_ROOM` and the lid test are gone: one rule and one setting fewer. Water squirting into air that has room for it is still not pressed on, so a spout into a free fall is the nozzle it was (the nozzle tests pass untouched).
+
+| Measured | Before | Now |
+|---|---|---|
+| Hole at ground level, tank kept 1 / 2 / 5 / 10 deep: out of the tank in tick 40 | 0.089 / 0.099 / 0.092 / 0.091 | 0.089 / 0.39 / 0.82 / 2.07 |
+| The same hole, tank left to drain, 5 / 10 deep: half empty after | 33 / 134 ticks | 9 / 7 ticks |
+| Tank with a hole at its foot under three faucets stands | 12.0 deep (full to the top) | 1.6 deep |
+| 7-deep arm into a 5-wide basin: within 5% / 1% of level after | 20 / 22 ticks | 8 / 11 |
+| 12-deep arm into a 13-wide basin | 84 / 94 | 14 / 31 |
+| U-tube; tower and pipe; 22 cells of pipe (1%) | 9; 12; 21 | 8; 11; 20 |
+
+What this costs, so the owner knows:
+
+- **Once the water outside a hole stands up to the hole, the two are a U-tube, and a U-tube levels fast** (that is the levelling speed the issue asked for). So a hole at ground level floods the floor faster than a hole two cells up squirts into a free fall (10 deep: 3.8 against 2.0 cells in the second tick), and a hole whose pool rises to it speeds up. A real jet is fastest into free air. The game has one speed for "full water pressing on full water" and a slower one for "squirting into air"; there is no momentum to join them up.
+- **A wheel at a spout is strong only while its water falls away.** If the water backs up into a pool round the wheel, most of the head is used up in the pool and the wheel gets about a fifth (tank kept 10 deep, tick 200: 10.1 a tick falling away into drains, 2.1 standing in its puddle on a level floor). It was feeble there before too (1.8, with a tenth of the flow). The guide says so now, and a test pins it.
+- A flood's front is a hump: a column far out in a wide basin rises, dips a little as the hump spreads on (0.947 → 0.908 → 0.93 in the 13-wide basin), and settles. The tall arm itself never turns back.
+
+### Four more faults, found by sweeping every tick
+
+The builder's sweeps checked `credited + carried ≤ lost` as a running total over a whole world, and the reviewers showed that hides things. The repair's sweep (`repair2/strict.mjs`) checks every tick by itself, runs each world beside its mirror image, and counts worlds that never come to rest. It found:
+
+1. **A share of the energy could come out below nothing.** A cell's energy change is shared between its moves by how much each carried. When a little water and a lot spread into one cell, the cell ends up higher than where the little one came from: that move's share came out negative and the other's too big by as much. `countWheels` called the negative share 0, so a wheel on the other move was credited a speck more than the water lost (worst seen: 6.5e-5 in a tick). *Fixed:* `settleShares` pays every share below zero back out of the moves it was shared with (the other moves out of the same cell, then the others into the same cell, then all of them), each by how big its own share is. No share is negative and the sum is still exactly what was lost. Steam's shares go through the same function.
+2. **A running pump with nothing behind it froze the whole body of water it pointed into.** Inside a solve a pump was not limited by what the open cell behind it held; the "safety net" then scaled every flow of the group by `held ÷ wanted`, which is 0 for a dry intake. A tank beside a basin with a dry pump in its roof stood a full cell too high for ever. *Fixed:* an open cell behind a pump can give no more than it holds, and an open cell in front can take no more than it has room for (`cap`). A pump whose cap is nothing is left out of the step. A pump that wants more than its cap is held at its cap inside the solve (and let go again if that leaves a shut-in part with more held coming in than going out; the same for a held hole or surface the other way round).
+3. **A rounding speck with no room for it slowed a whole body down.** A flow of `1e-15` into a cell with `2e-16` of room scaled its group to a seventh. *Fixed:* flows of `1e-12` or less don't count in the safety net, and go only as far as there is room.
+4. **Three choices hung on the sign of a rounding speck**, which is why about 1 pump soup in 100 differed from its mirror image: a hole with exactly no pressure behind it (shut, or open?); a pump pushing at a sealed full cell (stopped, or "starved"?); and "starved" read off a shut-in part's heads, which are only right compared with each other, so it depended on which cell was numbered first. *Fixed:* a flow of `1e-12` or less is nothing wherever a choice is made, and a pump is only called starved where there is something to measure its push from. Six of the worlds that differed are kept in `tests/fixtures/mirror-worlds.json`.
+
+### Sweeps on the code as repaired
+
+Throwaway scripts in the session scratchpad (`build30/`, `build30/old/`, `repair2/`).
+
+| Sweep | What | Result |
+|---|---|---|
+| `repair2/strict.mjs`, no pumps | 3 × 1500 random worlds × 300 ticks, each beside its mirror | In every single tick: wheel work − (energy lost, counting carried push) worst +3.4e-13; water made or lost, worst 1.4e-13; fullest cell `FULL` + 1.5e-14; **0 of 4500 differ from their mirror** by a millionth of a cell; none restless; `stuck` 0 |
+| `repair2/strict.mjs`, pumps (rows of pumps too, switched at random) | 5 × 1500 worlds | In every single tick: wheel work − energy lost − pump work, worst +4.7e-13 (but for the speck top-up under "Known edges": 6.4e-10, once); pump work ≤ 0.9 × electricity in every tick, rows of pumps too; water worst 2.1e-13; fullest cell `FULL` + 9.9e-13; **0 of 7500 differ from their mirror** by a millionth of a cell; 14 restless; `stuck` 2 |
+| The same pump sweep on the code before this repair | 1000 worlds | Worst tick 6.5e-5; 67 worlds differed from their mirror |
+| `repair2/strict-steam.mjs` | 1000 worlds of steam, pipes and turbines × 200 ticks, every tick | Turbine work − energy lost, worst +1.4e-13 in a tick; steam made or lost, worst 8.5e-14 |
+| `sweep1-random-worlds.mjs` | 1000 without pumps, 1000 with | As before: energy never rose by itself (worst +9.1e-13); ledger worst 0; water worst 2.1e-13; fullest cell `FULL` + 3.1e-14; pump work never above 0.9 × electricity; `stuck` 0 |
+| `sweep5-towers.mjs` | 2 × 500 worlds of towers, wheels, valves and pumps | Ledger worst +7.1e-15; energy beyond pump work worst 4.0e-13; water worst 2.2e-13; no world flickered (most turn-backs 1) |
+| `sweep6-steady.mjs` | 13 whole-game steady machines | All 13 hold still (worst swing 5.3e-15), the same wheel speeds as before |
+| `sweep7-nozzle-loops.mjs` | 300 tower-and-nozzle loops feeding their own pumps | 0 bad: all 300 ran, all stop and stay stopped |
+| `fuzz-whole-game.mjs` | 700 random whole-game worlds | No cell over `FULL` after any pack's turn; no water made (worst 1.4e-13) |
+| `old/law/sweep3-waterloops.mjs` | 2 × 400 pump → wheels → generator → pump loops | 0 bad (615 really ran before the power went) |
+| `old/law/sweep2`, `4`, `5`, `7` | soups, winch towers, feedback plants, wheels with batteries | 0 bad in each (worst books gap 1.9e-10, as before) |
+| `old/turbine/sweep1-steam-ledger.mjs`, `old/repair/sweep-lift.mjs`, `old/r3fix/sweep.mjs` | 1200 steam worlds; 400 and 1200 rope-and-water runs | 0 bad; worst rise of steam energy 5.7e-14; the rope ledgers never climbed back (worst +0.0000) |
+| The reviewers' own scripts (`rev-energy/`, `rev-real/`, `rev-regress/`) | every repro above | All come out as "expected" |
+
+### Known edges left
+
+- **A full cell that is a speck short is topped up, even from a little lower down.** A cell within `FULL_SLACK` (`1e-9`) of full counts as full, and the solve fills its last speck. If SPREAD then takes a speck out of it again (into a neighbour that is also a hair short), it is topped up again next step. The water's energy can rise by itself by about `1e-9 ×` a cell a tick while that lasts (worst seen 6.4e-10 in a tick); it stops when the row is full, and no wheel was credited any of it.
+- **A steady stream can pulse a little.** One of seven faucet-tank-hole scenes (3 faucets, hole 1 cell up, 12 cells of floor) never quite holds still: its tank creeps up 0.03 of a cell and sinks back, about every 70 ticks (a pixel on the screen). It did the same before the repair. The 13 steady machines of `sweep6` all hold still.
+- **Pump soups that keep moving.** In about 1 random world in 500 with dozens of pumps some cell is still going up and down after 200 ticks (a pump lifting water that falls back to it). None without pumps.
+- **Water left inside an upward pump** (from an old save, or a pump built into a pond) stays there until it is dug out: it can only leave by the pump's front, and nothing falls upward. It is drawn in the pump, and no water is made or lost.
+- The edges of the first addendum stand ("a hole that is shut early stays shut for that step", `stuck`: twice in about 48 million solves of the pump sweeps, never without pumps).
+
+### Speed after the repair (ms a tick, `stepFluids` only)
+
+| World (24 × 14) | As built | Repaired |
+|---|---|---|
+| Empty | 0.11 | 0.11 |
+| Brim full of still water | 0.52 | 0.52 (no solves) |
+| Brim full, one column emptied (levelling all the time) | 1.6 (worst 3.1) | 1.7 (worst 5.4) |
+| Two big tanks joined by a pipe, one full | 1.2 (worst 2.1) | 1.0 (worst 2.3) |
+| Maze of full pipes | 0.44 | 0.44 |
+| Tall column beside a 22-wide basin | | 0.49 (worst 1.0) |
+| Brim full of water with a pump in the middle of it | 5.5 (worst 6.2) | 6.0 (worst 6.7) |
+| Random worlds with dozens of pumps | mean 1.7, 99 in 100 ticks under 9.3 | mean 1.4, 99 in 100 under 6.4, 999 in 1000 under 10.6 |
+
+Much the same as built. (The worst single tick of the pump worlds was 19 to 36 ms in three runs, in ticks with only a couple of dozen solves: the machine pausing, not the sums.) A pump in a brim-full sea is still the costly case.
+
+### Docs and pictures
+
+Guide and wiki: a pump with no power is a shut door; two pumps in a row lift twice as high; a hole at the foot of a tall tank floods the floor in a rush; let the water fall away from a wheel at a spout; the Lifting page's "squeezed" paragraph is gone. `water-tower.png` was made again (a few pixels differ); the other pictures came out the same file. `CACHE_NAME` stays `caleb-v8` (no file was added to or renamed in the list the service worker saves).
+
