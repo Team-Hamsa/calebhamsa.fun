@@ -1035,7 +1035,7 @@ test('a spout is a nozzle: a wheel at the end of a pipe from a tall tank gets mo
   assert.ok(inside.fall > 0, 'but it does get the little its own two links rub away');
 });
 
-test('open air is not pressed: water squirting out of a spout does not push on through the air', () => {
+test('air with room in it is not pressed: water squirting out of a spout does not push on through the air', () => {
   // A tower, a short pipe, and open air beyond the spout.
   const world = worldFrom(['#~#.....', '#~#.....', '#~#.....', '#~#.....', '#~#.....', '#~pp....', '########']);
   for (let i = 0; i < 30; i++) {
@@ -1049,7 +1049,7 @@ test('open air is not pressed: water squirting out of a spout does not push on t
       }
     }
   }
-  // Under a lid it is different: the push goes straight on down a pipe that was only nearly full.
+  // A cell that fills right up is different: the push goes straight on down a pipe that was only nearly full.
   const lidded = worldFrom(['#~######', '#~######', '#~######', '#~######', '#~######', '#~pppp..', '########']);
   for (let x = 2; x <= 5; x++) setFluid(lidded, 'water', x, 5, 0.99);
   stepFluids(lidded, blockInfo);
@@ -1587,4 +1587,63 @@ test('a build that is the same on both sides stays the same on both sides, and a
       });
     }
   }
+});
+
+test('a hole at ground level is not held back by its own puddle: it floods the floor faster the deeper the tank', () => {
+  /**
+   * A 3-wide tank standing on the ground and kept topped up, a hole at
+   * the foot of its wall, 16 cells of open floor and a drain at the end.
+   * @param {number} depth - how deep the tank is kept
+   * @returns {number} how much water left the tank in tick 40
+   */
+  const outflow = (depth) => {
+    const rows = [];
+    for (let y = 0; y < 13; y++) rows.push(`#${y >= 13 - depth ? '~~~' : '...'}#${'.'.repeat(16)}`);
+    rows[12] = `${rows[12].slice(0, 4)}.${rows[12].slice(5)}`;
+    rows.push(`${'#'.repeat(20)}D`);
+    const world = worldFrom(rows);
+    let out = 0;
+    for (let tick = 0; tick < 40; tick++) {
+      for (let y = 13 - depth; y < 13; y++) for (let x = 1; x <= 3; x++) setFluid(world, 'water', x, y, 1);
+      stepFluids(world, blockInfo);
+      out = 3 * depth - (column(world, 1, 0, 12) + column(world, 2, 0, 12) + column(world, 3, 0, 12));
+    }
+    return out;
+  };
+  const shallow = outflow(2);
+  const middling = outflow(5);
+  const deep = outflow(10);
+  assert.ok(middling > 1.5 * shallow, `5 deep: ${middling} a tick, 2 deep: ${shallow}`);
+  assert.ok(deep > 1.5 * middling, `10 deep: ${deep} a tick, 5 deep: ${middling}`);
+  // And a tank with a hole at its foot, filled by three faucets, does not fill up:
+  // the hole lets out all they pour in while the water is still shallow.
+  const fed = worldFrom(['#FFF#################', ...Array(12).fill(`#...#${'.'.repeat(16)}`), `${'#'.repeat(20)}D`]);
+  setBlock(fed, 4, 12, 'air');
+  run(fed, 800);
+  const stands = column(fed, 2, 0, 12);
+  assert.ok(stands < 3, `the tank stands ${stands} deep`);
+});
+
+test('a wheel at a spout is strong when its water falls away, and feeble standing in its own puddle', () => {
+  /**
+   * A 3-wide tank kept 10 deep, two cells of pipe from its foot, a
+   * wheel with stone over and under it, and then the way out.
+   * @param {string[]} out - what is beyond the wheel, for the wheel's row and the two rows under it
+   * @returns {number} the work the wheel gets in tick 200
+   */
+  const work = (out) => {
+    const rows = [...Array(8).fill(`#~~~###${'.'.repeat(out[0].length)}`), `#~~~###${out[0]}`, `#~~~PPO${out[0]}`, `#######${out[1]}`, `#######${out[2]}`, `#######${'#'.repeat(out[0].length)}`];
+    const world = worldFrom(rows);
+    const at = world.cells.indexOf('waterWheel');
+    let last = 0;
+    for (let tick = 0; tick < 200; tick++) {
+      for (let y = 0; y < 10; y++) for (let x = 1; x <= 3; x++) setFluid(world, 'water', x, y, 1);
+      last = stepFluids(world, blockInfo).waterWork.get(at) ?? 0;
+    }
+    return last;
+  };
+  const falls = work(['....', '....', '.DDD']);      // a drop, and drains at the bottom of it
+  const puddle = work(['....D', '#####', '#####']); // a level floor, with a drain at the far end
+  assert.ok(puddle > 0, 'water does go through the wheel in the puddle');
+  assert.ok(falls > 3 * puddle, `falling away: ${falls} a tick; standing in its puddle: ${puddle}`);
 });

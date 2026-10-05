@@ -101,15 +101,6 @@ export const SURFACE_EASE = 1 / 4;
  */
 export const SQUIRT_EASE = 1 / 32;
 
-/**
- * A cell with less room than this has no room to speak of: when pressed
- * water fills it up, it passes the push on at once, even in open air
- * (see the lid rule in pressWater). Without this, water pressed into the
- * bottom of a pond that is ALMOST full to the next row would wait and
- * wait for the last specks to spread out before it could rise.
- */
-const NO_ROOM = 0.01;
-
 /** How many tries pressWater has at one set of sums before giving up for this small step. */
 const PRESS_ROUNDS = 8;
 
@@ -953,13 +944,14 @@ let bandScratch = new Float64Array(0);
  * Solving that (solveBanded) gives every point's head, and so every
  * flow. Then each end is checked: a hole that would suck is shut; an end
  * that would give its cell more water than it has room for gives just
- * that much. And a cell with a LID over it that fills right up passes
- * the rest of the push on in the same small step (it becomes a point
- * too), so pressure goes straight down a pipe that was nearly full. In
- * open air there is no lid: water that comes out of a spout just fills
- * its cell and rises. The pressure is used up at the spout, where a
- * water wheel can catch it. (Only a cell that had no room to speak of,
- * NO_ROOM, passes the push on in open air too: it was as good as full.)
+ * that much. And A CELL THAT FILLS RIGHT UP PASSES THE REST OF THE PUSH
+ * ON in the same small step (it becomes a point too). So pressure goes
+ * straight down a pipe that was only nearly full, and water pressed out
+ * into a puddle that fills its cell pushes the puddle on in turn: a
+ * tank with a hole at its foot floods the floor outside, faster the
+ * deeper the tank, and is never held back by its own puddle. Water
+ * squirting into air that has room for it is NOT pressed on: its
+ * pressure is used up at the spout, where a water wheel can catch it.
  *
  * STILL WATER COSTS NOTHING: a body of water whose surfaces all stand
  * level, with no hole letting water out and no pump, is not solved at
@@ -1000,7 +992,7 @@ function pressWater(world, w, table, pumps, onMove, press) {
   // Nothing full and no pump running: nothing is pressed.
   if (!any && pumps.length === 0) return { after: w, moved: 0, carried, pumpWork: 0 };
 
-  const promoted = new Uint8Array(size); // cells that fill up in this step under a lid: points too
+  const promoted = new Uint8Array(size); // cells that fill up in this step: points too
   const banned = new Uint8Array(size);   // cells that were tried as points and weren't really pressed
   const opened = new Uint8Array(size);   // full cells a pump is emptying: not points in this step
   const pumpEnd = new Uint8Array(size);  // cells right behind or in front of a working pump
@@ -1367,15 +1359,12 @@ function pressWater(world, w, table, pumps, onMove, press) {
           again = true;
         }
       }
-      // THE LID RULE: a cell that gets more than it has room for fills up
-      // and passes the rest on, but only with a lid on it (or full water
-      // over it). In open air, water just rises: unless the cell had no
-      // room to speak of, and then it is as good as full already.
+      // A CELL THAT FILLS UP PASSES THE PUSH ON: a cell that gets more than
+      // it has room for fills up, and counts as a point from now on in this
+      // small step. (Not the open sky, and not a pump's own two cells.)
       if (!last) {
         for (const end of ends) {
           if (end.sky || end.state !== 1 || end.q <= 0 || end.q < end.room - 1e-15 || banned[end.j] || pumpEnd[end.j]) continue;
-          const over = joined[end.j * 4];
-          if (over >= 0 && !node[over] && end.room > NO_ROOM) continue;
           promoted[end.j] = 1;
           again = true;
         }
