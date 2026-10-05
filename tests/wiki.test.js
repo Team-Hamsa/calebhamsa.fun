@@ -101,6 +101,9 @@ test('the wiki says deep water presses harder, and no longer says it is squished
   assert.match(water, /doesn't suck/);
   assert.match(water, /no power is a shut door/);
   assert.match(water, /Two pumps in a row/);
+  // One build, one answer; and where a wheel in a pipe belongs.
+  assert.match(water, /before or after you poured the water/);
+  assert.match(readPage('Gears'), /last thing in the pipe/);
   // Only steam is squeezed now, and nothing stops sinking part way down a tank.
   const lifting = readPage('Lifting');
   assert.doesNotMatch(lifting, /squeezed|stop sinking/i, 'wiki/Lifting.md still says deep water is squeezed');

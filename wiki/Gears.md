@@ -40,6 +40,11 @@ splashed its push away. Water that spills off both sides of a wheel pushes it
 both ways, and that cancels out. Build a machine the other way round (mirrored)
 and its wheel turns the other way, just as fast.
 In a level stream it still turns, but only feebly: that water hardly falls.
+At the **end of a pipe from a tall tank** a wheel is strong too (deep water
+presses harder), and every cell taller the tank is makes it a bit stronger.
+Make the wheel the **last thing in the pipe**: a wheel in the middle of a pipe
+only gets the little the water rubs away going through it, because the rest of
+the push is used up where the water leaves the pipe.
 A **turbine** is a water wheel upside down: its push comes from **how much
 steam** goes through it and **how far that steam rises**. One burner's steam
 rising one block makes it just like a crank too. More steam (more burners,

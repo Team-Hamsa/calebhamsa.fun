@@ -91,4 +91,5 @@ test('the Water guide says deep water presses harder, and no longer says it is s
   assert.ok(water.guide.rules.some((rule) => /Two pumps in a row/.test(rule)), 'the Water rules should say pumps in a row lift higher');
   const gears = PACKS.find((pack) => pack.tab.id === 'gears');
   assert.match(gears.guide.blocks.waterWheel.does, /end of a pipe from a tall tank/);
+  assert.match(gears.guide.blocks.waterWheel.does, /LAST thing in the pipe/);
 });

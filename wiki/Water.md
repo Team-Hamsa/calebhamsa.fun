@@ -15,8 +15,12 @@ of a tank or the bottom.
 **Deep water presses harder.** The taller the water standing over a place, the
 harder it pushes there: that is pressure. It pushes water up a pipe until both
 sides are level, and squirts it out of a hole, harder the deeper the hole. A
-hole at the foot of a tall tank floods the floor outside in a rush. A long thin
-pipe rubs some of the push away. Steam is different: it is a gas, and
+hole at the foot of a tall tank floods the floor outside in a rush. A hole in
+the very top row of the water only spills over its lip; one row deeper the
+water is pressed, and it runs more than twice as fast. A long thin pipe rubs some of the push away, so with only a little water
+over it a long pipe runs slower than a short one. And the same tank with the
+same hole or pipe always runs just as fast: it doesn't matter whether you laid
+the pipe before or after you poured the water. Steam is different: it is a gas, and
 a gas CAN be squeezed.
 
 **Water has to fall to give its push.** Water up high holds energy, like a

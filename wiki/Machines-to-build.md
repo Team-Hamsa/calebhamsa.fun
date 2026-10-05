@@ -34,7 +34,7 @@ height.
 pipe and pours out of the end, because the end is lower than the water in the
 tank. (Make the pipe go higher than the water, and nothing comes out.) Try a
 taller tower, and put a water wheel with a block on top of it at the end of the
-pipe.
+pipe: every cell taller the tower is, the wheel gets a bit stronger.
 
 ![A water tower pushing water out of a low pipe](machines/water-tower.png)
 
