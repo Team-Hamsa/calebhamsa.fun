@@ -468,6 +468,51 @@ test('a hanging weight only gives power by really coming down: all the heat made
   assert.ok(late < lateBattery, `lamp ${late}, battery ${lateBattery}`);
 });
 
+test('a battery lighting a lamp in the loop next door doesn\'t let a crane\'s load down: a stray whisper of current is no drive', () => {
+  // The battery and lamp are one loop (between the rails at 0 and 4). The motor's two ends are
+  // just wired together (rails 4 and 8): no battery is in its loop. The loops share one rail, so
+  // a trickle (about a seventh of a thousandth of an amp) strays through the motor's coil.
+  for (const rows of [['WWBWWWWWW', 'WWLWWWMWW'], ['WWWWWWBWW', 'WWMWWWLWW']]) { // and the mirror picture
+    const x = rows[1].indexOf('M');
+    const tail = ['w', '|', '|', 'I', '.', '.', '.', '.', '.', '.'].map((letter) => '.'.repeat(x) + letter + '.'.repeat(8 - x));
+    const world = make([...rows, ...tail, '#########']);
+    for (let t = 0; t < 40; t++) {
+      run(world, 1);
+      assert.equal(spinAt(world, x, 2), 0, `${rows[0]}, tick ${t}`); // was −1.74: the weight ran down to the floor
+    }
+    assert.equal(rowOf(world, x, 'ironWeight'), 5);
+    const stray = Math.abs(world.signals.electric.cells.get(world.width + x).current);
+    assert.ok(stray > 0 && stray < 0.001, `stray current ${stray}`);
+    // A crank beside the winch, turning the let-out way, is a real drive: down it comes.
+    const cranked = make([...rows, ...tail, '#########']);
+    setBlock(cranked, x + 1, 2, 'crankCCW');
+    run(cranked, 40);
+    assert.equal(rowOf(cranked, x, 'ironWeight'), 11, 'the crank did not let the weight down');
+  }
+});
+
+test('the same three cranes give the same answer wherever each tower stands', () => {
+  // One battery tower lifts a crate. The other two towers hold iron weights, and nothing drives
+  // them but stray trickles through the shared rails. (They used to take turns: whichever heavy
+  // tower came first in reading order ran its weight down, and the other one was held.)
+  const top = ['WWBWWW.WWWWWW', 'W.s.WWEWW.s.W', 'WWEWWWMWWWMWW', 'W.-.W.G.W.s.W', 'W.w.W.w.W.w.W'];
+  const below = ['..|...|...|..', '..|...I...|..', '..|.......|..', '..|.......|..', '..|.......|..', '..c.......I..', '.............', '#############'];
+  /**
+   * Swap the first and third towers of a picture.
+   * @param {string[]} rows - the picture
+   * @returns {string[]} the picture with those towers swapped
+   */
+  const swapped = (rows) => rows.map((row) => row.slice(0, 1) + row.slice(9, 12) + row.slice(4, 9) + row.slice(1, 4) + row.slice(12));
+  const here = run(make([...top, ...below]), 2);
+  const there = run(make(swapped([...top, ...below])), 2);
+  assert.ok(spinAt(here, 2, 4) > 0.4, `the crate's winch turns ${spinAt(here, 2, 4)}`);
+  assert.ok(Math.abs(spinAt(here, 2, 4) - spinAt(there, 10, 4)) < 1e-9);
+  assert.equal(spinAt(here, 6, 4), 0);
+  assert.equal(spinAt(there, 6, 4), 0);
+  assert.equal(spinAt(here, 10, 4), 0);
+  assert.equal(spinAt(there, 2, 4), 0);
+});
+
 test('two winches with hanging weights, each one\'s generator wired to the other\'s motor, don\'t run by themselves: with the battery gone the catches hold', () => {
   const world = make([
     '..WWWWLWWWWWWWW.', '..W...........W.', '..W...WWLWW...W.', '..MsswE...MsswE.', '..W..|WWBWW..|W.', '..W..I.......IW.',

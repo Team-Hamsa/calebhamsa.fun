@@ -294,6 +294,49 @@ test('with nothing turning it at all, the catch holds any load (and nothing is "
   assert.equal(withDynamo(1, 0).speed, 0);
 });
 
+test('a whisper of a push is not enough to let a winch\'s catch go: only a push that would turn the gears fast enough to see', () => {
+  // A linked block on the load's shaft pushes the let-out way (↺) with 0.0001: like a stray trickle of
+  // current in a motor. With nothing on the rope it would turn at 0.00005: nobody could see that.
+  const whisper = spin(['KN'], { links: { '1,0': { still: -0.0001, perTurn: { '1,0': 2 } } } });
+  assert.equal(whisper(0, 0).speed, 0); // was −1.5: the load ran the gears
+  // The same whisper the lift way: it can't lift, and the load still hangs.
+  assert.equal(spin(['KN'], { links: { '1,0': { still: 0.0001, perTurn: { '1,0': 2 } } } })(0, 0).speed, 0);
+  // A real push the let-out way: the catch lets go and the load helps. (−0.5 − 3) ÷ 2
+  const real = spin(['KN'], { links: { '1,0': { still: -0.5, perTurn: { '1,0': 2 } } } });
+  assert.ok(Math.abs(real(0, 0).speed + 1.75) < 1e-9, `turns ${real(0, 0).speed}`);
+  // And a crank turning the let-out way still brings it down, with the load helping: (−2 − 3) ÷ 2.
+  assert.ok(Math.abs(spin(['QK'])(1, 0).speed + 2.5) < 1e-9);
+  // A counterweight on the same gears still helps a crank that could not lift the load alone
+  // (the crank's push is real, even though it is too weak by itself): 2 − 3 + 3 = 2, ÷ 2.
+  const counter = spin(['RKGGK']);
+  assert.ok(Math.abs(counter(0, 0).speed - 1) < 1e-9, `turns ${counter(0, 0).speed}`);
+});
+
+test('two winches that could each let its load down only while the other is held: both catches stay on, whichever comes first', () => {
+  // Each load's shaft is pushed the let-out way (↺) by 0.5. But each one's turning pushes the OTHER
+  // the lift way. If one load ran (helped by its weight) it would push the other back up, and the
+  // other way round: two answers, and no reason to pick one. So neither load may help. Both come
+  // down only as fast as the 0.5 turns them:  2a + b = −0.5 and a + 2b = −0.5  →  a = b = −1/6.
+  const links = { '1,0': { still: -0.5, perTurn: { '1,0': 2, '1,2': 1 } }, '1,2': { still: -0.5, perTurn: { '1,0': 1, '1,2': 2 } } };
+  const catches = spinWork.catches;
+  const sweeps = spinWork.sweeps;
+  const at = spin(['KN', '..', 'KN'], { links });
+  assert.ok(Math.abs(at(0, 0).speed + 1 / 6) < 1e-9, `the first turns ${at(0, 0).speed}`);
+  assert.ok(Math.abs(at(0, 2).speed + 1 / 6) < 1e-9, `the second turns ${at(0, 2).speed}`); // was 0 beside −1.83, for whichever came second
+  assert.equal(spinWork.catches - catches, 2); // both let go, both were put back on
+  assert.equal(spinWork.sweeps, sweeps); // and no plain rounds were needed
+  // Not the same weight: now there IS one answer where every load that runs is really pushed its
+  // way. The heavy one comes down and winds the light one UP, wherever each one stands.
+  for (const rows of [['KN', '..', 'kN'], ['kN', '..', 'KN']]) {
+    const heavyRow = rows[0][0] === 'K' ? 0 : 2;
+    const mixed = spin(rows, { links });
+    const heavy = mixed(0, heavyRow).speed;
+    const lightOne = mixed(0, 2 - heavyRow).speed;
+    // 2h + l = −0.5 − 3 and h + 2l = −0.5 − 1  →  h = −11/6, l = 1/6.
+    assert.ok(Math.abs(heavy + 11 / 6) < 1e-9 && Math.abs(lightOne - 1 / 6) < 1e-9, `${rows}: heavy ${heavy}, light ${lightOne}`);
+  }
+});
+
 /**
  * Which way the axle at x, y faces in a picture.
  * @param {string[]} rows - the picture
@@ -518,22 +561,23 @@ test('in a cluster, a hard stop, a jam and a load on the ground each hold their 
 });
 
 test('a link that breaks its promise can never make the sums blow up: groups that will not settle are held still, and whatever turns is balanced', () => {
-  // A winch's catch lets go with a jump, and this made-up link is NOT the
-  // same both ways round, so there is no answer at all: with the load
-  // held, the crank's group turns ↻ and frees it; with the load coming
-  // down, the link drives the crank's group ↺, which holds the load again.
-  const links = { '1,0': { perTurn: { '1,0': 1, '1,2': 2 } }, '1,2': { perTurn: { '1,0': -2, '1,2': 1 } } };
+  // This made-up link breaks the promise: each crank's turning pushes the
+  // OTHER crank against its own way, three times harder than the link
+  // rubs. The sums then have no answer at all:
+  //   ↻ crank:  2 − 2a − a − 3b = 0   →  a + b = 2/3
+  //   ↺ crank: −2 − 2b − b − 3a = 0   →  a + b = −2/3
+  const links = { '1,0': { perTurn: { '1,0': 1, '1,3': 3 } }, '1,3': { perTurn: { '1,0': 3, '1,3': 1 } } };
   const holds = spinWork.holds;
-  const at = spin(['KN', '..', 'RN'], { links });
+  const at = spin(['HN', 'R.', '..', 'HN', 'Q.'], { links });
   assert.ok(spinWork.holds > holds, 'something had to be held still');
   const a = at(0, 0).speed;
-  const b = at(0, 2).speed;
+  const b = at(0, 3).speed;
   assert.ok(Number.isFinite(a) && Number.isFinite(b), `${a}, ${b}`);
   // Each group either stands still or has its pushes balanced at the speeds reported.
-  assert.ok(a === 0 || Math.abs(-3 - a - 2 * b) < 1e-9, `the load's group turns ${a} unbalanced`);
-  assert.ok(b === 0 || Math.abs(2 - 2 * b - b + 2 * a) < 1e-9, `the crank's group turns ${b} unbalanced`);
+  assert.ok(a === 0 || Math.abs(2 - 3 * a - 3 * b) < 1e-9, `the ↻ crank's group turns ${a} unbalanced`);
+  assert.ok(b === 0 || Math.abs(-2 - 3 * b - 3 * a) < 1e-9, `the ↺ crank's group turns ${b} unbalanced`);
   assert.ok(a === 0 || b === 0);
-  assert.ok(at(0, 0).stalled || at(0, 2).stalled, 'a group that was held shows as stalled');
+  assert.ok(at(0, 0).stalled || at(0, 3).stalled, 'a group that was held shows as stalled');
   // A link that HELPS its own turning (the more it turns, the more it is pushed): held still, not sent to infinity.
   const helped = spin(['RN'], { links: { '1,0': { perTurn: { '1,0': -5 } } } });
   assert.equal(helped(0, 0).speed, 0);

@@ -70,7 +70,11 @@
  * A winch has a RATCHET (a little catch), like a real one: a load
  * hanging on its rope can never pull the gears round by itself. With
  * nothing driving, or with pushes that cancel, the load just hangs
- * there. It comes down only when something turns the winch the let-out way.
+ * there. It comes down only when something REALLY pushes the winch the
+ * let-out way: a push that would turn the gears fast enough to see if
+ * nothing hung on any rope. A whisper of a push (a stray trickle of
+ * current from the circuit next door) is not enough. (See "THE CATCH"
+ * at solveSpin.)
  *
  * The group settles at the speed where the pushing and the pushing back
  * balance. Speeds are in turns per second. + is clockwise ↻, − is
@@ -107,9 +111,12 @@ const SWEEPS = 60;
  * other, for tests and timing tools. `clusters` goes up every time a
  * set of such groups is settled, `passes` for every straight-line step
  * that takes, `sweeps` for every plain round, and `holds` every time a
- * group had to be held still because it would not settle.
+ * group had to be held still because it would not settle. `catches`
+ * goes up every time a winch's catch that had let go is put back on
+ * (see "THE CATCH" at solveSpin).
  */
-export const spinWork = { clusters: 0, passes: 0, sweeps: 0, holds: 0 };
+export const spinWork = { clusters: 0, passes: 0, sweeps: 0, holds: 0, catches: 0 };
+
 /**
  * Is this block part of the spinning world?
  * @param {object|undefined} info - the block's definition
@@ -385,11 +392,44 @@ function climb(ahead, slowing, loads) {
  *      "held", that one solve IS the answer: two goes, however hard the
  *      groups lean on each other. (Grown-ups call this Newton's method.)
  *
- * If that hasn't settled after NEWTON_STEPS goes (only a winch's catch
- * can do that: it lets go with a jump), we go round the groups one at a
- * time for a while. Any group STILL changing after that is held still,
- * and the rest are settled again around it. Each time at least one more
- * group is held, so it always ends.
+ * If that hasn't settled after NEWTON_STEPS goes, we go round the groups
+ * one at a time for a while. (There is only one right answer, so it
+ * doesn't matter which group comes first.) Any group STILL changing
+ * after that is held still, and the rest are settled again around it.
+ * Each time at least one more group is held, so it always ends.
+ *
+ * THE CATCH. A winch's catch (its ratchet) is either ON or it has LET GO:
+ *
+ *   ON       the hanging load can't help the winch round. It only pulls
+ *            back when it is being lifted. If the gears do turn the
+ *            let-out way, the load comes down just as fast as they turn
+ *            it and gives no push (the catch clicks along and soaks it up).
+ *   LET GO   the load is a plain load: it helps the winch round the
+ *            let-out way, up to the speed it would fall at.
+ *
+ * Whether a catch lets go must not depend on which winch we look at
+ * first, so we decide it for the whole cluster at once:
+ *
+ *   a. Settle the cluster with every catch ON.
+ *   b. Look at the push on every group (its sources, its battery
+ *      current, and what the other groups' turning pushes through its
+ *      links: everything but the loads). Is it a REAL push the let-out
+ *      way: one that would turn the gears fast enough to see with
+ *      nothing on any rope? Then that group's catch lets go. Settle again.
+ *   c. Now check every catch that let go, at the new speeds. Is its
+ *      group still really pushed the way it turns? If not, the load is
+ *      dragging the gears round by itself (which a ratchet never
+ *      allows): that catch goes back ON and stays on. Settle again, and
+ *      go back to b.
+ *
+ * A catch goes at most from on, to let go, to on for good. So this ends,
+ * and where it ends depends only on the machine, never on where its
+ * parts stand in the world. Two winches that could each run only while
+ * the other is held both keep their catches on.
+ *
+ * With the catches decided, every group answers a little more push with
+ * a little more speed and never with a jump, so the steps above settle
+ * on the one right answer.
  *
  * THE PROMISE: every group we report as turning has its pushes exactly
  * balanced at the speeds we report, and every other group stands still.
@@ -462,7 +502,7 @@ export function solveSpin(world, blockInfo) {
         }
       }
     }
-    const group = { ratio, jammed, held: false, gaveUp: false, speed: 0 };
+    const group = { ratio, jammed, held: false, gaveUp: false, letGo: false, caught: false, speed: 0 };
     for (const index of ratio.keys()) groupOf.set(index, group);
     groups.push(group);
   }
@@ -583,6 +623,7 @@ export function solveSpin(world, blockInfo) {
   // What pushes back on each group, worked out once.
   for (const group of groups) {
     group.loads = []; // loads (a hanging weight), at the first block
+    group.holding = []; // the same loads with the catch ON: each only pulls back while it is being lifted
     group.drag = 0; // push-back that grows with speed
     group.stops = []; // hard stops: which block, and which way the FIRST block can't turn because of it
     group.reach = 0; // how fast its fastest block turns, compared to the first block
@@ -590,6 +631,7 @@ export function solveSpin(world, blockInfo) {
       const point = points.get(index);
       for (const load of loadsOf(point.info.spinLoad?.(world, point.x, point.y, blockInfo, isDriven))) {
         group.loads.push({ pull: load.pull * r, limit: load.limit / Math.abs(r) });
+        group.holding.push({ pull: load.pull * r, limit: 0 });
       }
       group.drag += (point.info.spinDrag?.(world, point.x, point.y) ?? 0) * r * r;
       const stop = point.info.spinStop?.(world, point.x, point.y, blockInfo, isDriven) ?? 0;
@@ -597,6 +639,43 @@ export function solveSpin(world, blockInfo) {
       group.reach = Math.max(group.reach, Math.abs(r));
     }
   }
+
+  /**
+   * The push on a group standing still: its sources, a battery's current
+   * in its machines, and what the OTHER groups' turning pushes through
+   * its links (at the speeds they have right now). Loads are not in it.
+   * @param {object} group - the group
+   * @returns {number} the push, at the first block (+ or −)
+   */
+  const pushOn = (group) => {
+    let push = group.ahead + group.still;
+    for (const [far, lean] of group.lean) {
+      if (far !== group) push -= lean * far.speed;
+    }
+    return push;
+  };
+
+  /**
+   * How fast the push on a group fades as it speeds up: its sources
+   * tire, its bearings rub, and its own machines push back harder.
+   * @param {object} group - the group
+   * @returns {number} the fading (0 or more)
+   */
+  const fadingOf = (group) => group.slowing + group.drag + (group.lean.get(group) ?? 0);
+
+  /**
+   * Which way is a group REALLY pushed right now (see "THE CATCH" at the
+   * top of this function)? A real push is one that would turn the gears
+   * fast enough to see if nothing hung on any rope.
+   * @param {object} group - the group
+   * @returns {number} +1 or −1 (at the first block), or 0 if the push is too small to matter
+   */
+  const realPush = (group) => {
+    const push = pushOn(group);
+    const fading = fadingOf(group);
+    if (!(fading > 0) || Math.abs(push / fading) * group.reach < MIN_SPEED) return 0;
+    return Math.sign(push);
+  };
 
   /**
    * Where one group would settle if every other group kept the speed it
@@ -612,36 +691,29 @@ export function solveSpin(world, blockInfo) {
   const settle = (group) => {
     if (group.jammed) return { speed: 0, give: 0, stalled: false, blockedWay: 0 };
     if (group.held) return { speed: 0, give: 0, stalled: group.gaveUp, blockedWay: 0 };
-    // The push on it standing still: its sources, a battery's current in
-    // its machines, and what the OTHER groups' turning pushes through its links.
-    let push = group.ahead + group.still;
-    for (const [far, lean] of group.lean) {
-      if (far !== group) push -= lean * far.speed;
-    }
-    // How fast that push fades as it speeds up: its sources tire, its
-    // bearings rub, and its own machines push back harder.
-    const fading = group.slowing + group.drag + (group.lean.get(group) ?? 0);
+    const push = pushOn(group);
+    const fading = fadingOf(group);
     // The speed where the pushing and the pushing back balance:
     //   push − fading × speed + loads = 0
-    const driven = Math.abs(push) > BALANCED;
-    let { speed, free } = driven && fading > 0 ? balance(push, fading, group.loads) : { speed: 0, free: false };
     // A winch has a ratchet (a little catch): a hanging load can never
-    // pull the winch round by itself. It only comes down when the
-    // pushes really turn the winch the let-out way. So:
-    //   • the pushes go one way but the load would win: everything
-    //     STALLS. (A load on the ground that's too heavy to lift lands
-    //     here too, at speed 0.)
+    // pull the winch round by itself (see "THE CATCH" at solveSpin).
+    // While the catch is ON the loads only pull back when they are
+    // lifted. Once it has LET GO they are plain loads, and help.
+    const driven = Math.abs(push) > BALANCED;
+    let { speed, free } = fading > 0 && (driven || group.letGo)
+      ? balance(push, fading, group.letGo ? group.loads : group.holding)
+      : { speed: 0, free: false };
+    // Standing still though something is trying to turn it? Then it has
+    // STALLED:
+    //   • the pushes go one way but the load is too heavy to lift (a
+    //     load on the ground that's too heavy lands here too);
     //   • the pushes cancel out (two cranks, one each way): no push is
-    //     left to lift with, so it stalls just the same.
-    //   • nothing is trying to turn it at all: the catch holds. That
-    //     isn't called stalled.
+    //     left to lift with, and the catch holds the load;
+    //   • a push too weak to matter, with a load hanging there.
+    // With nothing trying to turn it at all, the catch just holds. That
+    // isn't called stalled.
     const hanging = group.loads.reduce((sum, load) => sum + (load.limit > 0 ? load.pull : 0), 0);
-    let stalled = false;
-    if (driven ? Math.sign(speed) !== Math.sign(push) : group.powered && hanging !== 0) stalled = true;
-    if (stalled || !driven) {
-      speed = 0;
-      free = false;
-    }
+    const stalled = speed === 0 && (driven || (group.powered && hanging !== 0));
     // A hard stop (a winch whose load is already at the top): if the
     // group would turn that block the way it can't go, everything stops
     // dead, just like a real winch when the hook reaches the drum. The
@@ -669,13 +741,49 @@ export function solveSpin(world, blockInfo) {
   };
 
   /**
-   * Settle one cluster (see the top of this function): straight-line
-   * steps first; if those don't settle, plain rounds; and at the very
-   * last, hold still whatever is still changing and settle the rest again.
+   * Settle one cluster, catches and all (see "THE CATCH" at the top of
+   * this function): first with every catch on, then letting go the
+   * catches of groups that are really driven the let-out way, and
+   * putting back on any whose load turns out to be doing the driving.
    * @param {object[]} cluster - the groups that lean on each other
    * @returns {void}
    */
   const settleCluster = (cluster) => {
+    for (;;) {
+      settleOnce(cluster);
+      let changed = false;
+      for (const group of cluster) {
+        if (group.jammed || group.caught) continue;
+        const way = realPush(group);
+        if (group.letGo) {
+          // Still really pushed the way it turns? (Standing still, nothing is dragging it anywhere.)
+          if (group.speed === 0 || way === Math.sign(group.speed)) continue;
+          group.letGo = false;
+          group.caught = true; // back on, and it stays on
+          spinWork.catches += 1;
+          changed = true;
+        } else if (way !== 0 && group.loads.some((load) => load.limit > 0 && Math.sign(load.pull) === way)) {
+          group.letGo = true; // really pushed the let-out way
+          changed = true;
+        }
+      }
+      if (!changed) return;
+    }
+  };
+
+  /**
+   * Settle one cluster with its catches as they are now (see the top of
+   * this function): straight-line steps first; if those don't settle,
+   * plain rounds; and at the very last, hold still whatever is still
+   * changing and settle the rest again.
+   * @param {object[]} cluster - the groups that lean on each other
+   * @returns {void}
+   */
+  const settleOnce = (cluster) => {
+    for (const group of cluster) {
+      group.held = false;
+      group.gaveUp = false;
+    }
     for (;;) {
       for (const group of cluster) group.speed = 0; // always from standing still
       if (cluster.length === 1) {
