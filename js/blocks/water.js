@@ -137,9 +137,9 @@ function fluidCells(world, blockInfo) {
   world.cells.forEach((name, index) => {
     const info = blockInfo(name);
     // Spinning blocks (the water wheel, the turbine) are drawn with their
-    // spin record from the ⚙️ pack, and rope by the 🏗️ pack with its rope
-    // record, so they mustn't get a water record too.
-    if (!info?.fluid || info.spin || info.rope) return;
+    // spin record from the ⚙️ pack, and rope and pulley hooks by the 🏗️
+    // pack with its rope record, so they mustn't get a water record too.
+    if (!info?.fluid || info.spin || info.rope || info.hook) return;
     const x = index % world.width;
     const y = Math.floor(index / world.width);
     cells.set(index, {

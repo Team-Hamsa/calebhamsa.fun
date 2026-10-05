@@ -15,7 +15,8 @@
  *
  * A rope end belongs to ONE winch at a time. If two winches' ropes meet
  * at a pulley and share an end, the one being turned winds it (see
- * ownsRopeEnd).
+ * ownsRopeEnd). And a bit of rope that ANOTHER winch's rope runs through
+ * is tied into that rope: its own winch can't wind it away (see ropeIsTied).
  *
  * Only ONE block hangs on the end (or a pulley hook with one block under
  * it). Anything under that is just resting, so it isn't lifted, and it
@@ -25,10 +26,12 @@
  * a crate weighs 1, an iron weight 4, and a pulley hook makes the load
  * count half as heavy (two bits of rope share it). Water under a load
  * and steam over it push back (see inTheWay there): the load has to pay
- * for moving them, so a crate floats.
+ * for moving them, so a crate floats. A pulley hook lets water and steam
+ * through it, like rope, so the hook itself moves none.
  *
  * This file only reads the fields blocks have: `winch`, `rope` (rope and
- * pulleys: the rope runs through them), `pulley`, `falls`, `weight` and `hook`.
+ * pulleys: the rope runs through them), `pulley`, `falls`, `weight`, `hook`
+ * and `fluid` (water flows through the block).
  */
 import { AIR, getBlock, inBounds, moveBlock, swapBlock } from './world.js';
 
@@ -160,9 +163,42 @@ export function loadBelow(world, rope, blockInfo) {
 }
 
 /**
+ * Is the end of this rope TIED INTO another winch's rope? That's when
+ * another winch's rope runs on through this very cell to somewhere else:
+ *
+ *        [A]
+ *         |
+ *   [B] | X | [pulley]     X is the end of A's rope, and a bit of B's
+ *                 |        rope too. B's rope needs it to reach its load.
+ *              [crate]
+ *
+ * Then A can't wind X in. If it could, A would CUT B's rope: B's load
+ * would drop, or B would be cut off from a load it had let down a
+ * little, and a machine could do that over and over to get power from
+ * nothing. Only a hand (DIG) cuts a rope.
+ *
+ * (Two ropes that END in the same cell are different: that's a shared
+ * end, see ownsRopeEnd.)
+ * @param {object} world - the world
+ * @param {{end: object|null}} rope - from traceRope
+ * @param {Function} blockInfo - looks up what a block name means
+ * @returns {boolean} true if another winch's rope runs on through this rope's end
+ */
+export function ropeIsTied(world, rope, blockInfo) {
+  if (!rope.end) return false;
+  return world.cells.some((name, index) => {
+    if (!blockInfo(name)?.winch) return false;
+    const other = traceRope(world, index % world.width, Math.floor(index / world.width), blockInfo).path;
+    // Its own winch's rope ends here, so only a rope that goes ON from here counts.
+    return other.slice(0, -1).some((cell) => cell.x === rope.end.x && cell.y === rope.end.y);
+  });
+}
+
+/**
  * Can the rope be wound in any further? Only if its end hangs straight
  * down from another bit of rope. So the last bit of rope under the winch
  * (or a pulley) always stays, and the rope can always be let out again.
+ * And not if its end is tied into another winch's rope (see ropeIsTied).
  * @param {object} world - the world
  * @param {{path: Array<object>, hanging: boolean}} rope - from traceRope
  * @param {Function} blockInfo - looks up what a block name means
@@ -171,7 +207,23 @@ export function loadBelow(world, rope, blockInfo) {
 export function canWindIn(world, rope, blockInfo) {
   if (!rope.hanging || rope.path.length < 2) return false;
   const before = rope.path[rope.path.length - 2];
-  return !infoAt(world, before.x, before.y, blockInfo).pulley;
+  if (infoAt(world, before.x, before.y, blockInfo).pulley) return false;
+  return !ropeIsTied(world, rope, blockInfo);
+}
+
+/**
+ * Move one block of a load one cell up or down. A solid block trades
+ * places with the water and steam in the cell it moves into. A pulley
+ * hook lets them through, so they stay where they are.
+ * @param {object} world - the world
+ * @param {{x: number, y: number}} cell - the block to move
+ * @param {number} dy - −1 for up, 1 for down
+ * @param {Function} blockInfo - looks up what a block name means
+ * @returns {boolean} true if it moved
+ */
+function moveLoad(world, cell, dy, blockInfo) {
+  const through = Boolean(infoAt(world, cell.x, cell.y, blockInfo)?.fluid);
+  return moveBlock(world, cell.x, cell.y, cell.x, cell.y + dy, through);
 }
 
 /**
@@ -188,7 +240,7 @@ export function windIn(world, x, y, blockInfo) {
   if (!canWindIn(world, rope, blockInfo)) return false;
   const load = loadBelow(world, rope, blockInfo);
   swapBlock(world, rope.end.x, rope.end.y, AIR); // swap, not set: any water there stays
-  for (const cell of load.cells) moveBlock(world, cell.x, cell.y, cell.x, cell.y - 1);
+  for (const cell of load.cells) moveLoad(world, cell, -1, blockInfo);
   return true;
 }
 
@@ -223,7 +275,7 @@ export function letOut(world, x, y, blockInfo) {
   const load = loadBelow(world, rope, blockInfo);
   const top = load.cells[0] ?? { x: rope.end.x, y: rope.end.y + 1 };
   if (!canLower(world, rope, load)) return false;
-  for (const cell of [...load.cells].reverse()) moveBlock(world, cell.x, cell.y, cell.x, cell.y + 1);
+  for (const cell of [...load.cells].reverse()) moveLoad(world, cell, 1, blockInfo);
   swapBlock(world, top.x, top.y, 'rope');
   return true;
 }

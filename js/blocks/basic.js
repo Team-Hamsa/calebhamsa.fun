@@ -6,9 +6,10 @@
  * ("systems") that make them do things. Later packs (⚡ wires, 💧 water,
  * ⚙️ gears) are new files shaped just like this one.
  */
-import { AIR, getBlock, moveBlock } from '../world.js';
+import { AIR, getBlock, getFluid, moveBlock } from '../world.js';
 import { drawDots } from './electric.js';
 import { isHeld } from '../lift.js';
+import { floatsOn } from './lifting.js';
 
 /**
  * The singing note blocks. Same rainbow colors as the Note Blocks page:
@@ -34,6 +35,14 @@ export const NOTE_BLOCKS = [
  * the lowest grain moves first and leaves a gap for the one above it,
  * so the whole tower falls together, one row per tick.
  *
+ * WATER under it? A block that sinks lifts that water up into the cell
+ * it left, and lifted water can fall again and turn a water wheel. The
+ * block pays for that with its own fall, so it only sinks if it is heavy
+ * enough: heavier than the water it lifts (see floatsOn in lifting.js).
+ * Sand and an iron weight (4) sink. A crate (1) FLOATS on anything
+ * deeper than a shallow puddle, just as it does on a rope. A pulley
+ * hook lets water through it, so it lifts nothing and always falls.
+ *
  * @param {{width: number, height: number, cells: string[]}} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {boolean} true if anything fell
@@ -43,13 +52,15 @@ export function fallingBlocks(world, blockInfo) {
   // The bottom row can't fall (the floor is under it), so start one up.
   for (let y = world.height - 2; y >= 0; y--) {
     for (let x = 0; x < world.width; x++) {
-      const name = getBlock(world, x, y);
+      const info = blockInfo(getBlock(world, x, y));
+      if (!info?.falls || getBlock(world, x, y + 1) !== AIR) continue;
+      const through = Boolean(info.fluid); // water flows through it: it moves none
+      if (!through && floatsOn(info.weight ?? 1, getFluid(world, 'water', x, y + 1))) continue;
       // (A crate hanging on a rope is held up: see isHeld in lift.js.)
-      if (blockInfo(name)?.falls && getBlock(world, x, y + 1) === AIR && !isHeld(world, x, y, blockInfo)) {
-        // moveBlock also lifts any water below up into the gap, so sand
-        // sinks through water instead of deleting it.
-        changed = moveBlock(world, x, y, x, y + 1) || changed;
-      }
+      if (isHeld(world, x, y, blockInfo)) continue;
+      // moveBlock also lifts any water below up into the gap, so sand
+      // sinks through water instead of deleting it.
+      changed = moveBlock(world, x, y, x, y + 1, through) || changed;
     }
   }
   return changed;
@@ -107,7 +118,7 @@ const blocks = {
   glass: { title: 'Glass', color: '#cdefff', seeThrough: true },
   obsidian: { title: 'Obsidian', color: '#2b1f3d' },
   gold: { title: 'Gold', color: '#f2b705', conducts: true, drawSignals: drawGoldSignals },
-  sand: { title: 'Sand', color: '#e3d38f', falls: true },
+  sand: { title: 'Sand', color: '#e3d38f', falls: true, weight: 4 },
 };
 for (const note of NOTE_BLOCKS) blocks[note.name] = noteBlock(note);
 
@@ -129,7 +140,7 @@ const guide = {
     glass: { does: 'See-through! Build a glass tank to watch the water inside.' },
     obsidian: { does: 'A plain dark building block.' },
     gold: { does: 'A building block that carries electricity, like real gold. Use it as wire.' },
-    sand: { does: 'Falls until it lands on something. It sinks through water.' },
+    sand: { does: 'Falls until it lands on something. It is heavy (it weighs 4, like an iron weight), so it sinks through water.' },
   },
 };
 for (const note of NOTE_BLOCKS) {

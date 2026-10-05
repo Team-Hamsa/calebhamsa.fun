@@ -9,9 +9,9 @@
  * A winch turning slower is stronger, so gearing it down lets the same
  * crank lift more. You trade speed for strength. And the heavier the
  * load, the slower it goes, just like a real crane. Water and steam in
- * the load's way push back (see inTheWay): a crate floats. A pulley hook does the
- * same: two bits of rope share the load, so it counts half as heavy, but
- * it goes up half as fast.
+ * the load's way push back (see inTheWay): a crate floats. A pulley hook
+ * trades the same way gears do: two bits of rope share the load, so it
+ * counts half as heavy, but it goes up half as fast.
  *
  * lift.js knows how rope works (following it, winding it in, letting it
  * out); spin.js stops a group of gears that's too weak for its load (see
@@ -64,24 +64,44 @@ const PAID = 1e-12;
 // =============================================================
 
 /**
+ * Does a block FLOAT on the water under it? Going down one cell, it has
+ * to lift that water up one cell, into the place it left. It floats if
+ * the water it would lift weighs as much as it does, or more.
+ *
+ * It's the same for a load on a rope and for a loose block that is just
+ * falling (see fallingBlocks in basic.js): a crate (1) floats on
+ * anything deeper than 0.4 of a cell, sand and an iron weight (4) sink.
+ * @param {number} weight - how heavy the block is, in crates
+ * @param {number} water - how much water is in the cell under it
+ * @returns {boolean} true if the water holds it up
+ */
+export function floatsOn(weight, water) {
+  return water > 0 && WATER_WEIGHT * water >= weight;
+}
+
+/**
  * The water and steam in a load's way.
  *
- * When a load moves one cell, it trades places with whatever fluid was
- * in the cell it moves into (see moveBlock in world.js). Going UP, the
- * fluid above it ends up below it: that is free for water (it wanted to
- * go down anyway) but STEAM has been pushed down, and it will rise again
- * and can turn a turbine. Going DOWN, the fluid below ends up above:
- * free for steam, but WATER has been lifted, and it will fall again and
- * can turn a water wheel. Somebody has to pay for that, or it would be
- * power from nowhere. The load pays:
+ * When a solid block moves one cell, it trades places with whatever
+ * fluid was in the cell it moves into (see moveBlock in world.js). Going
+ * UP, the fluid above it ends up below it: that is free for water (it
+ * wanted to go down anyway) but STEAM has been pushed down, and it will
+ * rise again and can turn a turbine. Going DOWN, the fluid below ends up
+ * above: free for steam, but WATER has been lifted, and it will fall
+ * again and can turn a water wheel. Somebody has to pay for that, or it
+ * would be power from nowhere. The load pays:
  *
  *   • going up, it is harder to lift, by STEAM_PUSH × the steam above it
  *   • going down, it is lighter, by WATER_WEIGHT × the water below it
  *     (and if that makes it weigh nothing, it FLOATS: it won't go down)
  *
- * A load of two blocks (a pulley hook and its crate) moves the fluid
- * two cells, so it counts twice. And a pulley hook's rope moves two
- * cells for each cell the load moves, so each cell of rope pays half.
+ * A PULLEY HOOK lets water and steam through it, like rope, so the hook
+ * itself moves none: an empty hook goes down into a well for nothing.
+ * Only the block hanging UNDER the hook pushes fluid: the water below it
+ * goes up one cell, into the hook's cell, and the steam it pushes down
+ * is the steam in the hook's cell. So a hook never changes whether its
+ * load floats. But a hook's rope moves two cells for each cell the load
+ * moves, so each cell of rope pays half (that's `share`).
  *
  * (Going the easy way gives nothing back: a load is not helped up by
  * water above it, or down by steam under it. A real crate under water
@@ -89,20 +109,20 @@ const PAID = 1e-12;
  * @param {object} world - the world
  * @param {{end: object|null, hanging: boolean}} rope - from traceRope
  * @param {{cells: Array<{x: number, y: number}>, weight: number, hook: boolean}} load - from loadBelow
- * @returns {{steam: number, water: number, cells: number, share: number, floats: boolean}}
- *   how much steam is in the cell above the load and how much water in
- *   the cell below it (0 with no load), how many cells the fluid moves
- *   when the load moves one, that for each cell of ROPE, and whether the
- *   water below holds the load up
+ * @returns {{steam: number, water: number, share: number, floats: boolean}}
+ *   how much steam is in the cell above the load's solid block and how
+ *   much water in the cell below it (0 with no load, or just an empty
+ *   hook), how much of that each cell of ROPE pays for (half with a
+ *   hook), and whether the water below holds the load up
  */
 export function inTheWay(world, rope, load) {
-  const cells = load.cells.length;
-  if (cells === 0) return { steam: 0, water: 0, cells: 0, share: 0, floats: false };
-  const bottom = load.cells[cells - 1];
-  const share = cells / (load.hook ? 2 : 1);
-  const steam = getFluid(world, 'steam', rope.end.x, rope.end.y);
-  const water = canLower(world, rope, load) ? getFluid(world, 'water', bottom.x, bottom.y + 1) : 0;
-  return { steam, water, cells, share, floats: water > 0 && WATER_WEIGHT * water * share >= load.weight };
+  const solid = load.hook ? load.cells.slice(1) : load.cells; // the hook lets fluid through
+  if (solid.length === 0) return { steam: 0, water: 0, share: 0, floats: false };
+  const share = load.hook ? 1 / 2 : 1;
+  const steam = getFluid(world, 'steam', solid[0].x, solid[0].y - 1);
+  const water = canLower(world, rope, load) ? getFluid(world, 'water', solid[0].x, solid[0].y + 1) : 0;
+  // load.weight is for each cell of rope: ÷ share gives the whole weight again.
+  return { steam, water, share, floats: floatsOn(load.weight / share, water) };
 }
 
 /**
@@ -133,6 +153,14 @@ export function inTheWay(world, rope, load) {
  * @param {Function} blockInfo - looks up what a block name means
  * @param {Function} [isDriven] - (cell index) => true if something is turning
  *   that block (from spin.js): a shared rope end is carried by the winch being turned
+ *
+ * ROPE THAT IS OWED. A load can pull a little rope out (and help the
+ * winch) before it has really come down a whole cell (see liftSystem).
+ * That rope is owed: winding it back must cost at least what the load
+ * gave for it, even if the load has gone since (dug away, swapped for a
+ * lighter one, or the rope cut). liftSystem remembers how hard the load
+ * pulled (world.signals.lift.weighed), and the winch pulls back at
+ * least that hard until the owed rope is wound back in.
  * @returns {{pull: number, lifting: number, resting: boolean, topSpeed: number}}
  *   the pull while it hangs or comes down (0 if nothing hangs on it),
  *   the pull while it is being lifted, whether the load is resting on
@@ -147,7 +175,10 @@ export function winchLoad(world, x, y, blockInfo, isDriven) {
   const topSpeed = (TICKS_PER_SECOND * (load.hook ? 2 : 1)) / ROPE_PER_TURN;
   const fluid = inTheWay(world, rope, load);
   const down = Math.max(0, load.weight - WATER_WEIGHT * fluid.water * fluid.share);
-  const up = load.weight + STEAM_PUSH * fluid.steam * fluid.share;
+  const index = y * world.width + x;
+  const letOutABit = (world.signals.lift?.pull?.get(index) ?? 0) < 0;
+  const owed = letOutABit ? world.signals.lift?.weighed?.get(index) ?? 0 : 0;
+  const up = Math.max(load.weight + STEAM_PUSH * fluid.steam * fluid.share, owed);
   return { pull: -down, lifting: -up, resting: !canLower(world, rope, load) || fluid.floats, topSpeed };
 }
 
@@ -199,7 +230,8 @@ export function refreshLift(world, blockInfo) {
   if (world.signals.lift?.blocks === blocks) return;
   const pull = world.signals.lift?.pull ?? new Map();
   const aside = world.signals.lift?.aside ?? new Map();
-  world.signals.lift = { cells: ropeArms(world, blockInfo), pull, aside, blocks };
+  const weighed = world.signals.lift?.weighed ?? new Map();
+  world.signals.lift = { cells: ropeArms(world, blockInfo), pull, aside, weighed, blocks };
 }
 
 /**
@@ -224,6 +256,19 @@ export function refreshLift(world, blockInfo) {
  * it is. So the fluid is never moved for less than it will give back.
  * Rope wound back the other way takes its share out of what was set
  * aside again.
+ *
+ * PART-WOUND ROPE GOES WITH ITS LOAD. A bit of rope wound in or let out
+ * that hasn't moved the load a whole cell yet was paid for (or helped)
+ * by the load that was on the rope then. We remember how heavy that was
+ * (world.signals.lift.weighed), because the load can change: dug away,
+ * swapped, or another winch lets the shared rope end down onto a block.
+ *   • Rope LET OUT a little is owed: we keep the heaviest load that
+ *     pulled it out, and winchLoad makes winding it back cost at least
+ *     that much, whatever is on the rope by then.
+ *   • Rope WOUND IN a little only counts toward lifting a load as heavy
+ *     as the one it was wound against (the lightest, to be safe). If a
+ *     heavier load is on the rope now, that bit is forgotten: bare rope
+ *     wound half a cell for nothing mustn't lift a weight half a cell.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {boolean} true if any block moved
@@ -231,8 +276,10 @@ export function refreshLift(world, blockInfo) {
 export function liftSystem(world, blockInfo) {
   const before = world.signals.lift?.pull ?? new Map();
   const asideBefore = world.signals.lift?.aside ?? new Map();
+  const weighedBefore = world.signals.lift?.weighed ?? new Map();
   const pull = new Map();
   const aside = new Map();
+  const weighed = new Map();
   let moved = false;
   // Find the winches first: moving loads changes world.cells as we go.
   const winches = [];
@@ -257,21 +304,24 @@ export function liftSystem(world, blockInfo) {
     if (Math.abs(speed) < MIN_SPEED || !ownsRopeEnd(world, x, y, traceRope(world, x, y, blockInfo), blockInfo, isDriven)) {
       if (before.has(index)) pull.set(index, before.get(index));
       if (asideBefore.has(index)) aside.set(index, asideBefore.get(index));
+      if (weighedBefore.has(index)) weighed.set(index, weighedBefore.get(index));
       continue;
     }
     /**
      * This winch's load right now, and the water and steam in its way.
-     * @returns {{load: object, fluid: object, step: number}} the load (from
-     *   loadBelow), the fluid (from inTheWay), and how much rope moves the
-     *   load one cell: 2 with a pulley hook
+     * @returns {{rope: object, load: object, fluid: object, step: number}} the
+     *   rope (from traceRope), the load (from loadBelow), the fluid (from
+     *   inTheWay), and how much rope moves the load one cell: 2 with a pulley hook
      */
     const look = () => {
       const rope = traceRope(world, x, y, blockInfo);
       const load = loadBelow(world, rope, blockInfo);
       return { rope, load, fluid: inTheWay(world, rope, load), step: load.hook ? 2 : 1 };
     };
-    const had = before.get(index) ?? 0;
     const { rope, load, fluid, step } = look();
+    const weighedHad = weighedBefore.get(index) ?? 0;
+    // Rope wound in a little against a lighter load (or none) doesn't count for this one.
+    const had = (before.get(index) ?? 0) > 0 && load.weight > weighedHad ? 0 : before.get(index) ?? 0;
     let wound = (speed * ROPE_PER_TURN) / TICKS_PER_SECOND;
     // Rope can't push: a load never goes down faster than it would fall,
     // one cell a tick. Any more rope than that is just slack, and the
@@ -303,7 +353,7 @@ export function liftSystem(world, blockInfo) {
     // the way), the load moves.
     while (amount >= look().step) {
       const now = look();
-      const cost = STEAM_PUSH * now.fluid.steam * now.fluid.cells;
+      const cost = STEAM_PUSH * now.fluid.steam;
       if (paid < cost - PAID) break; // more steam came into the way: keep winding until it's paid for
       if (!windIn(world, x, y, blockInfo)) { amount = 0; paid = 0; break; } // all wound in
       amount -= now.step;
@@ -312,7 +362,7 @@ export function liftSystem(world, blockInfo) {
     }
     while (amount <= -look().step) {
       const now = look();
-      const cost = WATER_WEIGHT * now.fluid.water * now.fluid.cells;
+      const cost = WATER_WEIGHT * now.fluid.water;
       if (now.fluid.floats || paid < cost - PAID) break; // the water holds it up, or isn't paid for yet
       // A load that has landed keeps the rope it was let out (it has to be wound back in).
       if (now.load.cells.length > 0 && !canLower(world, now.rope, now.load)) break;
@@ -324,8 +374,12 @@ export function liftSystem(world, blockInfo) {
     }
     pull.set(index, amount);
     if (paid > 0) aside.set(index, paid);
+    // Remember how heavy the load was for the part-wound rope (see above):
+    // the heaviest for rope let out, the lightest for rope wound in.
+    if (amount < 0) weighed.set(index, Math.max(had < 0 ? weighedHad : 0, amount < had ? load.weight : 0));
+    if (amount > 0) weighed.set(index, had > 0 ? Math.min(weighedHad, load.weight) : load.weight);
   }
-  world.signals.lift = { cells: ropeArms(world, blockInfo), pull, aside, blocks: world.cells.join(',') };
+  world.signals.lift = { cells: ropeArms(world, blockInfo), pull, aside, weighed, blocks: world.cells.join(',') };
   return moved;
 }
 
@@ -487,6 +541,7 @@ function drawWinch(ctx, info, left, top, size, cell) {
  *   falls      falls like sand (unless it hangs on a winch's rope)
  *   weight     how heavy it is to lift (1 if not given)
  *   hook       a pulley hook: the load under it counts half as heavy
+ *   fluid      water and steam flow through it (rope and the pulley hook)
  * 🧪 Try this! Make the iron weight 8, and gear the winch down three times.
  */
 const blocks = {
@@ -500,7 +555,11 @@ const blocks = {
     drawSignals: drawRope,
   },
   pulley: { title: 'Pulley', color: '#90a4ae', bare: true, rope: true, pulley: true, drawSignals: drawPulley },
-  pulleyHook: { title: 'Pulley hook', color: '#90a4ae', bare: true, falls: true, weight: 0, hook: true, drawSignals: drawHook },
+  pulleyHook: {
+    title: 'Pulley hook', color: '#90a4ae', bare: true, falls: true, weight: 0, hook: true,
+    fluid: { sides: 'all' }, // water flows through it, like rope: the hook itself pushes none out of the way
+    drawSignals: drawHook,
+  },
   crate: { title: 'Crate', color: '#b07d4f', falls: true, weight: 1, label: '1' },
   ironWeight: { title: 'Iron weight', color: '#5f6a72', falls: true, weight: 4, label: '4' },
 };
@@ -519,15 +578,16 @@ const guide = {
     'Slower is stronger! A small gear driving a big gear makes the winch slower, so it can lift more. Gearing UP makes it weaker.',
     'Or add strength: two cranks, more batteries for a motor, or more water (or a longer fall) onto a water wheel.',
     'Going down, a hanging load helps turn the winch, but it never goes down faster than it would fall. A load lying on the ground helps nothing: its rope is slack. It only pulls when you lift it.',
-    'Water pushes back: a load let down into water has to lift the water out of its way, so it gets lighter. A crate FLOATS on deep water (its rope goes slack). An iron weight sinks, but pulls less. Going UP through steam a load is heavier: it has to push the steam down.',
-    'Dig the rope and whatever hangs on it falls.',
+    'Water pushes back: a load let down into water has to lift the water out of its way, so it gets lighter. A crate FLOATS on deep water (its rope goes slack). An iron weight sinks, but pulls less. A pulley hook changes none of that: water runs through the hook. Going UP through steam a load is heavier: it has to push the steam down.',
+    'Dig the rope and whatever hangs on it falls. In water a loose crate floats, too.',
+    'Where one winch\'s rope runs through the end of another winch\'s rope, they are tied together: that end can\'t be wound in. Only digging cuts a rope.',
   ],
   blocks: {
     winch: { does: 'A drum that winds rope. Turn it with a crank, gears or a motor touching it. Its little catch holds the load up when nothing turns it. A red ⬇ means too heavy. An orange ⬆ means the load is at the top: it can\'t wind any more, only let out.' },
     rope: { does: 'Put some next to the winch and let it hang down. Rope goes straight: it only turns a corner at a pulley.' },
     pulley: { does: 'A wheel the rope runs over, so it can change direction: up a tower and down the other side.' },
     pulleyHook: { does: 'Hang it on the rope with the load under it. The load counts half as heavy, but goes up half as fast.' },
-    crate: { does: 'Weighs 1. Falls like sand, unless it hangs on the end of a winch\'s rope. Let down on a rope, it floats on water.' },
+    crate: { does: 'Weighs 1. Falls like sand, unless it hangs on the end of a winch\'s rope. It floats on water.' },
     ironWeight: { does: 'Weighs 4. Too heavy for a crank on its own: gear it down, or add strength!' },
   },
 };

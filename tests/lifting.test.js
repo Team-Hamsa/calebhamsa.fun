@@ -469,12 +469,67 @@ test('an iron weight sinks, but in water it pulls less: it has to lift the water
   assert.equal(load.pull, -(4 - WATER_WEIGHT));
   assert.equal(load.lifting, -4);
   assert.equal(load.resting, false);
-  // On a pulley hook it is two blocks tall: the water goes up TWO cells, for each cell the weight comes down.
+  // On a pulley hook the water still goes up just ONE cell (into the hook's cell: water runs
+  // through a hook), and two cells of rope share it, like the weight: everything is halved.
   const hooked = make(['Xw.', '.|.', '.h.', '.I.', '...', '###']);
   setFluid(hooked, 'water', 1, 4, 0.5);
-  assert.equal(winchLoad(hooked, 1, 0, blockInfo).pull, -(4 / 2 - WATER_WEIGHT * 0.5 * 2 / 2));
+  assert.equal(winchLoad(hooked, 1, 0, blockInfo).pull, -(4 - WATER_WEIGHT * 0.5) / 2);
   setFluid(hooked, 'water', 1, 4, 1);
-  assert.equal(winchLoad(hooked, 1, 0, blockInfo).resting, true, 'full water holds even an iron weight up when a hook has to go under too');
+  assert.equal(winchLoad(hooked, 1, 0, blockInfo).pull, -(4 - WATER_WEIGHT) / 2);
+  assert.equal(winchLoad(hooked, 1, 0, blockInfo).resting, false, 'iron on a hook sinks, just like iron alone');
+});
+
+test('a pulley hook does not make its load float: iron on a hook sinks to the bottom like iron alone, and no water is lost', () => {
+  for (const rows of [['#Qw#', '##|#', '##I#', '##.#', '##.#', '##.#', '####'], ['#Qw#', '##|#', '##h#', '##I#', '##.#', '##.#', '##.#', '####']]) {
+    const world = make(rows);
+    const floor = world.height - 1;
+    for (const y of [floor - 3, floor - 2, floor - 1]) setFluid(world, 'water', 2, y, 1);
+    run(world, 200);
+    assert.equal(rowOf(world, 2, 'ironWeight'), floor - 1, `${rows.length} rows: the iron weight is on the bottom`);
+    const water = world.fluid.water.reduce((sum, amount) => sum + amount, 0);
+    assert.ok(Math.abs(water - 3) < 1e-9, `water ${water}`);
+  }
+  // And a crate on a hook floats on just what a crate alone floats on: 0.4 of a cell, no less.
+  for (const [amount, row] of [[0.3, 4], [0.5, 3]]) {
+    const world = make(['#Qw#', '##|#', '##h#', '##c#', '##.#', '####']);
+    setFluid(world, 'water', 2, 4, amount);
+    run(world, 100);
+    assert.equal(rowOf(world, 2, 'crate'), row, `a crate on a hook over ${amount} of water`);
+  }
+});
+
+test('an empty pulley hook goes down through water: it lets the water through and lifts none', () => {
+  // A film of water far too thin to see used to hold the weightless hook up for ever.
+  const damp = make(['Qw.', '.|.', '.h.', '...', '...', '###']);
+  setFluid(damp, 'water', 1, 4, 0.01);
+  run(damp, 80);
+  assert.equal(rowOf(damp, 1, 'pulleyHook'), 4);
+  // And into a full well: the water stays just where it was.
+  const well = make(['#Qw#', '##|#', '##h#', '##.#', '##.#', '####']);
+  setFluid(well, 'water', 2, 3, 1);
+  setFluid(well, 'water', 2, 4, 1);
+  run(well, 80);
+  assert.equal(rowOf(well, 2, 'pulleyHook'), 4);
+  assert.ok(Math.abs(getFluid(well, 'water', 2, 3) + getFluid(well, 'water', 2, 4) - 2) < 1e-9, 'all the water is still in the well');
+  assert.ok(getFluid(well, 'water', 2, 2) < 1e-9, 'and none was lifted');
+  // A loose hook falls through water the same way.
+  const loose = make(['#h#', '#.#', '#.#', '###']);
+  setFluid(loose, 'water', 1, 2, 0.7);
+  run(loose, 5);
+  assert.equal(rowOf(loose, 1, 'pulleyHook'), 2);
+  assert.equal(getFluid(loose, 'water', 1, 2), 0.7);
+});
+
+test('loose blocks pay for the water they lift too: a loose crate floats, sand and iron sink', () => {
+  for (const [name, amount, row] of [['crate', 1, 0], ['crate', 0.5, 0], ['crate', 0.3, 1], ['sand', 1, 1], ['ironWeight', 1, 1]]) {
+    const world = make(['#.#', '#.#', '###']);
+    setBlock(world, 1, 0, name);
+    setFluid(world, 'water', 1, 1, amount);
+    run(world, 10);
+    assert.equal(rowOf(world, 1, name), row, `${name} over ${amount} of water`);
+    assert.ok(Math.abs(getFluid(world, 'water', 1, 1 - row) - amount) < 1e-9, 'no water is lost');
+  }
+  assert.ok(blockInfo('sand').weight > WATER_WEIGHT, 'sand is heavier than water');
 });
 
 test('a load going up through steam is heavier: it has to push the steam down', () => {
@@ -592,30 +647,150 @@ test('no power from shuttling a load through sealed steam: the turbine never get
     setBlock(world, 1, 6, load);
     const { crank, best, strokes } = shuttle(world, { x: 0, y: 1 }, 10, (w) => rowOf(w, 1, load) === 6, (w) => rowOf(w, 1, load) === 3, ['crankCW', 'crankCCW']);
     assert.equal(strokes, 20, `${load} in ${steam} of steam: it should get there every time`);
-    assert.ok(best > 5, `${load}: the turbine should get some push (${best})`);
+    // Steam goes through a pulley hook, so a bare hook pushes none down. A crate does.
+    if (load === 'pulleyHook') assert.ok(best < 1e-6, `a bare hook moves no steam (${best})`);
+    else assert.ok(best > 5, `${load}: the turbine should get some push (${best})`);
     assert.ok(best <= crank + 1e-6, `${load} in ${steam} of steam: the turbine could do ${best} but the hand only put in ${crank}`);
   }
 });
 
 test('no power from dipping a load in a pool: the water wheel never gets more than the hand put in', () => {
-  // The same trick with water: a hook and crate dipped into a pool lift
-  // the water two cells; it runs off over a water wheel and back under.
-  for (const amount of [0.3, 0.5]) {
-    const world = make(['########', '#w######', '#|######', '#h..####', '#c#O####', '#...####', '########']);
-    setBlock(world, 0, 1, 'crankStop');
-    setFluid(world, 'water', 2, 5, amount);
-    run(world, 400);
-    const { crank, best, strokes } = shuttle(world, { x: 0, y: 1 }, 10, (w) => rowOf(w, 1, 'crate') === 5, (w) => rowOf(w, 1, 'crate') === 4, ['crankCCW', 'crankCW']);
-    assert.equal(strokes, 20);
-    assert.ok(best > 5, `the wheel should get some push (${best})`);
-    assert.ok(best <= crank + 1e-6, `${amount} of water: the wheel could do ${best} but the hand only put in ${crank}`);
+  // The same trick with water: a crate dipped into a pool lifts the water
+  // one cell; it runs off over a water wheel and back under.
+  for (const hook of [false, true]) {
+    const top = hook ? ['########', '#w######', '#|######', '#h######'] : ['########', '#w######', '#|######'];
+    const rows = [...top, '#c..####', '#.#O####', '#...####', '########'];
+    const up = top.length; // the crate's row at the top
+    for (const amount of [3.3, 3.5]) {
+      const world = make(rows);
+      setBlock(world, 0, 1, 'crankStop');
+      setFluid(world, 'water', 2, up + 2, amount);
+      run(world, 400);
+      const { crank, best, strokes } = shuttle(world, { x: 0, y: 1 }, 10, (w) => rowOf(w, 1, 'crate') === up + 1, (w) => rowOf(w, 1, 'crate') === up, ['crankCCW', 'crankCW']);
+      assert.equal(strokes, 20, `hook ${hook}, ${amount} of water`);
+      assert.ok(best > 2, `hook ${hook}: the wheel should get some push (${best})`);
+      assert.ok(best <= crank + 1e-6, `hook ${hook}, ${amount} of water: the wheel could do ${best} but the hand only put in ${crank}`);
+    }
+    // And a deeper pool just holds the crate up: nothing goes down, nothing turns.
+    const deep = make(rows);
+    setBlock(deep, 0, 1, 'crankCCW');
+    setFluid(deep, 'water', 2, up + 2, 4.2);
+    run(deep, 200);
+    assert.equal(rowOf(deep, 1, 'crate'), up, `hook ${hook}: the crate floats`);
   }
-  // And a deeper pool just holds the crate up: nothing goes down, nothing turns.
-  const deep = make(['########', '#w######', '#|######', '#h..####', '#c#O####', '#...####', '########']);
-  setBlock(deep, 0, 1, 'crankCCW');
-  setFluid(deep, 'water', 2, 5, 1.5);
-  run(deep, 200);
-  assert.equal(rowOf(deep, 1, 'crate'), 4);
+});
+
+test('ropes that cross are tied: a winch cannot wind in a rope end that another winch\'s rope runs through', () => {
+  // Winch B (left) sends its rope sideways to a pulley and down to a crate over a pool.
+  // One cell of that run, (3, 3), is the hanging END of winch A's bare rope. A used to be
+  // able to wind it in: B's rope was cut, the crate dropped into the pool and lifted the
+  // water for nothing, A let its rope out again, and B fished the crate back out.
+  const world = make(['#########', '##Rw#####', '###|#####', 'Xw|||P###', '#####|###', '#####c###', '#####...#', '#####.#O#', '#####...#', '#########']);
+  setFluid(world, 'water', 6, 8, 1.5);
+  run(world, 100);
+  assert.equal(getBlock(world, 3, 3), 'rope', 'A did not wind the tied end in');
+  assert.equal(rowOf(world, 5, 'crate'), 5, 'and the crate still hangs on B\'s rope');
+  assert.equal(spinAt(world, 3, 1), 1, 'A just turns: there is nothing on its rope');
+  // B can still work its own rope, through the tied cell.
+  setBlock(world, 2, 1, 'crankStop');
+  setBlock(world, 0, 3, 'crankCCW');
+  run(world, 30);
+  assert.ok(rowOf(world, 5, 'crate') > 5, 'B lets the crate down');
+  // A rope end that hangs free of any other rope winds in as ever.
+  const free = make(['Rw.', '.|.', '.|.', '...', '###']);
+  run(free, 30);
+  assert.equal(getBlock(free, 1, 2), 'air');
+});
+
+test('a tied rope end with a load on it is a hard stop for its winch, like the top', () => {
+  const world = make(['##Rw#####', '###|#####', 'Xw|||P###', '###c#|###', '###.#c###', '#########']);
+  run(world, 20);
+  assert.equal(getBlock(world, 3, 2), 'rope');
+  assert.equal(rowOf(world, 3, 'crate'), 3);
+  assert.equal(spinAt(world, 3, 0), 0);
+  assert.equal(world.signals.spin.cells.get(3).stopper, true, 'it shows the orange ⬆');
+});
+
+test('rope let out a little is owed: winding it back costs what the load gave, even with the load dug away', () => {
+  const world = make(['Qw.', '.|.', '.c.', '...', '...', '...', '###']);
+  const winch = 1;
+  run(world, 1);
+  const out = world.signals.lift.pull.get(winch);
+  assert.ok(out < 0 && out > -1, `a little rope is out (${out})`);
+  assert.equal(rowOf(world, 1, 'crate'), 2, 'and the crate has not moved yet');
+  setBlock(world, 1, 2, 'air'); // a hand digs the crate away
+  const load = winchLoad(world, 1, 0, blockInfo);
+  assert.equal(load.pull, -0, 'nothing hangs on the rope');
+  assert.equal(load.lifting, -1, 'but winding back in still costs the crate\'s weight');
+  setBlock(world, 0, 0, 'crankCW');
+  run(world, 1);
+  assert.equal(spinAt(world, 1, 0), 0.5, 'the crank feels it: half speed, as if it lifted the crate');
+  run(world, 10);
+  assert.ok((world.signals.lift.pull.get(winch) ?? 0) >= 0, 'the owed rope is wound back');
+  assert.equal(winchLoad(world, 1, 0, blockInfo).lifting, -0, 'and then the bare rope is free again');
+});
+
+test('rope wound in a little with nothing on it does not help lift a load that turns up later', () => {
+  // Two winches share one rope end. The right one winds half a cell of bare rope (for nothing).
+  // The left one lets the end down onto a crate. The right one's half cell must not count.
+  const world = make(['#Xw|P|wX#', '####|####', '####.####', '####c####', '#########']);
+  setBlock(world, 7, 0, 'crankCW');
+  run(world, 2); // bare rope: 2 ticks at speed 1 wind half a cell
+  setBlock(world, 7, 0, 'crankStop');
+  assert.equal(world.signals.lift.pull.get(6), 0.5);
+  setBlock(world, 1, 0, 'crankCCW');
+  run(world, 8);
+  setBlock(world, 1, 0, 'crankStop');
+  assert.equal(getBlock(world, 4, 2), 'rope', 'the left winch let the rope end down onto the crate');
+  setBlock(world, 7, 0, 'crankCW'); // lifting a crate, a crank winds a cell in 8 ticks
+  run(world, 6);
+  assert.equal(rowOf(world, 4, 'crate'), 3, 'the half cell wound with nothing on the rope is forgotten: not up yet');
+  run(world, 3);
+  assert.equal(rowOf(world, 4, 'crate'), 2, 'it comes up after a whole cell of rope wound against its weight');
+});
+
+test('no power from a load that never moves: three winches on bridged and shared ropes cannot wind owed rope back for nothing', () => {
+  // The second machine from the review. B (with a crank, and a generator and lamp on its shaft)
+  // lets a little rope out: the iron weight helps. A's rope end is one cell of B's rope; idle C
+  // shares the rope end. A tries to cut B off so B can wind back with nothing on it, then bridge again.
+  for (const name of ['ironWeight', 'crate']) {
+    const world = make(['#############', '#####Xw######', '#WWWX#|######', '#L.Ew|||P|w##', '#WWW####|####', '########.####', '########.####', '########.####', '#############']);
+    setBlock(world, 8, 5, name);
+    const systems = allSystems();
+    const B = 3 * world.width + 4;
+    let work = 0; // the hand's work on B's crank (minus: the crank pushed the hand)
+    let heat = 0;
+    /**
+     * One tick, counting the crank's work and the heat in the lamp and wires.
+     * @returns {void}
+     */
+    const step = () => {
+      tick(world, systems, blockInfo);
+      const crank = getBlock(world, 4, 2);
+      if (crank !== 'crankStop') {
+        const speed = spinAt(world, 4, 2) * (crank === 'crankCW' ? 1 : -1);
+        work += 2 * (1 - speed) * speed;
+      }
+      for (const [index, cell] of world.signals.electric?.cells ?? []) heat += (blockInfo(world.cells[index])?.part?.resistance ?? 0) * (cell.current ?? 0) ** 2;
+    };
+    for (let cycle = 0; cycle < 20; cycle++) {
+      setBlock(world, 4, 2, 'crankCCW');
+      for (let t = 0; t < 2; t++) step();
+      setBlock(world, 4, 2, 'crankStop');
+      setBlock(world, 5, 1, 'crankCW'); // A tries to cut
+      for (let t = 0; t < 12; t++) step();
+      assert.equal(getBlock(world, 6, 3), 'rope', 'A cannot cut B\'s rope');
+      setBlock(world, 5, 1, 'crankStop');
+      setBlock(world, 4, 2, 'crankCW');
+      for (let t = 0; t < 12 && (world.signals.lift.pull.get(B) ?? 0) < 0; t++) step();
+      setBlock(world, 4, 2, 'crankStop');
+      step();
+    }
+    const fell = 4 * blockInfo(name).weight * (rowOf(world, 8, name) - 5); // what the load's real fall is worth
+    const owedRope = -4 * (world.signals.lift.pull.get(B) ?? 0) * (world.signals.lift.weighed.get(B) ?? 0); // rope still out, at what it was paid
+    assert.ok(heat <= work + fell + owedRope + 1e-6, `${name}: heat ${heat} from hand ${work}, fall ${fell}, owed rope ${owedRope}`);
+    assert.ok(-work <= fell + owedRope + 1e-6, `${name}: the hand was pushed ${-work} by a fall worth ${fell + owedRope}`);
+  }
 });
 
 test('the guide and the wiki say that water pushes back: a crate floats, and steam is hard to push through', async () => {

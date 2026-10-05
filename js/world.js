@@ -146,22 +146,29 @@ export function swapBlock(world, x, y, name) {
  * Move a block into an empty (air) cell, and move that cell's water and
  * steam back into the cell the block left. That's how sand sinks
  * through water: the sand and the water trade places, so no water is lost.
- * (Moving the fluid is not free for a load on a winch's rope: the winch
- * pays for it. See inTheWay in js/blocks/lifting.js.)
+ * (Moving the fluid is not free: a load on a winch's rope pays for it,
+ * and a loose block only sinks if it is heavy enough. See inTheWay and
+ * floatsOn in js/blocks/lifting.js.)
+ *
+ * A block that water flows THROUGH (a pulley hook) pushes nothing out of
+ * its way: say `through` and the water and steam stay just where they are.
  * @param {object} world - the world
  * @param {number} fromX - where the block is
  * @param {number} fromY - where the block is
  * @param {number} toX - the air cell it moves into
  * @param {number} toY - the air cell it moves into
+ * @param {boolean} [through] - true for a block that fluid flows through:
+ *   the fluid in both cells stays put
  * @returns {boolean} true if it moved
  */
-export function moveBlock(world, fromX, fromY, toX, toY) {
+export function moveBlock(world, fromX, fromY, toX, toY, through = false) {
   if (!inBounds(world, fromX, fromY) || !inBounds(world, toX, toY)) return false;
   const from = fromY * world.width + fromX;
   const to = toY * world.width + toX;
   if (world.cells[to] !== AIR || world.cells[from] === AIR) return false;
   world.cells[to] = world.cells[from];
   world.cells[from] = AIR;
+  if (through) return true;
   for (const kind of FLUIDS) {
     world.fluid[kind][from] = world.fluid[kind][to];
     world.fluid[kind][to] = 0;
