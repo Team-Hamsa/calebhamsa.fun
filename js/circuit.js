@@ -644,7 +644,7 @@ export function solveCircuit(world, blockInfo, net = circuitPorts(world, blockIn
   for (const [index, blank] of net.cells) {
     cells.set(index, { axis: blank.axis, faces: blank.faces, arms: Object.fromEntries(blank.faces.map((side) => [side, 0])), level: 0, current: 0, spark: false, group: blank.group });
   }
-  for (const [index, port] of net.ports) Object.assign(cells.get(index), port);
+  for (const [index, port] of net.ports) Object.assign(cells.get(index), { fixed: port.fixed, perVolt: port.perVolt });
   const pushes = new Map();
   for (const [index, point] of points) pushes.set(index, partPush(point.part, world, point.x, point.y));
 

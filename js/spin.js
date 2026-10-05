@@ -104,11 +104,12 @@ const SWEEPS = 60;
 
 /**
  * A count of the work done so far settling groups that lean on each
- * other, for tests and timing tools. `passes` goes up for every
- * straight-line step, `sweeps` for every plain round, and `holds` every
- * time a group had to be held still because it would not settle.
+ * other, for tests and timing tools. `clusters` goes up every time a
+ * set of such groups is settled, `passes` for every straight-line step
+ * that takes, `sweeps` for every plain round, and `holds` every time a
+ * group had to be held still because it would not settle.
  */
-export const spinWork = { passes: 0, sweeps: 0, holds: 0 };
+export const spinWork = { clusters: 0, passes: 0, sweeps: 0, holds: 0 };
 /**
  * Is this block part of the spinning world?
  * @param {object|undefined} info - the block's definition
@@ -704,6 +705,7 @@ export function solveSpin(world, blockInfo) {
    */
   const stepTogether = (cluster) => {
     const place = new Map(cluster.map((group, k) => [group, k]));
+    spinWork.clusters += 1;
     for (let step = 0; step < NEWTON_STEPS; step++) {
       spinWork.passes += 1;
       const answers = cluster.map(settle);

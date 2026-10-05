@@ -17,3 +17,10 @@ Search the code for `🧪 Try this!` to find them all. Some favorites:
 15. **Super gears:** in `js/blocks/gears.js`, give the big gear 24 teeth: small gears it drives spin 3 times as fast.
 16. **Easy carbon:** in `js/chem/book.js`, change the N step's goal from 3 carbon molecules to 1.
 17. **Your own molecule:** add one to `js/chem/kid-names.js` with its SMILES, a name and a fact, then run `npm test`.
+18. **A different machine:** in `js/blocks/gears.js`, set `MACHINE_K` to 2: motors turn half as fast but push twice as hard, and generators make twice the volts. Then try to build a machine that runs by itself. (You can't: the same number is used both ways.)
+
+And three to do on the Build page, with no code at all (they are on the [⚙️ Gears](Gears) page):
+
+1. **The tell-tale lamp:** a lamp in a row with a motor is bright when the motor is stuck and nearly dark when it runs free.
+2. **Help the crank:** two batteries wired against a cranked generator drive it faster than the crank can go.
+3. **Swap them:** swap a generator block for a motor block. It works just the same.

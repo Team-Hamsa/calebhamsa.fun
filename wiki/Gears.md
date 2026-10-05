@@ -10,8 +10,8 @@ A 💧 **turbine** (on the Water tab) is a spinning block too: rising steam turn
 | ![Axle](blocks/axle.png) | **Axle** | A rod: carries turning in a straight line, the same way round. It only joins things at its two **ends**: a gear beside a shaft doesn't touch it (and doesn't break it). | — |
 | ![Crank](blocks/crankStop.png) | **Crank** | Hand power! Red knob = stopped, green knob = turning. ![Turning crank](blocks/crankCW.png) | stop → ↻ → ↺ → stop |
 | ![Water wheel](blocks/waterWheel.png) | **Water wheel** | Turns when 💧 water flows through it. More water = **stronger**. A longer fall = **faster and stronger**: put it where the water drops. | — |
-| ![Motor](blocks/motor.png) | **Motor** | Turns ⚡ electricity into turning. Put it in a loop with a battery (wires on its sides). Move the battery to the other side of the loop and it turns the other way. | — |
-| ![Generator](blocks/generator.png) | **Generator** | Turns turning into ⚡ electricity: wire it up like a battery. Its **+** end swaps when it turns the other way. | — |
+| ![Motor](blocks/motor.png) | **Motor** | ⚡ Electricity in, turning out. Put it in a loop with a battery (wires on its sides). One battery makes it as strong as a crank; more batteries, faster and stronger. Move the battery to the other side of the loop and it turns the other way. Turn it by hand and it is a generator. | — |
+| ![Generator](blocks/generator.png) | **Generator** | Turning in, ⚡ electricity out: wire it up like a battery. Its **+** end swaps when it turns the other way. Wire a battery to it and it is a motor. It is the same machine as the motor, fitted the other way round. | — |
 
 **Follow the yellow tooth.** Every gear has one yellow tooth, every water
 wheel one yellow paddle tip, and every turbine one yellow blade tip. On a fast gear the plain teeth all look alike, so
@@ -47,7 +47,7 @@ each under its own pot of water) makes it stronger; a taller chimney under it
 makes it faster and stronger. It has no
 left or right of its own, so it helps whichever way its gears already go (↻
 if nothing else is turning them). A motor gets
-stronger with more electricity. Two of them on the same gears **add up**. Two
+faster and stronger with more batteries. Two of them on the same gears **add up**. Two
 cranks turning opposite ways push against each other: the stronger one wins.
 
 **Gears change speed, not power.** A small gear driven by a big one spins
@@ -55,30 +55,80 @@ twice as fast but pushes half as hard. Gearing a generator up makes it spin
 faster, but it gets harder to turn, so the crank slows down: you never get out
 more than you put in.
 
-**Generators push back.** Making electricity takes work. The more lamps a
-generator lights, the harder it is to turn. With nothing wired to it, it spins
-freely. Join its two ends with plain wire (a short circuit) and it gets very
-hard to turn, because a big current flows: watch the dots race. Take the wire
-away and it's easy again. Turn it slowly and it still makes a little
-electricity: a dim lamp, not a dark one. A battery wired into a generator's
-loop does not spin it (a real generator would run as a motor; ours doesn't, so
-use the motor block for that). It only makes the generator very hard to turn
-the way that adds to the battery's current, and leaves it free the other way.
-Generators wired in a row each feel **all** the current they make together:
-three on one crank are much harder to turn than one, and never give out more
-than the crank puts in. A motor feels a generator's electricity a little late,
-and takes up a change in it a quarter at a time (like a real motor's coil, which
-can't change its current in an instant): so a motor on the same gears as the
-generators that feed it settles to one steady speed instead of flickering.
-When its wiring changes (a clicker closing, a switch flipped) the generators
-can't add anything for one tick, only hold a battery back: so a clicker can't
-hand a motor a burst of electricity nobody pushed for. A motor
-with only a whisper of current fades out smoothly, then stops: both its push
-and how hard it holds back gears that something else is turning.
+**One machine.** A motor and a generator are the **same machine**: a coil of
+wire that turns between magnets. It follows one rule, both ways round:
 
-**Nothing runs forever.** A generator turns at most 8 tenths of the work you
-put in into electricity (the rest becomes heat, like in a real one), so a motor
-powered by a generator on its own gears slows down and stops. The same goes
+- **Turn it and it pushes electricity:** 1 volt for each turn a second (a
+  battery pushes 1 volt). Faster = more volts.
+- **Push electricity through it and it turns:** each amp of current pushes its
+  shaft as hard as half a crank.
+
+The two blocks are that one machine fitted opposite ways round, so you can use
+either for either job. A motor turned by a crank lights a lamp just like a
+generator (its **+** end is on the other side). A battery wired to a generator
+spins it just like a motor (the other way round).
+
+**Generators push back.** Making electricity takes work. The more lamps a
+generator lights, the more current flows, and the harder it is to turn. With
+nothing wired to it, it spins freely (only its bearings rub a little). Join
+its two ends with plain wire and it gets hard to turn, because a big current
+flows: watch the dots race. Take the wire away and it's easy again. Turn it
+slowly and it still makes a little electricity: a dim lamp, not a dark one.
+Generators wired in a row each feel **all** the current they make together:
+three on one crank are much harder to turn than one.
+
+**A spinning motor pushes back too**, against the battery. That is the same
+rule again: it is turning, so it pushes volts of its own, the opposite way to
+the battery's. So how much electricity a motor takes depends on how hard its
+job is:
+
+| One battery's motor... | turns at | and takes |
+|---|---|---|
+| with nothing to turn | 0.95 turns a second | hardly any current (0.1 amps): its own push nearly cancels the battery's |
+| lifting a crate | 0.48 | about 1 amp |
+| stalled under an iron weight | 0 | 2 amps, the most it ever can. It lifts nothing and just gets hot |
+
+Put a lamp in the loop and you can **see** it: the lamp is bright while the
+motor is stuck and nearly dark while it runs free. (Real motors do exactly
+this. It is why the lights dim for a moment when a big machine starts up, and
+why a jammed motor burns out.)
+
+**A battery and a crank on the same machine** add up or fight, like two cranks:
+
+- A battery pushing **against** the electricity a cranked generator makes
+  **helps** the crank round. Two batteries drive it faster than the crank
+  could ever go by itself (now the hand is holding it back!).
+- A battery pushing the **same** way as the generator makes it much harder to
+  turn. One battery and one crank cancel out: it stands still, with a big
+  current that only makes heat.
+
+**A cranked generator is a soft battery.** A battery pushes 1 volt however
+much you ask of it. A generator turned by a hand slows down when you ask for
+more, so its push sags. That is why six lamps side by side on one cranked
+generator are all dim. A stronger turner (more water on a wheel, more steam
+through a turbine) makes a stiffer one.
+
+Everything happens **at once**: the gears and the electricity are worked out
+together on every tick, so a motor fed by a generator is at full speed the
+moment you wire it up, and a clicker or a switch can't catch anything out.
+
+**Three things to try:**
+
+1. **The tell-tale lamp.** Battery, lamp and motor in one loop, with a gear
+   and an axle from the motor to a winch. Let the winch lift a crate, then an
+   iron weight, then nothing at all. Watch the lamp each time.
+2. **Help the crank.** Crank a generator that is wired to one battery. Tap the
+   crank to turn it the other way. Which way is easy? Now use two batteries in
+   a row and watch how fast it goes.
+3. **Swap them.** Build crank → generator → lamp. Swap the generator for a
+   motor block. What changes? (Nothing: only which end is +.)
+
+**Nothing runs forever.** Every bit of turning has to be paid for. A machine
+turns work into exactly as much electricity, and electricity into exactly as
+much work, but some is always lost on the way as **heat**: in the coils (the
+more current, the more heat), in the lamps, and in the bearings. So what comes
+out is always less than what goes in, and a motor powered by its own generator
+stops at once, however you gear it. The same goes
 for a pump lifting water for the water wheels that turn the pump's own
 generator, however many wheels and gears you use: the wheels only get the push
 of water that **falls**, and the pump has to spend more than that lifting it

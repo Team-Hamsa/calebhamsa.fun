@@ -40,7 +40,7 @@ Then open <http://localhost:8000>. Change a file, save, and reload the page.
 | `js/circuit.js` | The electricity math: loops, brightness, short circuits (pure) |
 | `js/blocks/water.js` | 💧 Water blocks: pipes, valves, faucets, drains, burners, chillers, turbines, pumps |
 | `js/fluids.js` | How water and steam move: falling, spreading, squishing (pure) |
-| `js/blocks/gears.js` | ⚙️ Gear blocks: gears, axle, crank, water wheel, motor, generator |
+| `js/blocks/gears.js` | ⚙️ Gear blocks: gears, axle, crank, water wheel, motor, generator (one machine, fitted two ways round) |
 | `js/spin.js` | How turning passes from gear to gear, and when gears jam (pure) |
 | `js/blocks/registry.js` | The list of block packs (add new packs here) |
 | `js/block-art.js` | Draws blocks pixel-art style |

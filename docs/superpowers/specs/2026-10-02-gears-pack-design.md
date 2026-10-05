@@ -62,6 +62,8 @@ Same as phases 1–3:
 | `motor` | ✓ | `{ kind: 'hub' }` | `part: { resistance: 1 }`; source: `level × MOTOR_SPEED × direction`, or none when level < 0.05 | — |
 | `generator` | ✓ | `{ kind: 'hub' }` | `part: { resistance: 0.05, pushNow }`: push = `speed × GENERATOR_GAIN` (signed) | — |
 
+> **Replaced 2026-10-05 (#14, #15):** the motor and generator are now one machine with one law, solved together with the circuit. See `2026-10-05-motor-generator-law-design.md`. What follows is how it was.
+
 **🧪 Values:**
 - `CRANK_SPEED` 1 (turn per second)
 - `MOTOR_SPEED` 1
@@ -191,6 +193,8 @@ The cell record comes from `signals.spin.cells`. `signalsAt` returns the first p
   - no console errors
 
 ## Addendum 2026-10-04: generator fixes from the physics audit (issue #11)
+
+> **Replaced 2026-10-05 (#14, #15):** the motor and generator are now one machine with one law, solved together with the circuit. See `2026-10-05-motor-generator-law-design.md`. This addendum and the later ones about generators, motors, clickers and flicker describe patches that pass deleted.
 
 These override refinement 1 and the "rounded to 0.1" line below.
 

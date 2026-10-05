@@ -208,6 +208,7 @@ The old turbine was a pipe that also carried electricity, and four perpetual-mot
 ## What this leaves for later
 
 - **#29 (steam cooling):** condensing steam just removes steam, which only lowers E. The tidy-up line (`rising[i] ≤ steam[i] × height`) already handles steam that vanishes. Nothing here depends on steam staying steam.
+- **Done 2026-10-05:** see `2026-10-05-motor-generator-law-design.md` and its addendum (the 1.28 build now gives exactly 1.000).
 - **#14/#15 (one motor–generator law):** the turbine is a plain `spinSource` with `eitherWay`. It reads nothing from `world.signals.electric` and adds no feed, echo or rewire rule. Removing the turbine's `pushNow` leaves the generator as the only changing pusher.
 
 ## Tests

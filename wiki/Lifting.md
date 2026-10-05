@@ -17,7 +17,10 @@ gear in between and the winch turns half as fast but pushes twice as hard, so
 the iron weight counts as 2: still too much. Do it twice (a quarter as fast)
 and it counts as 1: up it goes. Gear it UP (big gear driving a small one) and
 it can't even lift a crate. More strength works too: two cranks, a motor with
-more batteries, or more water (or a longer fall) onto a water wheel. Real cranes, bike gears and
+more batteries, or more water (or a longer fall) onto a water wheel. (One
+battery's motor is as strong as one crank. The heavier its load, the more
+electricity it takes, and a **stalled** motor takes the most of all and only
+gets hot: see [⚙️ Gears](Gears).) Real cranes, bike gears and
 car gears all trade speed for strength.
 
 **Heavier = slower.** The closer the load is to the machine's strength, the

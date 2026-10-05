@@ -225,13 +225,16 @@ function machineLink(way) {
   return (world, x, y) => {
     const port = world.signals.electric?.net?.ports.get(y * world.width + x);
     if (!port) return null;
+    // It only depends on the wiring, so it is worked out once and kept with the wiring.
+    if (port.link !== undefined) return port.link;
     const perTurn = new Map();
     for (const [other, share] of port.perVolt) {
       const otherWay = blocks[world.cells[other]]?.machine ?? 0;
       if (share !== 0 && otherWay !== 0) perTurn.set(other, way * MACHINE_K * share * MACHINE_K * otherWay);
     }
     const still = -way * MACHINE_K * port.fixed || 0;
-    return still === 0 && perTurn.size === 0 ? null : { still, perTurn };
+    port.link = still === 0 && perTurn.size === 0 ? null : { still, perTurn };
+    return port.link;
   };
 }
 

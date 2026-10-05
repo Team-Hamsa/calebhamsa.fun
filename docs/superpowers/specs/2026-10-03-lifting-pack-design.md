@@ -45,6 +45,7 @@ Teach **load and effort** with a winch, rope and pulleys:
 - Each source reports `spinSource → { speed, strength }`: its top speed (no load) and its stall torque.
   - Crank: 1 turn/s, strength 2 (`CRANK_STRENGTH`).
   - Motor: level × 1 turn/s, level × 2 (`MOTOR_STRENGTH`).
+    - (Replaced 2026-10-05, #14/#15: one battery's motor is still one crank, but by the motor-generator law, and the generator formulas below are gone. See `2026-10-05-motor-generator-law-design.md`.)
   - Water wheel: flow × 20 turns/s, |flow| × 40 (`WHEEL_STRENGTH`). One faucet is about a crank.
 - Measured at the group's first block (ratio r): top = speed / r, strength′ = strength × |r|. The source pushes `strength′ × (1 − Ω/top)`. Summed over sources: `ahead − slowing × Ω`.
 - Loads: `spinLoad → torque` at the block (the winch returns −weight; gravity pulls ↺), referred × r.
@@ -166,6 +167,8 @@ At the 8-ticks-a-second clock, rope wound per tick = `speed × ROPE_PER_TURN / 8
 - **Browser check (Chromium iPad emulation):** crank → winch lifts a crate; iron stalls with red ⬇; no console errors.
 
 ## Addendum 2026-10-04: generator drag (issue #11)
+
+> **Replaced 2026-10-05 (#14, #15):** the motor and generator are now one machine with one law, solved together with the circuit. See `2026-10-05-motor-generator-law-design.md`. What follows is how it was.
 
 The "Realistic strength" section says the generator's drag uses a current per volt "remembered in `signals.spin.conducts`". That memory went stale (a once-shorted generator stayed stiff forever) and has been removed: the drag is now worked out fresh from last tick's electric record. See the gears spec addendum of the same date.
 
