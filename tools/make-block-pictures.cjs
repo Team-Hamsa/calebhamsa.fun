@@ -110,7 +110,7 @@ const SCENES = {
     'B..W',
     'WnWW',
   ] },
-  'u-tube': { ticks: 80, rows: [
+  'u-tube': { ticks: 20, rows: [
     'g~g.g',
     'g~g.g',
     'g~g.g',
@@ -118,7 +118,7 @@ const SCENES = {
     'g...g',
     'ggggg',
   ] },
-  'water-tower': { ticks: 160, rows: [
+  'water-tower': { ticks: 8, rows: [
     '#~~#......',
     '#~~#......',
     '#~~#......',
