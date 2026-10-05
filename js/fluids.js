@@ -2022,32 +2022,47 @@ export function pumpAmount(level, lift) {
 
 /**
  * A burner stops boiling when the cell above it already holds this much
- * steam, like a lid rattling on a full kettle. Without it, a faucet
- * dripping onto a burner would pack the sky with steam forever.
+ * steam: a burner cannot boil into steam that is already packed tight,
+ * like a pot with its lid screwed down.
  */
 const BOIL_STEAM_CAP = FULL + STEAM_SQUEEZE;
 
 /**
- * Let the special blocks do their jobs: faucets add water, burners boil
- * water into steam, chillers turn steam back into water, and drains
- * take water away. (Pumps are not here: they push while the water
- * moves. See pressWater.)
+ * Let the HEAT blocks do their jobs for one small step: burners boil
+ * water into steam and chillers turn steam back into water. They work
+ * in every small step (stepFluids calls this FLUID_STEPS times a tick,
+ * with a `share` of 1 ÷ FLUID_STEPS), because steam moves in every
+ * small step too: a chiller that only looked once a tick would miss
+ * the steam that rushed past it in between.
  *
- * They go in two rounds, so that it never matters which block comes
- * first in the world (a machine built the other way round, mirrored,
- * works just the same):
- *   1. faucets, burners and chillers. None of them ever puts more water
- *      in a cell than it has room for.
- *   2. drains, last of all: whatever ended up in a drain this tick is gone
+ * In words:
+ *   a burner boils    the smallest of: its rate, the water above it,
+ *                     and the room for steam there (see BOIL_STEAM_CAP)
+ *   a chiller cools   the smallest of: its rate, the steam in a cell
+ *                     it touches, and the room for water there
+ *
+ * Nothing is lost or made: every bit of steam that cools is that much
+ * water, in the same cell. Only as much as fits: water can't be
+ * squashed in. And WATER MADE IN A DRAIN'S CELL HAS GONE DOWN THE
+ * DRAIN: it is never put there, so a chiller beside a drain leaks
+ * nothing to the cells around it.
+ *
+ * It never matters which block comes first in the world (a machine
+ * built the other way round, mirrored, works just the same).
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @param {string[][]} sides - open sides by cell index
+ * @param {number} share - how much of a tick this is (1 ÷ FLUID_STEPS for one small step)
  * @param {Map<number, number>} [chilled] - if given, it is filled in with
- *   how much steam the chillers turned back into water in each cell (by
- *   cell index): stepFluids uses it for steam chilled inside a turbine
+ *   how much steam was turned back into water in each cell (by cell
+ *   index): stepFluids uses it for steam chilled inside a turbine
+ * @param {Function} [watch] - if given, it is told (index, steamBefore,
+ *   waterBefore, boiled) after every single boiling or cooling: the cell,
+ *   what it held just before, and how much was boiled (0 for a cooling).
+ *   Only the tests use it, to check the energy books
  * @returns {number} the total amount that changed
  */
-export function runSpecials(world, blockInfo, sides, chilled) {
+export function runHeat(world, blockInfo, sides, share, chilled, watch) {
   const { water, steam } = world.fluid;
   let changed = 0;
   /**
@@ -2061,27 +2076,38 @@ export function runSpecials(world, blockInfo, sides, chilled) {
     const y = Math.floor(index / world.width) + STEP[side][1];
     return inBounds(world, x, y) ? y * world.width + x : -1;
   };
-  const drains = [];
-  // Round 1: faucets, burners and chillers.
+  /**
+   * Turn some of a cell's steam back into water, right there.
+   * @param {number} index - the cell
+   * @param {number} cool - how much steam (never more than fits as water)
+   * @returns {void}
+   */
+  const condense = (index, cool) => {
+    if (cool <= 0) return;
+    const steamBefore = steam[index];
+    const waterBefore = water[index];
+    steam[index] -= cool;
+    // Water made in a drain's cell has gone straight down the drain.
+    if (!blockInfo(world.cells[index])?.drains) water[index] += cool;
+    changed += cool;
+    if (chilled) chilled.set(index, (chilled.get(index) ?? 0) + cool);
+    if (watch) watch(index, steamBefore, waterBefore, 0);
+  };
   for (let index = 0; index < world.cells.length; index++) {
     const info = blockInfo(world.cells[index]);
     if (!info) continue;
-    if (info.drains) drains.push(index);
-    if (info.faucet) {
-      const below = beside(index, 'down');
-      if (below >= 0 && sides[below].includes('up')) {
-        const add = Math.min(FAUCET_RATE, Math.max(0, FULL - water[below]));
-        water[below] += add;
-        changed += add;
-      }
-    }
     if (info.burns) {
       const above = beside(index, 'up');
       if (above >= 0 && sides[above].length > 0) {
-        const boil = Math.min(BOIL_RATE, water[above], Math.max(0, BOIL_STEAM_CAP - steam[above]));
-        water[above] -= boil;
-        steam[above] += boil;
-        changed += boil;
+        const boil = Math.min(BOIL_RATE * share, water[above], Math.max(0, BOIL_STEAM_CAP - steam[above]));
+        if (boil > 0) {
+          const steamBefore = steam[above];
+          const waterBefore = water[above];
+          water[above] -= boil;
+          steam[above] += boil;
+          changed += boil;
+          if (watch) watch(above, steamBefore, waterBefore, boil);
+        }
       }
     }
     if (info.chills) {
@@ -2089,11 +2115,46 @@ export function runSpecials(world, blockInfo, sides, chilled) {
         const next = beside(index, side);
         if (next < 0 || sides[next].length === 0) continue;
         // Only as much as the cell has room for: water can't be squashed in.
-        const cool = Math.min(CONDENSE_RATE, steam[next], Math.max(0, FULL - water[next]));
-        steam[next] -= cool;
-        water[next] += cool;
-        changed += cool;
-        if (chilled && cool > 0) chilled.set(next, (chilled.get(next) ?? 0) + cool);
+        condense(next, Math.min(CONDENSE_RATE * share, steam[next], Math.max(0, FULL - water[next])));
+      }
+    }
+  }
+  //SKY//
+  return changed;
+}
+
+/**
+ * Let the water blocks do their jobs, once a tick: faucets add water
+ * and drains take it away. (Burners and chillers work in every small
+ * step: see runHeat. Pumps are not here either: they push while the
+ * water moves. See pressWater.)
+ *
+ * They go in two rounds, so that it never matters which block comes
+ * first in the world (a machine built the other way round, mirrored,
+ * works just the same):
+ *   1. faucets. A faucet never puts more water in a cell than it has
+ *      room for.
+ *   2. drains, last of all: whatever ended up in a drain this tick is gone
+ * @param {object} world - the world
+ * @param {Function} blockInfo - looks up what a block name means
+ * @param {string[][]} sides - open sides by cell index
+ * @returns {number} the total amount that changed
+ */
+export function runSpecials(world, blockInfo, sides) {
+  const { water } = world.fluid;
+  let changed = 0;
+  const drains = [];
+  // Round 1: faucets.
+  for (let index = 0; index < world.cells.length; index++) {
+    const info = blockInfo(world.cells[index]);
+    if (!info) continue;
+    if (info.drains) drains.push(index);
+    if (info.faucet) {
+      const below = index + world.width;
+      if (below < world.cells.length && sides[below].includes('up')) {
+        const add = Math.min(FAUCET_RATE, Math.max(0, FULL - water[below]));
+        water[below] += add;
+        changed += add;
       }
     }
   }
@@ -2140,9 +2201,18 @@ export function wheelTurn(wheel) {
 }
 
 /**
- * One tick of fluids: water and steam move (in FLUID_STEPS small
- * steps: see flowWater and flowSteam), then the special blocks do their
- * jobs once.
+ * One tick of fluids: water and steam move in FLUID_STEPS small steps
+ * (see flowWater and flowSteam), with the burners and chillers working
+ * in every one of them (see runHeat). Then the faucets and drains do
+ * their jobs once (see runSpecials).
+ *
+ * HEAT WORKS ALL THE TIME. Steam crosses four cells in a tick. A
+ * burner that boiled once a tick would send it up in lumps, and a
+ * chiller that looked once a tick would only catch a lump that happened
+ * to stop beside it. So burners and chillers do a quarter of their
+ * tick's work in each small step: steam leaves the pot as a steady
+ * stream, and a chiller touching any cell of that stream takes all of
+ * it as it goes by.
  *
  * WATER MOVED BY PRESSURE GIVES ITS PUSH WHERE IT IS USED UP. Pressed
  * water going through a water wheel in a pipe gives the wheel what it
@@ -2179,6 +2249,8 @@ export function wheelTurn(wheel) {
  * its condenser, just like this).
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
+ * @param {Function} [watchHeat] - only for tests that check the energy
+ *   books: told about every single boiling and cooling (see runHeat)
  * @returns {{moved: number, turbines: Map<number, object>, waterOut: Map<number, number>, waterWork: Map<number, number>, wheels: Map<number, object>, sides: string[][], pumpWork: number}}
  *   how much changed in total, each turbine's count ({out, gross, work,
  *   into, inWay}: the steam that left it (or was chilled inside it), + up
@@ -2191,7 +2263,7 @@ export function wheelTurn(wheel) {
  *   the energy the pumps gave the water this tick (in the same units as
  *   waterWork: × DROP_POWER to compare it with electricity)
  */
-export function stepFluids(world, blockInfo) {
+export function stepFluids(world, blockInfo, watchHeat) {
   const sides = allOpenSides(world, blockInfo);
   const table = flowTable(world, sides, blockInfo);
   /**
@@ -2350,6 +2422,7 @@ export function stepFluids(world, blockInfo) {
   };
   let moved = 0;
   let pumpWork = 0;
+  const chilled = new Map(); // steam cooled in each cell, all small steps added up
   for (let step = 0; step < FLUID_STEPS; step++) {
     const flowed = flowWater(world, table, countWheels, pumps, countFill);
     moved += flowed.moved;
@@ -2372,11 +2445,19 @@ export function stepFluids(world, blockInfo) {
     riseNext = new Float64Array(size);
     roseFrom = new Uint8Array(size);
     riseTaken = new Float64Array(size);
+    // Heat works all the time (see above): a quarter of a tick's worth now.
+    const cooled = new Map();
+    moved += runHeat(world, blockInfo, sides, 1 / FLUID_STEPS, cooled, watchHeat);
+    for (const [index, amount] of cooled) {
+      // Cooled steam takes its push with it into the water, where it is lost.
+      const left = world.fluid.steam[index];
+      rising[index] *= left / (left + amount);
+      chilled.set(index, (chilled.get(index) ?? 0) + amount);
+    }
   }
   world.signals.falling = falling;
   world.signals.rising = rising;
-  const chilled = new Map();
-  moved += runSpecials(world, blockInfo, sides, chilled);
+  moved += runSpecials(world, blockInfo, sides);
   // Steam chilled inside a turbine has gone through it (see above): it
   // counts as leaving the way this tick's steam came in (or, if none
   // came in just now, the way the rest is leaving; or else up).

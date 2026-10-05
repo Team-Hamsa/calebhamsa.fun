@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { createWorld, getFluid, setBlock, setFluid } from '../js/world.js';
 import { REFERENCE_CURRENT } from '../js/circuit.js';
 import {
-  BOIL_RATE, CONDENSE_RATE, DROP_POWER, FAUCET_RATE, FULL, FULL_SLACK, PIPE_EASE, PUMP_HEAD, PUMP_RATE, RISE_POWER, SQUIRT_EASE,
+  BOIL_RATE, CONDENSE_RATE, DROP_POWER, FAUCET_RATE, FLUID_STEPS, FULL, FULL_SLACK, MIN_AMOUNT, PIPE_EASE, PUMP_HEAD, PUMP_RATE, RISE_POWER, SQUIRT_EASE,
   STEAM_SQUEEZE, allOpenSides, fallEnergy, flowTable, flowWater, makeRoom, openSides, placeBlock, pressWork, pumpAmount,
   settleShares, solveBanded, stableBelow, stepFluids, storedEnergy, workingPumps,
 } from '../js/fluids.js';
@@ -1990,5 +1990,24 @@ test('worlds whose sums once went round in circles (so a body of water stood sti
     run(world, 3);
     assert.equal(pressWork.stuck, before, why);
     assert.ok(Math.abs(total(world, 'water') - had) < 1e-9, why);
+  }
+});
+
+// =============================================================
+// Heat works all the time, and the open sky cools steam into rain (#29)
+// =============================================================
+
+test('steam leaves the pot as a steady stream: a burner boils a little in every small step', () => {
+  // A chimney 7 cells tall with a chiller on top. The steam crosses one
+  // cell in each small step, so a quarter of a tick's steam stands in
+  // every cell of the way up, and the chiller takes each bit as it arrives.
+  const world = run(worldFrom(['#C#', '#.#', '#.#', '#.#', '#.#', '#.#', '#.#', '#.#', '#~#', '#B#']), 100);
+  for (let i = 0; i < 4; i++) {
+    assert.equal(getFluid(world, 'steam', 1, 1), 0, `tick ${100 + i}: the cell under the chiller holds steam`);
+    for (let y = 2; y <= 7; y++) {
+      const steam = getFluid(world, 'steam', 1, y);
+      assert.ok(Math.abs(steam - BOIL_RATE / FLUID_STEPS) < 1e-9, `tick ${100 + i}, row ${y}: ${steam} of steam`);
+    }
+    stepFluids(world, blockInfo);
   }
 });
