@@ -62,3 +62,21 @@ test('the guide explains why too many note blocks in one loop go quiet', () => {
   const power = PACKS.find((pack) => pack.tab.id === 'electric');
   assert.ok(guideTexts(power).some((text) => /note blocks/i.test(text) && /quiet/.test(text) && /battery/.test(text)));
 });
+
+test('the turbine\'s guide says it makes turning and needs a generator', () => {
+  const water = PACKS.find((pack) => pack.tab.id === 'water');
+  const turbine = water.guide.blocks.turbine.does;
+  assert.match(turbine, /generator/);
+  assert.match(turbine, /TURNING, not electricity/);
+  assert.doesNotMatch(turbine, /like a battery/);
+  assert.ok(water.guide.rules.some((rule) => /Steam has to RISE/.test(rule)), 'the Water rules should say steam has to rise to give its push');
+  const gears = PACKS.find((pack) => pack.tab.id === 'gears');
+  assert.ok(guideTexts(gears).some((text) => /turbine/.test(text)), 'the Gears guide should count the turbine among the things on a shaft');
+  assert.ok(guideTexts(gears).some((text) => /steam plant stops when its burner does/.test(text)));
+});
+
+test('the Power guide no longer talks about turbines: a turbine is not an electric part any more', () => {
+  const power = PACKS.find((pack) => pack.tab.id === 'electric');
+  for (const text of guideTexts(power)) assert.doesNotMatch(text, /turbine/i, `"${text}"`);
+  assert.equal(blockInfo('turbine').part, undefined);
+});

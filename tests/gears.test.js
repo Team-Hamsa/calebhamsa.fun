@@ -8,7 +8,8 @@ import assert from 'node:assert/strict';
 import { createWorld, getBlock, setBlock, setFluid, tick } from '../js/world.js';
 import { allSystems, blockInfo, blocksInPack, isKnownBlock, refreshSignals } from '../js/blocks/registry.js';
 import { drawWorld } from '../js/block-art.js';
-import { DROP_POWER, PUMP_HEAD, PUMP_RATE } from '../js/fluids.js';
+import { DROP_POWER, PUMP_HEAD, PUMP_RATE, RISE_POWER } from '../js/fluids.js';
+import { TURBINE_SPEED, TURBINE_STRENGTH, turbineSource } from '../js/blocks/water.js';
 import gears, {
   CRANK_SPEED, CRANK_STRENGTH, GENERATOR_GAIN, GENERATOR_TORQUE, WHEEL_SPEED, WHEEL_STRENGTH, spinAt, turned, wheelSource,
 } from '../js/blocks/gears.js';
@@ -18,7 +19,7 @@ import { REFERENCE_CURRENT, plusSide } from '../js/circuit.js';
 const LETTERS = {
   '.': 'air', '#': 'stone', W: 'wire', L: 'lamp', B: 'battery', s: 'gearSmall', G: 'gearBig',
   '-': 'axle', R: 'crankCW', Q: 'crankCCW', M: 'motor', E: 'generator', O: 'waterWheel', F: 'faucet',
-  P: 'pipe', '^': 'pumpUp', T: 'turbine', D: 'drain', K: 'clicker', '/': 'switchClosed',
+  P: 'pipe', '^': 'pumpUp', v: 'pumpDown', '<': 'pumpLeft', T: 'turbine', b: 'burnerOn', C: 'chiller', '~': 'air', D: 'drain', K: 'clicker', '/': 'switchClosed',
   Z: 'winch', r: 'rope', I: 'ironWeight', c: 'crate',
 };
 
@@ -321,7 +322,12 @@ test('water power cannot loop forever either: the energy books balance at every 
   const flow = 0.05;
   const wheelBest = ((WHEEL_STRENGTH * flow) / 2) * (WHEEL_SPEED / 2);
   assert.ok(Math.abs(wheelBest - DROP_POWER * flow) < 1e-12);
-  // 3. A generator gives back less electricity than the work that turns it.
+  // 3. A turbine, just the same: its most work is exactly what steam rising
+  //    one cell gives up, and rising steam is worth what falling water is.
+  const turbineBest = ((TURBINE_STRENGTH * flow) / 2) * (TURBINE_SPEED / 2);
+  assert.ok(Math.abs(turbineBest - RISE_POWER * flow) < 1e-12);
+  assert.equal(RISE_POWER, DROP_POWER);
+  // 4. A generator gives back less electricity than the work that turns it.
   assert.ok(GENERATOR_GAIN / GENERATOR_TORQUE < 1);
 });
 
@@ -336,7 +342,10 @@ test('water power cannot loop forever either: the energy books balance at every 
  */
 function build(rows) {
   const world = createWorld(rows[0].length, rows.length);
-  rows.forEach((row, y) => [...row].forEach((letter, x) => setBlock(world, x, y, LETTERS[letter])));
+  rows.forEach((row, y) => [...row].forEach((letter, x) => {
+    setBlock(world, x, y, LETTERS[letter]);
+    if (letter === '~') setFluid(world, 'water', x, y, 1); // air full of water
+  }));
   return world;
 }
 
@@ -546,15 +555,16 @@ function assertWindsDown(what, world, pump, wheels) {
 
 test('the pump → three (or five) wheels in a level channel → generators loop winds down without its battery', () => {
   // The machine from issue #17. The pump (^) lifts water from the bottom
-  // channel to the top one; it drops through a turbine (T, only there so
-  // the wire can cross the water) and flows back through the wheels (O),
-  // each with a generator (E) on top, all wired in a row to the pump.
+  // channel to the top one; it drops through a second pump (v, pointing
+  // the way the water already goes: it is there so the wire can cross
+  // the water) and flows back through the wheels (O), each with a
+  // generator (E) on top, all wired in a row to the pumps.
   for (const count of [3, 5]) {
     const width = 2 * count + 3;
     const world = build([
       '#'.repeat(width),
       `#${'.'.repeat(width - 2)}#`,
-      `W^${'EW'.repeat(count - 1)}ETW`,
+      `W^${'EW'.repeat(count - 1)}EvW`,
       `W.${'O.'.repeat(count)}W`,
       `W${'#'.repeat(width - 2)}W`,
       'W'.repeat(width),
@@ -572,9 +582,10 @@ test('the pump → three (or five) wheels in a level channel → generators loop
 /**
  * Build a ring of pipe lying flat-ish: a pump on the left pushes water up
  * and along the top through `count` wheels side by side (no fall at all),
- * and it comes back along the bottom. The last wheel turns a generator
- * through `chain` (gears), and the generator is wired only to the pump
- * and a battery.
+ * and it comes back along the bottom, through a second pump that points
+ * the way the water already goes (it is there so the wire can cross the
+ * ring). The last wheel turns a generator through `chain` (gears), and
+ * the generator is wired only to the pumps and a battery.
  * @param {number} count - how many wheels
  * @param {string} chain - the gears from the last wheel to the generator, like 'GsE'
  * @returns {{world: object, pump: number[], wheels: number[][]}} the machine
@@ -592,11 +603,11 @@ function levelRing(count, chain) {
     `W${'#'.repeat(count)}${chain}`,
     row(`WP${'O'.repeat(count)}P`),
     row(`W^${'W'.repeat(count)}P`),
-    row(`#PPT${'P'.repeat(count - 1)}`),
+    row(`#PP<${'P'.repeat(count - 1)}`),
     `...${'W'.repeat(last - 2)}`,
   ]);
   world.cells.forEach((name, index) => {
-    if (['pipe', 'waterWheel', 'turbine'].includes(name)) world.fluid.water[index] = index >= 4 * world.width ? 1 : 0.5;
+    if (['pipe', 'waterWheel', 'pumpLeft'].includes(name)) world.fluid.water[index] = index >= 4 * world.width ? 1 : 0.5;
   });
   setBlock(world, 0, 1, 'battery');
   return { world, pump: [1, 3], wheels: Array.from({ length: count }, (_, i) => [2 + i, 2]) };
@@ -623,7 +634,9 @@ test('a level ring with no battery, crank or faucet EVER never gets going by its
  * Build a tall loop: a pump lifts water up a pipe on the left, it runs
  * along the top and falls down the right through `count` wheels stacked
  * on one shaft (a real, tall fall), then back along the bottom to the
- * pump. The top wheel turns a generator through `chain`.
+ * pump, through a second pump that points the way the water already
+ * goes (it is there so the wire can cross the loop). The top wheel
+ * turns a generator through `chain`.
  * @param {number} count - how many stacked wheels
  * @param {string} chain - the gears from the top wheel to the generator
  * @param {number} batteries - how many batteries power the pump at first
@@ -639,10 +652,10 @@ function tallLoop(count, chain, batteries) {
   const row = (start) => `${start}${'#'.repeat(last - start.length)}W`;
   const rows = ['W'.repeat(last + 1), row('WPPPP'), `WP##O${chain}`];
   for (let i = 1; i < count; i++) rows.push(row('WP##O'));
-  rows.push(row('W^WWP'), row('#PPTP'), `...${'W'.repeat(last - 2)}`);
+  rows.push(row('W^WWP'), row('#PP<P'), `...${'W'.repeat(last - 2)}`);
   const world = build(rows);
   world.cells.forEach((name, index) => {
-    if (['pipe', 'waterWheel', 'turbine'].includes(name)) world.fluid.water[index] = 1;
+    if (['pipe', 'waterWheel', 'pumpLeft'].includes(name)) world.fluid.water[index] = 1;
   });
   for (let i = 0; i < batteries; i++) setBlock(world, 0, 1 + i, 'battery');
   return { world, pump: [1, count + 2], wheels: Array.from({ length: count }, (_, i) => [4, 2 + i]) };
@@ -1454,4 +1467,110 @@ test('generators that exactly balance the batteries in their loop send no curren
   });
   assert.ok(crankWork < 1e-6, `the cranks turn freely (work ${crankWork})`);
   assert.ok(Math.abs(amps(world, 12, 4)) < 1e-6, `yet ${amps(world, 12, 4)} amps flow through the lamp`);
+});
+
+// =============================================================
+// The turbine: a spinning block turned by rising steam (issue #21)
+// =============================================================
+
+test('a turbine helps the way its gears already go: ↻ by itself, ↺ with a ↺ crank, and two on meshed gears never fight', () => {
+  const alone = more(build(['#CCC#', '#...#', '##T##', '#~~~#', '##b##']), 300);
+  assert.ok(Math.abs(spinAt(alone, 2, 2) - Math.SQRT2) < 0.01, `alone it turns ${spinAt(alone, 2, 2)}`);
+  // A crank on its shaft: the turbine joins in the crank's way, and together they are faster than the crank alone.
+  for (const [crank, way] of [['Q', -1], ['R', 1]]) {
+    const world = more(build(['#CCC#', '#...#', `##T${crank}#`, '#~~~#', '##b##']), 300);
+    assert.ok(way * spinAt(world, 2, 2) > 1.1 * CRANK_SPEED, `with crank ${crank} it turns ${spinAt(world, 2, 2)}`);
+  }
+  // Two turbines whose gears mesh must turn opposite ways. Neither minds: they go as fast as one alone.
+  const pair = more(build(['#CCCCCC#', '#......#', '##TssT##', '##~##~##', '##b##b##']), 300);
+  assert.ok(Math.abs(spinAt(pair, 2, 2) - Math.SQRT2) < 0.01, `the left one turns ${spinAt(pair, 2, 2)}`);
+  assert.ok(Math.abs(spinAt(pair, 5, 2) + Math.SQRT2) < 0.01, `the right one turns ${spinAt(pair, 5, 2)}`);
+  // And it keeps going the way it was going: never a flip from tick to tick.
+  for (let i = 0; i < 40; i++) {
+    more(pair, 1);
+    assert.ok(spinAt(pair, 2, 2) > 1 && spinAt(pair, 5, 2) < -1, `tick ${i}: ${spinAt(pair, 2, 2)}, ${spinAt(pair, 5, 2)}`);
+  }
+});
+
+test('a jammed turbine is marked jammed, and a turbine\'s record says which sides its pipe is open on', () => {
+  // Three big gears in an L can't turn (see the jam test), and the turbine is on their shaft.
+  const world = more(build(['GG', 'GT']), 1);
+  const cell = spinCell(world, 1, 1);
+  assert.equal(cell.jammed, true);
+  assert.equal(cell.speed, 0);
+  assert.deepEqual(cell.sides, ['up', 'down']);
+  assert.equal(spinCell(world, 0, 0).sides, null); // a gear is not a fluid block
+  // The ❌ is drawn on it, and no ❌ on one that is free.
+  /**
+   * How many red squares drawing a turbine with this record paints.
+   * @param {object} record - its spin record
+   * @returns {number} the count
+   */
+  const reds = (record) => {
+    let count = 0;
+    const ctx = { fillStyle: '', fillRect() { if (ctx.fillStyle === '#e53935') count++; } };
+    blockInfo('turbine').drawSignals(ctx, blockInfo('turbine'), 0, 0, 64, record);
+    return count;
+  };
+  assert.ok(reds(cell) > 0);
+  assert.equal(reds({ ...cell, jammed: false }), 0);
+  assert.equal(reds(undefined), 0); // in the palette
+});
+
+test('a turbine has one marked blade, and it is drawn really turning: with its spin record, the right way round', () => {
+  const world = more(build(['#CCC#', '#...#', '##T##', '#~~~#', '##b##']), 100);
+  refreshSignals(world);
+  let handed;
+  const spy = (name) => (name === 'turbine' ? { ...blockInfo(name), drawSignals: (...args) => { handed = args[5]; } } : blockInfo(name));
+  drawWorld({ fillRect() {}, strokeRect() {}, fillText() {}, fillStyle: '', globalAlpha: 1 }, world, 10, spy, '#7ec8ff');
+  assert.ok(handed && handed.speed > 1 && Array.isArray(handed.sides), `the turbine got ${JSON.stringify(handed)}`);
+  const seen = [];
+  for (let i = 0; i < 24; i++) {
+    seen.push(markAngle(world, 2, 2));
+    oneTick(world);
+  }
+  // Turning ↻: the marked blade only ever steps clockwise, an eighth of a turn at a time.
+  const steps = seen.slice(1).map((angle, k) => stepRound(seen[k], angle));
+  assert.ok(steps.every((step) => step >= -1e-9 && step < 0.2), `steps: ${steps}`);
+  assert.ok(steps.some((step) => step > 0.1), 'the marked blade never moved');
+});
+
+test('no steam machine runs without its fire: plant → generator → pump → water wheel → generator → lamp stops when the burner does', () => {
+  // On the left, the steam plant: its generator is wired only to the pump (^).
+  // The pump lifts water out of a pool up a pipe; it runs through a water
+  // wheel (O) and falls into a second basin. The wheel turns a second
+  // generator, wired only to the lamp at the top.
+  const world = build([
+    '#CC#.......',
+    '#..#...WLW.',
+    '#..WWW#WEW.',
+    '##TE.W#PO#.',
+    '##~W.W#P..#',
+    '##bW#WW^W.#',
+    '###W~~~~W.#',
+    '###WWWWWW##',
+  ]);
+  /**
+   * All the water and steam in the world, added together.
+   * @returns {number} the total
+   */
+  const fluid = () => allWater(world) + world.fluid.steam.reduce((sum, amount) => sum + amount, 0);
+  const start = fluid();
+  more(world, 120);
+  assert.ok(spinAt(world, 2, 3) > 0.5, `the turbine turns ${spinAt(world, 2, 3)}`);
+  assert.ok(amps(world, 7, 5) > 0.5, `the pump gets ${amps(world, 7, 5)}`);
+  assert.ok(spinAt(world, 8, 3) > 0.2, `the wheel turns ${spinAt(world, 8, 3)}`);
+  assert.ok(amps(world, 8, 1) > 0.1, `the lamp gets ${amps(world, 8, 1)}`);
+  assert.ok(allWater(world) > 3, 'there is still plenty of water to pump');
+  setBlock(world, 2, 5, 'burnerOff');
+  more(world, 600);
+  for (let i = 0; i < 50; i++) {
+    more(world, 1);
+    assert.equal(turbineSource(world, 2, 3), null, `tick ${i}: the turbine still has push`);
+    assert.equal(spinAt(world, 2, 3), 0, `tick ${i}: the turbine still turns`);
+    assert.ok(amps(world, 7, 5) < 0.01, `tick ${i}: the pump still gets ${amps(world, 7, 5)}`);
+    assert.equal(spinAt(world, 8, 3), 0, `tick ${i}: the wheel still turns`);
+    assert.ok(amps(world, 8, 1) < 0.01, `tick ${i}: the lamp still gets ${amps(world, 8, 1)}`);
+  }
+  assert.ok(Math.abs(fluid() - start) < 1e-6, `water and steam went from ${start} to ${fluid()}`);
 });

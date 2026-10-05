@@ -15,8 +15,8 @@ import lifting from './lifting.js';
 /**
  * Every pack, in the order their systems run each tick. Order matters
  * once packs talk to each other: sand must land BEFORE the electricity
- * is worked out, and water must turn to steam BEFORE the turbine checks
- * for steam, and the winches must know how fast the gears turn BEFORE
+ * is worked out, and steam must rise through the turbine BEFORE the gears are
+ * worked out, and the winches must know how fast the gears turn BEFORE
  * they lift anything:
  *   basic → water → gears → lifting → electric
  */

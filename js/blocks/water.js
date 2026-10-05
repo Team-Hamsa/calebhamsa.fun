@@ -3,34 +3,65 @@
  * drains, burners, chillers, turbines and pumps.
  *
  * fluids.js does the moving; this file says what each block is, runs
- * the fluids every tick, and draws them. It also connects to the ⚡
- * Power pack: a turbine spun by steam is a battery in a circuit, and a
- * pump in a circuit pushes water (lifting it uses up the pump's push:
+ * the fluids every tick, and draws them. It also connects to the other
+ * packs: a turbine spun by rising steam is a spinning block for the ⚙️
+ * Gears pack (it turns a generator, like a water wheel does), and a
+ * pump in a ⚡ circuit pushes water (lifting it uses up the pump's push:
  * see pumpAmount in fluids.js).
  *
  * A steam power plant, like the real ones:
  *
- *    ☁️ steam rises → ⚙️ turbine spins → ⚡ lamp lights
+ *    ☁️ steam rises → turbine spins → ⚙️ generator → ⚡ lamp lights
  *    🔥 burner boils water          ❄️ chiller turns steam back to water
  */
-import { FULL, MIN_AMOUNT, PUMP_ON_LEVEL, drawingSides, showsWaterLevel, stepFluids, waterPicture } from '../fluids.js';
+import { FULL, MIN_AMOUNT, PUMP_ON_LEVEL, RISE_POWER, drawingSides, showsWaterLevel, stepFluids, waterPicture } from '../fluids.js';
 import { swapBlock } from '../world.js';
+import { MARK, drawJam, turned } from './gears.js';
 
 /**
- * How much push a turbine gives for each unit of steam per tick.
- * One burner makes 0.05 steam a tick, so 20 makes it push like one battery.
- * 🧪 Try this! 40: one burner pushes like two batteries.
+ * How fast a turbine turns with nothing to push against, when its steam
+ * rises ONE cell on its way through: the same as a crank, and as a
+ * water wheel whose water falls one cell. Steam that rises further is
+ * going faster when it gets there, so the turbine turns faster too: 4
+ * cells of rise = twice as fast (the square root, like the wheel).
+ * More steam doesn't make it spin faster. It makes it STRONGER.
  */
-export const TURBINE_GAIN = 20;
-
-/** The strongest push a turbine can give (like two batteries). */
-const MAX_TURBINE_PUSH = 2;
+export const TURBINE_SPEED = 1;
 
 /**
- * A turbine's push follows the steam slowly (over about 8 ticks, one
- * second), so lamps fade up and down instead of flickering.
+ * How hard a turbine can push, for each unit of steam going through it
+ * per tick, when that steam rises one cell. One burner (0.05 a tick)
+ * rising one cell makes it as strong as a crank (2). A longer rise
+ * makes it stronger too (4 cells = twice as strong, and twice as fast).
+ *
+ * Like WHEEL_STRENGTH (in gears.js), it isn't a number you can pick
+ * freely: it comes from RISE_POWER (in fluids.js), which says how much
+ * work rising steam can do. A turbine does its most work at half its
+ * top speed (half its strength × half its speed), and that must be
+ * exactly what the steam gave up:
+ *
+ *   strength ÷ 2 × speed ÷ 2 = RISE_POWER × steam × cells risen
+ */
+export const TURBINE_STRENGTH = (4 * RISE_POWER) / TURBINE_SPEED;
+
+/**
+ * A turbine follows the steam slowly (over about 8 ticks, one second),
+ * so it doesn't jitter. Averaging like that never makes energy: over
+ * time it hands on exactly the counts that were made, only spread out.
  */
 const TURBINE_SMOOTHING = 8;
+
+/** A turbine with less steam than this going through it each tick doesn't turn (the same as a water wheel). */
+const MIN_TURBINE_FLOW = 0.0025;
+
+/** Sources slower than this don't drive anything (the same as in gears.js). */
+const MIN_SOURCE = 0.05;
+
+/** A turbine's counts when no steam goes through it (see stepFluids in fluids.js). */
+const NO_STEAM = Object.freeze({ out: 0, gross: 0, work: 0 });
+
+/** Smoothed steam counts smaller than this are dropped (they would shrink for ever and never reach 0). */
+const TURBINE_MIN = 1e-9;
 
 /** Fluid moving less than this in a tick doesn't count as the world changing. */
 export const MOVE_EPSILON = 0.001;
@@ -48,44 +79,64 @@ const PUMP_TURNS = { pumpRight: 'pumpDown', pumpDown: 'pumpLeft', pumpLeft: 'pum
 // =============================================================
 
 /**
- * How hard a turbine pushes right now: its smoothed flow of FRESH steam
- * × TURBINE_GAIN. Steam that has already been through a turbine is used
- * up and doesn't count (see stepFluids in fluids.js): the same steam
- * can't give its push three times, so three turbines one after the
- * other give no more than one. The first one the steam meets gets it.
+ * How a turbine drives (from smoothed counts of the steam going through
+ * it, see stepFluids in fluids.js). It is a water wheel upside down:
+ *
+ *   • How FAR its steam rises says how FAST it tries to turn:
+ *     TURBINE_SPEED for one cell of rise, twice that for four cells.
+ *   • How MUCH steam goes through says how STRONG it is: TURBINE_STRENGTH
+ *     for each unit of steam a tick, and more for a longer rise.
+ *   • Steam leaving out of both ends pushes the blades both ways, and
+ *     that cancels: only the share that goes one way counts.
+ *   • A chimney is its own mirror picture, so steam has no left or
+ *     right: a turbine is always `eitherWay`. It helps whichever way
+ *     its gears are being pushed, keeps going the way it was turning,
+ *     and all by itself turns ↻ (see solveSpin in spin.js).
+ *
+ * "How far it rises" is the energy the steam gave up at the turbine ÷
+ * the steam that went through. So the most work the turbine can do
+ * (half its strength at half its top speed) is at most RISE_POWER × the
+ * energy the steam gave up, and never more. Steam that didn't rise (or
+ * un-squeeze) gives no push, however much of it there is.
+ *
+ * A turbine makes TURNING, not electricity: it needs a generator beside
+ * it. It reads nothing from the circuit.
  * @param {object} world - the world
  * @param {number} x - the turbine's column
  * @param {number} y - the turbine's row
- * @returns {number} the push, in volts (0 to MAX_TURBINE_PUSH)
+ * @returns {{speed: number, strength: number, eitherWay: boolean}|null} its
+ *   top speed and strength, or null if hardly any steam rises through it
  */
-export function turbinePush(world, x, y) {
-  const index = y * world.width + x;
-  const flow = world.signals.water?.turbineFlow?.get(index) ?? 0;
-  return Math.min(MAX_TURBINE_PUSH, flow * TURBINE_GAIN);
+export function turbineSource(world, x, y) {
+  const turbine = world.signals.water?.turbines?.get(y * world.width + x);
+  if (!turbine || turbine.gross <= 0 || turbine.work <= 0) return null;
+  const through = Math.min(turbine.gross, Math.abs(turbine.out)); // less than all of it when it leaves both ways
+  if (through < MIN_TURBINE_FLOW) return null;
+  const rise = turbine.work / turbine.gross;                      // cells risen, for each unit of steam
+  const speed = TURBINE_SPEED * Math.sqrt(rise);
+  if (speed < MIN_SOURCE) return null;
+  return { speed, strength: TURBINE_STRENGTH * through * Math.sqrt(rise), eitherWay: true };
 }
 
 /**
  * Make a record for every fluid block, for drawing: the sides it's
- * drawn with, the steam flowing through it (turbines), and its circuit
- * level (pumps).
+ * drawn with, and its circuit level (pumps).
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
- * @param {Map<number, number>} turbineFlow - smoothed steam flow by cell index
  * @returns {Map<number, object>} records by cell index
  */
-function fluidCells(world, blockInfo, turbineFlow) {
+function fluidCells(world, blockInfo) {
   const cells = new Map();
   world.cells.forEach((name, index) => {
     const info = blockInfo(name);
-    // Spinning blocks (the water wheel) are drawn by the ⚙️ pack with
-    // their spin record, and rope by the 🏗️ pack with its rope record,
-    // so they mustn't get a water record too.
+    // Spinning blocks (the water wheel, the turbine) are drawn with their
+    // spin record from the ⚙️ pack, and rope by the 🏗️ pack with its rope
+    // record, so they mustn't get a water record too.
     if (!info?.fluid || info.spin || info.rope) return;
     const x = index % world.width;
     const y = Math.floor(index / world.width);
     cells.set(index, {
       sides: drawingSides(world, x, y, blockInfo),
-      flow: turbineFlow.get(index) ?? 0,
       level: world.signals.electric?.cells?.get(index)?.level ?? 0,
     });
   });
@@ -100,12 +151,12 @@ function fluidCells(world, blockInfo, turbineFlow) {
  * @returns {void}
  */
 export function refreshWater(world, blockInfo) {
-  const turbineFlow = world.signals.water?.turbineFlow ?? new Map();
+  const turbines = world.signals.water?.turbines ?? new Map();
   // Work out afresh how much water to draw in each cell (see waterPicture).
   const { shown, falling } = waterPicture(world, blockInfo);
   world.signals.water = {
-    cells: fluidCells(world, blockInfo, turbineFlow),
-    turbineFlow,
+    cells: fluidCells(world, blockInfo),
+    turbines,
     shown,
     falling,
   };
@@ -113,32 +164,37 @@ export function refreshWater(world, blockInfo) {
 
 /**
  * The water rule that runs every tick: move the fluids, keep track of
- * the steam spinning each turbine, and say whether anything changed.
- * It never moves blocks, so it returns false; when fluid moved it sets
- * world.fluidChanged (save and redraw), and world.animating for things
- * that move by themselves (flames, spinning turbines).
+ * the steam rising through each turbine, and say whether anything
+ * changed. It never moves blocks, so it returns false; when fluid moved
+ * it sets world.fluidChanged (save and redraw), and world.animating for
+ * things that move by themselves (flames). (Turning turbines are the ⚙️
+ * pack's business: it asks for a redraw while anything turns.)
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @returns {boolean} always false: no blocks moved
  */
 export function waterSystem(world, blockInfo) {
-  const { moved, steamOut, waterOut, waterWork, wheels, sides } = stepFluids(world, blockInfo);
-  const before = world.signals.water?.turbineFlow ?? new Map();
-  const turbineFlow = new Map();
+  const { moved, turbines: counted, waterOut, waterWork, wheels, sides } = stepFluids(world, blockInfo);
+  // Every turbine's counts, smoothed (see TURBINE_SMOOTHING). The ⚙️ pack
+  // reads them through turbineSource when it works out the turning.
+  const before = world.signals.water?.turbines ?? new Map();
+  const turbines = new Map();
   world.cells.forEach((name, index) => {
     if (!blockInfo(name)?.turbine) return;
-    const last = before.get(index) ?? 0;
-    turbineFlow.set(index, last + ((steamOut.get(index) ?? 0) - last) / TURBINE_SMOOTHING);
+    const last = before.get(index) ?? NO_STEAM;
+    const now = counted.get(index) ?? NO_STEAM;
+    const turbine = {};
+    for (const key of Object.keys(NO_STEAM)) turbine[key] = last[key] + (now[key] - last[key]) / TURBINE_SMOOTHING;
+    if (turbine.gross >= TURBINE_MIN) turbines.set(index, turbine);
   });
   // `wheels` is kept for the ⚙️ pack: water flowing through a water wheel
   // turns it, and the energy the water gives up there is its strength.
   const { shown, falling } = waterPicture(world, blockInfo, sides);
   world.signals.water = {
-    cells: fluidCells(world, blockInfo, turbineFlow), turbineFlow, waterOut, waterWork, wheels, shown, falling,
+    cells: fluidCells(world, blockInfo), turbines, waterOut, waterWork, wheels, shown, falling,
   };
   if (moved > MOVE_EPSILON) world.fluidChanged = true;
-  const spinning = [...turbineFlow.values()].some((flow) => flow > MIN_AMOUNT);
-  if (moved > MOVE_EPSILON || spinning || world.cells.includes('burnerOn')) world.animating = true;
+  if (moved > MOVE_EPSILON || world.cells.includes('burnerOn')) world.animating = true;
   return false;
 }
 
@@ -212,28 +268,41 @@ function drawValve(ctx, info, left, top, size, cell) {
 }
 
 /**
- * Draw a turbine: a pipe with fan blades that turn faster with more steam.
+ * Draw a turbine: a pipe with four fan blades that really turn (one has
+ * a yellow tip, so you can see which way and how fast), and a little
+ * shaft end on each closed side, where a generator or a gear joins on.
+ * A jammed turbine gets a red ❌.
  * @param {CanvasRenderingContext2D} ctx - the canvas paintbrush
  * @param {object} info - the block's definition
  * @param {number} left - the cell's left edge
  * @param {number} top - the cell's top edge
  * @param {number} size - the cell's size
- * @param {object|undefined} cell - the cell's water record
- * @param {number} ticks - the world's clock
+ * @param {object|undefined} cell - its spin record (from spin.js: `sides` are its pipe's open sides)
  * @returns {void}
  */
-function drawTurbine(ctx, info, left, top, size, cell, ticks) {
+function drawTurbine(ctx, info, left, top, size, cell) {
   const p = size / 8;
-  drawPipe(ctx, info, left, top, size, cell ?? { sides: ['up', 'down'] });
-  const speed = Math.min(1, (cell?.flow ?? 0) * TURBINE_GAIN);
-  const turn = Math.floor(ticks * speed) % 2; // two blade positions: + and ×
+  const sides = cell?.sides ?? ['up', 'down'];
+  drawPipe(ctx, info, left, top, size, { sides });
+  // The shaft ends, on the sides the pipe doesn't use.
+  ctx.fillStyle = '#424242';
+  const stubs = { up: [3.5, 0], right: [7, 3.5], down: [3.5, 7], left: [0, 3.5] };
+  for (const [side, [x, y]] of Object.entries(stubs)) {
+    if (!sides.includes(side)) ctx.fillRect(left + x * p, top + y * p, p, p);
+  }
+  const eighth = Math.floor(turned(cell) * 8); // 8 positions: 0 = up, then clockwise
   ctx.fillStyle = '#eceff1';
-  const blades = turn === 0
+  const blades = eighth % 2 === 0
     ? [[3.5, 1.5], [3.5, 5.5], [1.5, 3.5], [5.5, 3.5]]
     : [[2, 2], [5, 2], [2, 5], [5, 5]];
   for (const [x, y] of blades) ctx.fillRect(left + x * p, top + y * p, p, p);
+  // One blade has a yellow tip, like the gears' yellow tooth.
+  const [tipX, tipY] = [[3.5, 1.5], [5, 2], [5.5, 3.5], [5, 5], [3.5, 5.5], [2, 5], [1.5, 3.5], [2, 2]][eighth];
+  ctx.fillStyle = MARK;
+  ctx.fillRect(left + tipX * p, top + tipY * p, p, p);
   ctx.fillStyle = '#546e7a';
   ctx.fillRect(left + 3.5 * p, top + 3.5 * p, p, p); // the hub
+  if (cell?.jammed) drawJam(ctx, left, top, size);
 }
 
 /**
@@ -356,6 +425,7 @@ function drawChiller(ctx, info, left, top, size) {
 export function drawWaterLayer(ctx, world, size) {
   const { water, steam } = world.fluid;
   const records = world.signals.water?.cells ?? new Map();
+  const spinning = world.signals.spin?.cells; // a turbine's record is kept by the ⚙️ pack
   const shown = world.signals.water?.shown;
   const falling = world.signals.water?.falling;
   for (let index = 0; index < world.cells.length; index++) {
@@ -366,8 +436,8 @@ export function drawWaterLayer(ctx, world, size) {
     if (!wet && !steamy) continue;
     const left = (index % world.width) * size;
     const top = Math.floor(index / world.width) * size;
-    const record = records.get(index);
-    if (record) {
+    const record = records.get(index) ?? (blocks[world.cells[index]]?.turbine ? spinning?.get(index) : undefined);
+    if (record?.sides) {
       ctx.globalAlpha = 0.3 + 0.7 * Math.min(1, level + steam[index]);
       ctx.fillStyle = wet ? WATER_COLOR : STEAM_COLOR;
       drawArms(ctx, left, top, size, record.sides, 4);
@@ -442,6 +512,7 @@ function pump(direction, hidden) {
  *   pours     not a block: BUILD pours a full cell of this fluid
  *   fluid     lets water through: which sides, and if it's a closed valve or a pump
  *   faucet / drains / burns / chills / turbine   the special jobs (see fluids.js)
+ *   spin, spinSource   the turbine is a spinning block too (see turbineSource, and spin.js)
  *   hidden    not in the palette (you get it with ✋)
  * 🧪 Try this! Change the burner's color to '#1565c0' for a blue-flame burner.
  */
@@ -460,7 +531,7 @@ const blocks = {
   turbine: {
     title: 'Turbine', color: '#78909c', bare: true, turbine: true,
     fluid: { sides: 'axis', prefer: 'v' },
-    part: { resistance: 0.05, pushNow: turbinePush },
+    spin: { kind: 'hub' }, spinSource: turbineSource,
     drawSignals: drawTurbine,
   },
   pumpRight: pump('right', false),
@@ -484,7 +555,7 @@ const guide = {
     'Water and steam are real amounts: a cell can be full, half full or nearly empty. Water never appears or disappears by itself. Build a block in water and the water is pushed out of the way: the level goes UP. Only DIG and drains take water away.',
     'Water falls and spreads out. Deep water pushes UP through pipes and U-tubes.',
     'Water is drawn as tall as there is water: pour 10 cells into a shaft and it stands 10 cells tall. Falling water is a stream as wide as there is water: a trickle looks like a trickle. One tap of DIG takes one scoop, a full cell at the most. You can\'t pour into a cell that already looks full: pour just above the water.',
-    'Steam is the opposite: it rises and spreads out under ceilings.',
+    'Steam is the opposite: it rises and spreads out under ceilings. Steam has to RISE to give its push, like water has to fall.',
     'Water has to FALL to give its push. High water can turn a wheel on its way down. Water lying level has no push left.',
     'Lifting water uses up a pump\'s push. The higher the water has to go, the slower the pump lifts it, and at some height it is too heavy and stops. More batteries lift higher AND faster: one battery lifts about 5 blocks.',
   ],
@@ -497,7 +568,7 @@ const guide = {
     drain: { does: 'Water that flows into it disappears.' },
     burnerOn: { does: 'Boils the water just above it into steam.', use: 'on ↔ off' },
     chiller: { does: 'Very cold: steam touching it turns back into water. It rains!' },
-    turbine: { does: 'A fan in a pipe. Steam rushing through spins it and makes electricity: wire it up like a battery. Steam only gives its push once: a second turbine further along the same steam gets nothing.' },
+    turbine: { does: 'A fan in a pipe. Steam rising through it spins it. It makes TURNING, not electricity: put a generator (⚙️ tab) beside it and wire the generator to a lamp. More steam = stronger. A taller chimney under it = faster and stronger. If the steam has nowhere to go, it stops.' },
     pumpRight: {
       does: 'Uses electricity to push water the way its arrow points, even uphill. Wire it into a loop with a battery. Uphill is hard work: the higher, the slower. If the water stops part way up, add a battery.',
       use: 'turns it: → ↓ ← ↑',

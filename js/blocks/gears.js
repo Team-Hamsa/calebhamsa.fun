@@ -7,6 +7,7 @@
  * It joins the other packs together:
  *
  *    💧 water → water wheel → gears → generator → ⚡ lamp
+ *    ☁️ steam → turbine (in the 💧 pack) → generator → ⚡ lamp
  *    ⚡ battery → motor → gears
  *
  * Nothing spins forever by itself: a generator gives back a little less
@@ -14,6 +15,8 @@
  * generator slows down and stops. Real machines lose energy too. The
  * same goes for water: a wheel only gets the push of water that FALLS
  * (WHEEL_STRENGTH), and a pump spends more than that lifting it back up.
+ * And for steam: a turbine only gets the push of steam that RISES
+ * (TURBINE_STRENGTH in water.js), and only a burner makes steam.
  */
 import { solveSpin, MIN_SPEED } from '../spin.js';
 import { swapBlock } from '../world.js';
@@ -129,8 +132,8 @@ export const TICKS_PER_SECOND = 8;
  */
 const DRAW_SLOWDOWN = 4;
 
-/** The color of the one marked tooth on a gear, and the one marked paddle on a water wheel. */
-const MARK = '#ffd54f';
+/** The color of the one marked tooth on a gear, the one marked paddle on a water wheel, and the one marked blade of a turbine. */
+export const MARK = '#ffd54f';
 
 /** The order a crank goes through when you tap it with ✋. */
 const CRANK_TURNS = { crankStop: 'crankCW', crankCW: 'crankCCW', crankCCW: 'crankStop' };
@@ -182,7 +185,7 @@ export function generatorPush(world, x, y) {
  *     gears. Those all turn together, so their share grows with this
  *     generator's speed. Three generators in a row on one crank each
  *     feel the current all three make: three times as hard to turn.
- *   • what batteries and turbines push through it, and generators on
+ *   • what batteries push through it, and generators on
  *     OTHER gears (spin.js tells us how fast those turn right now). That
  *     share is there even when this generator stands still.
  *
@@ -255,7 +258,7 @@ export function generatorBrake(world, x, y, group) {
  * On the tick its wiring changes (a clicker closes, a switch is
  * flipped, a wire is added) the generators can't ADD anything yet: they
  * may have been spinning freely with nothing to push against. The motor
- * gets what batteries and turbines send it, less whatever the
+ * gets what batteries send it, less whatever the
  * generators HOLD BACK of that (a generator pushing against a battery).
  * (Without the first rule, a clicker would hand a motor a tick of free
  * electricity on every beat. Without the second, it would hand it a
@@ -292,7 +295,7 @@ export function motorSource(world, x, y, members) {
   const cell = world.signals.electric?.cells?.get(index);
   if (!cell) return null;
   // With a generator in its circuit, it uses the current generatorFeed
-  // allows it. With only batteries and turbines: all that flows.
+  // allows it. With only batteries: all that flows.
   const out = cell.perVolt ? world.signals.spin?.fed?.get(index) ?? 0 : cell.arms[plusSide(cell.axis)] ?? 0;
   // The real current, not `level` (that stops at MAX_LEVEL, only so lamps
   // don't get too bright): five batteries make a motor five times as strong.
@@ -418,7 +421,7 @@ function generatorWiring(world) {
  * motor turns by it: see motorSource).
  *
  * The current that really flows out of the part's + end is what the
- * batteries and turbines send (`fixed`) plus what the generators sent at
+ * batteries send (`fixed`) plus what the generators sent at
  * the speeds they turned on the last tick: the very current their shafts
  * were pushed back for (see generatorBrake). We work that out from those
  * speeds exactly, not from the circuit's rounded pushes (see roundPush
@@ -431,13 +434,13 @@ function generatorWiring(world) {
  *     up or down. Averaging like that never makes current: over time it
  *     hands on exactly the current that flowed, only spread out.
  *   • On the tick its wiring changes (a clicker closes) it starts again:
- *     it gets what the batteries and turbines send, LESS whatever the
+ *     it gets what the batteries send, LESS whatever the
  *     generators hold back of that (a generator pushing against a
  *     battery), down to nothing and no further. Current the generators
  *     would ADD starts from the next tick: it hasn't been paid for yet.
  *
  * So on a rewired tick a part never gets more current than is flowing,
- * and all of it was paid for by a battery or a turbine.
+ * and all of it was paid for by a battery.
  * @param {object} world - the world
  * @param {Map<number, number>|undefined} before - the current each part used on the last tick
  * @param {Set<number>} rewired - the parts whose wiring changed this tick (from rewiredParts)
@@ -639,7 +642,7 @@ function drawGear(ctx, info, left, top, size, cell) {
  * @param {number} size - the cell's size
  * @returns {void}
  */
-function drawJam(ctx, left, top, size) {
+export function drawJam(ctx, left, top, size) {
   const p = size / 8;
   ctx.fillStyle = '#e53935';
   for (let k = 1; k < 7; k++) {
@@ -863,12 +866,12 @@ const blocks = {
  */
 const guide = {
   rules: [
-    'Gears that touch turn OPPOSITE ways. Things on the same shaft (an axle, or a crank, wheel, motor or generator touching a gear) turn the SAME way.',
+    'Gears that touch turn OPPOSITE ways. Things on the same shaft (an axle, or a crank, wheel, turbine, motor or generator touching a gear) turn the SAME way.',
     'Jammed! Three big gears touching in an L can\'t turn: each would have to turn both ways at once. They show a red ❌.',
     'Everything that turns has a top speed and a strength. The harder it pushes, the slower it goes. Two on the same gears add their strength.',
     'Gears change speed, not power: they can make things faster or stronger, never both.',
     'Generators push back: the more lamps they light, the harder they are to turn. With nothing wired up they spin freely. Joined by plain wire (a short circuit) they are very hard to turn, until you take the wire away. Generators wired in a row each feel all the current they make together.',
-    'Nothing runs forever. A motor powered by its own generator slows down and stops, like a real one. So does a pump that lifts water for the water wheels that power it: lifting the water costs more than its fall gives back.',
+    'Nothing runs forever. A motor powered by its own generator slows down and stops, like a real one. So does a pump that lifts water for the water wheels that power it: lifting the water costs more than its fall gives back. A steam plant stops when its burner does.',
   ],
   blocks: {
     gearSmall: { does: '8 teeth. Turns the gears next to it the other way. Follow its yellow tooth to see which way it turns, and how fast.' },

@@ -16,7 +16,7 @@
  * JAMMED and nothing in it turns.
  *
  * HOW FAST a group turns works like real machines. Every source (a crank,
- * motor or water wheel) has two numbers:
+ * motor, water wheel or turbine) has two numbers:
  *
  *   speed      how fast it turns with nothing to push against
  *   strength   how hard it can push (its "torque") before it stops
@@ -65,6 +65,7 @@
  */
 import { getBlock, inBounds } from './world.js';
 import { partAxis } from './circuit.js';
+import { drawingSides } from './fluids.js';
 
 /** Which way each side is: [dx, dy]. y counts DOWN, so up is -1. */
 const STEP = { up: [0, -1], right: [1, 0], down: [0, 1], left: [-1, 0] };
@@ -376,6 +377,8 @@ function leap(groups, speeds, from, moved, last) {
  *   axis      for axles: the way it faces
  *   partAxis  for blocks that are also electric parts (motors,
  *             generators): the way they face in a circuit
+ *   sides     for blocks that are also fluid blocks (water wheels,
+ *             turbines): the sides fluid goes in and out by, for drawing
  *
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
@@ -479,12 +482,11 @@ export function solveSpin(world, blockInfo) {
       }
     }
     // A source marked `eitherWay` (a water wheel with water falling dead
-    // straight through it) helps whichever way its gears go. Which way is
+    // straight through it, or a turbine) helps whichever way its gears go. Which way is
     // that? We ask, in this order:
     //   1. the other sources with a mind of their own (a crank, a wheel
     //      with water coming off one side, a motor that runs on
-    //      batteries or turbines alone): it joins
-    //      in the way they push. So two wheels on one shaft never fight,
+    //      batteries alone): it joins in the way they push. So two wheels on one shaft never fight,
     //      and a mirrored build works the same.
     //   2. the way it was already turning: a turning wheel keeps going.
     //      A source marked `echo` (a motor with a generator's current
@@ -664,6 +666,7 @@ export function solveSpin(world, blockInfo) {
         driven: slowing > 0,
         axis: point.axis,
         partAxis: point.info.part ? partAxis(world, point.x, point.y, blockInfo) : null,
+        sides: point.info.fluid ? drawingSides(world, point.x, point.y, blockInfo) : null,
       });
     }
   }

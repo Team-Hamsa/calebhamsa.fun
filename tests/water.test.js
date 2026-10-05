@@ -1,21 +1,34 @@
 /**
  * water.test.js — checks the 💧 pack with the real blocks: flipping
- * valves, burners and pumps, the palette, a steam power plant lighting a
- * lamp, and a battery-powered pump pushing water uphill.
+ * valves, burners and pumps, the palette, a steam power plant (burner →
+ * turbine → generator → lamp) and its energy books, and a
+ * battery-powered pump pushing water uphill.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, getBlock, getFluid, setBlock, setFluid, tick } from '../js/world.js';
 import { allSystems, blockInfo, blocksInPack, isKnownBlock } from '../js/blocks/registry.js';
-import { partAxis } from '../js/circuit.js';
-import { openSides } from '../js/fluids.js';
-import water, { turbinePush } from '../js/blocks/water.js';
+import { BOIL_RATE, DROP_POWER, RISE_POWER, openSides } from '../js/fluids.js';
+import water, * as waterPack from '../js/blocks/water.js';
+import { GENERATOR_GAIN, GENERATOR_TORQUE, spinAt } from '../js/blocks/gears.js';
+
+const { TURBINE_SPEED, TURBINE_STRENGTH, turbineSource } = waterPack;
 
 /** What each letter in a test picture means. `~` is air full of water. */
 const LETTERS = {
   '.': 'air', '~': 'air', '#': 'stone', W: 'wire', L: 'lamp', B: 'battery',
-  F: 'burnerOn', T: 'turbine', '^': 'pumpUp', P: 'pipe', C: 'chiller',
+  F: 'burnerOn', T: 'turbine', '^': 'pumpUp', P: 'pipe', C: 'chiller', E: 'generator',
 };
+
+/** The steam power plant from the wiki: turbine at (2, 3), generator beside it, lamp at (5, 3). */
+const PLANT = [
+  '#CC#...',
+  '#..#...',
+  '#..WWW.',
+  '##TE.L.',
+  '##~WWW.',
+  '##F###.',
+];
 
 /**
  * Build a world from a picture, one string per row.
@@ -73,29 +86,184 @@ test('✋ flips valves and burners, and turns pumps round, without spilling', ()
   assert.deepEqual(turns, ['pumpDown', 'pumpLeft', 'pumpUp', 'pumpRight']);
 });
 
-test('a turbine faces two ways: steam goes up through it, wires leave it sideways', () => {
+/**
+ * Run a world for some ticks with every pack's rules.
+ * @param {object} world - the world
+ * @param {number} ticks - how many
+ * @returns {object} the world
+ */
+function run(world, ticks) {
+  const systems = allSystems();
+  for (let i = 0; i < ticks; i++) tick(world, systems, blockInfo);
+  return world;
+}
+
+/**
+ * How bright the lamp (or other part) at x, y is.
+ * @param {object} world - the world
+ * @param {number} x - column
+ * @param {number} y - row
+ * @returns {number} its level (0 = dark)
+ */
+const levelAt = (world, x, y) => world.signals.electric?.cells?.get(y * world.width + x)?.level ?? 0;
+
+/**
+ * A turbine's smoothed steam count.
+ * @param {object} world - the world
+ * @param {number} x - column
+ * @param {number} y - row
+ * @returns {{out: number, gross: number, work: number}} the count (all 0 with no steam)
+ */
+const countAt = (world, x, y) => world.signals.water?.turbines?.get(y * world.width + x) ?? { out: 0, gross: 0, work: 0 };
+
+/**
+ * The power all the lamps in a world use: each one's current, squared (a lamp's resistance is 1).
+ * @param {object} world - the world
+ * @returns {number} the power
+ */
+function lampPower(world) {
+  let power = 0;
+  for (const [index, cell] of world.signals.electric?.cells ?? []) {
+    if (world.cells[index] === 'lamp') power += (cell.current ?? 0) ** 2;
+  }
+  return power;
+}
+
+test('a turbine lets steam through one way and is not a circuit part: it is a spinning block', () => {
   const world = worldFrom(['...', 'WTW', '...']);
   assert.deepEqual(openSides(world, 1, 1, blockInfo), ['up', 'down']);
-  assert.equal(partAxis(world, 1, 1, blockInfo), 'h');
+  const info = blockInfo('turbine');
+  assert.equal(info.part, undefined);
+  assert.deepEqual(info.spin, { kind: 'hub' });
+  assert.equal(info.spinSource, turbineSource);
+  for (const gone of ['turbinePush', 'TURBINE_GAIN', 'MAX_TURBINE_PUSH']) assert.equal(waterPack[gone], undefined, `${gone} should be gone`);
 });
 
-test('a steam power plant lights a lamp: burner → steam → turbine → ⚡', () => {
+test('the turbine\'s books: its best work is exactly what its steam gave up, and steam is worth what water is', () => {
+  assert.equal(RISE_POWER, DROP_POWER);
+  for (const flow of [0.01, 0.05, 0.3]) {
+    assert.ok(Math.abs((TURBINE_STRENGTH * flow) / 2 * (TURBINE_SPEED / 2) - RISE_POWER * flow) < 1e-12);
+  }
+  // And with real counts: half its strength at half its top speed is never more than RISE_POWER × work.
+  const world = run(worldFrom(PLANT), 400);
+  const source = turbineSource(world, 2, 3);
+  const { work } = countAt(world, 2, 3);
+  assert.ok((source.strength / 2) * (source.speed / 2) <= RISE_POWER * work + 1e-9);
+  assert.equal(source.eitherWay, true);
+});
+
+test('a steam power plant lights a lamp: burner → steam → turbine → generator → ⚡', () => {
+  const world = worldFrom(PLANT);
+  let brightest = 0;
+  for (let i = 0; i < 40; i++) {
+    run(world, 1);
+    brightest = Math.max(brightest, levelAt(world, 5, 3));
+  }
+  assert.ok(brightest > 0.5, `the lamp only reached ${brightest.toFixed(3)}`);
+  run(world, 360);
+  const level = levelAt(world, 5, 3);
+  assert.ok(level > 0.7 && level < 0.9, `after 400 ticks the lamp is at ${level}`);
+  assert.ok(spinAt(world, 2, 3) > 0.5, 'the turbine turns');
+  assert.equal(spinAt(world, 3, 3), spinAt(world, 2, 3), 'and the generator turns with it');
+  // It holds steady: no flicker.
+  for (let i = 0; i < 50; i++) {
+    run(world, 1);
+    assert.ok(Math.abs(levelAt(world, 5, 3) - level) < 1e-6, `tick ${400 + i}: the lamp went from ${level} to ${levelAt(world, 5, 3)}`);
+  }
+});
+
+test('a turbine wired straight to a lamp lights nothing: it needs a generator', () => {
+  // The plant from before the turbine became a spinning block: wires on the turbine's sides.
   const world = worldFrom([
     'WWWLWWW',
-    'W.....W',
+    'W....CW',
     'WWWTWWW',
     '###~###',
     '###F###',
     '#######',
   ]);
-  const systems = allSystems();
-  let brightest = 0;
-  for (let i = 0; i < 40; i++) {
-    tick(world, systems, blockInfo);
-    brightest = Math.max(brightest, world.signals.electric.cells.get(3).level);
+  for (let i = 0; i < 400; i++) {
+    run(world, 1);
+    assert.equal(levelAt(world, 3, 0), 0, `tick ${i}: the lamp lit`);
+    for (const cell of world.signals.electric.cells.values()) assert.ok(!cell.spark, `tick ${i}: something sparked`);
   }
-  assert.ok(brightest > 0.5, `the lamp only reached ${brightest.toFixed(3)}`);
-  assert.ok(turbinePush(world, 3, 2) > 0); // still spinning from the steam
+  assert.ok(spinAt(world, 3, 2) > 0.5, 'the turbine still spins in the steam');
+});
+
+test('more lamps are harder to turn: the turbine slows, each lamp is dimmer, and the lamps never get more than 8 tenths of what the steam gave up', () => {
+  /**
+   * The plant with some lamps side by side.
+   * @param {number} lamps - how many
+   * @returns {{speed: number, level: number, power: number, steam: number}} the turbine's speed, one
+   *   lamp's level, all the lamps' power, and the work the steam gives up at the turbine each tick × RISE_POWER
+   */
+  const plant = (lamps) => {
+    const world = run(worldFrom([
+      `#CC#${'..'.repeat(lamps)}.`,
+      `#..#${'..'.repeat(lamps)}.`,
+      `#..W${'WW'.repeat(lamps)}.`,
+      `##TE${'.L'.repeat(lamps)}.`,
+      `##~W${'WW'.repeat(lamps)}.`,
+      `##F#${'##'.repeat(lamps)}.`,
+    ]), 400);
+    return { speed: spinAt(world, 2, 3), level: levelAt(world, 5, 3), power: lampPower(world), steam: RISE_POWER * countAt(world, 2, 3).work };
+  };
+  let last = { speed: Infinity, level: Infinity };
+  for (const lamps of [1, 2, 4, 8]) {
+    const now = plant(lamps);
+    const what = `${lamps} lamps: ${JSON.stringify(now)}`;
+    assert.ok(now.speed > 0.1 && now.speed < last.speed - 0.05, `${what} is not slower than ${last.speed}`);
+    assert.ok(now.level > 0.1 && now.level < last.level - 0.05, `${what} is not dimmer than ${last.level}`);
+    assert.ok(now.power <= (GENERATOR_GAIN / GENERATOR_TORQUE) * now.steam + 1e-9, `${what}: the lamps got more than 8 tenths of the steam's work`);
+    assert.ok(Math.abs(now.steam - 1) < 0.01, `${what}: the steam gives the same however many lamps there are`);
+    last = now;
+  }
+});
+
+test('more burners make a turbine stronger, not faster', () => {
+  /**
+   * Two pots under one turbine, with a burner under one or both.
+   * @param {string} burners - the bottom row
+   * @returns {{speed: number, strength: number}} the turbine as a source
+   */
+  const source = (burners) => turbineSource(run(worldFrom(['#CCC#', '#...#', '##T##', '#...#', '#~#~#', burners]), 400), 2, 2);
+  const one = source('#F###');
+  const two = source('#F#F#');
+  assert.ok(Math.abs(two.speed - one.speed) < 0.05 * one.speed, `speeds ${one.speed} and ${two.speed}`);
+  assert.ok(two.strength > 1.8 * one.strength && two.strength < 2.2 * one.strength, `strengths ${one.strength} and ${two.strength}`);
+});
+
+test('nowhere for the steam to go: in a sealed box the turbine stops and the lamp goes dark', () => {
+  const world = run(worldFrom(PLANT.map((row) => row.replace('CC', '##'))), 2000);
+  assert.equal(turbineSource(world, 2, 3), null);
+  assert.equal(spinAt(world, 2, 3), 0);
+  assert.equal(levelAt(world, 5, 3), 0);
+});
+
+test('burner off: the plant winds down and stays down', () => {
+  const world = run(worldFrom(PLANT), 300);
+  assert.ok(levelAt(world, 5, 3) > 0.7);
+  use(world, 2, 5);
+  assert.equal(getBlock(world, 2, 5), 'burnerOff');
+  run(world, 300);
+  for (let i = 0; i < 50; i++) {
+    run(world, 1);
+    assert.equal(spinAt(world, 2, 3), 0, `tick ${i}: the turbine still turns`);
+    assert.equal(levelAt(world, 5, 3), 0, `tick ${i}: the lamp is still lit`);
+  }
+});
+
+test('lying down a turbine is feeble: steam in a level duct hardly rises at all', () => {
+  const world = run(worldFrom(['######', '#~TP.C', '#F####']), 400);
+  const source = turbineSource(world, 2, 1);
+  assert.ok(source === null || (source.speed < 0.3 && source.strength < 1), JSON.stringify(source));
+});
+
+test('a mirrored plant works just the same', () => {
+  const world = run(worldFrom(PLANT), 400);
+  const mirror = run(worldFrom(PLANT.map((row) => [...row].reverse().join(''))), 400);
+  assert.ok(Math.abs(spinAt(world, 2, 3) - spinAt(mirror, 4, 3)) < 1e-9, `${spinAt(world, 2, 3)} and ${spinAt(mirror, 4, 3)}`);
+  assert.ok(Math.abs(levelAt(world, 5, 3) - levelAt(mirror, 1, 3)) < 1e-9);
 });
 
 test('a battery-powered pump pushes water uphill; without power it does not', () => {
@@ -161,44 +329,60 @@ test('sand sinks through water: they trade places and no water is lost', () => {
 
 /**
  * Build a steam plant with some turbines stacked in one chimney over ONE
- * burner, run it until the steam is steady, and read each turbine's push.
+ * burner, run it until the steam is steady, and read the work the steam
+ * gives up at each turbine every tick.
  * @param {string[]} chimney - the rows between the top chamber and the pot, like ['##T##', '##T##']
- * @returns {number[]} each turbine's push, in volts, top first
+ * @returns {number[]} each turbine's work a tick, top first
  */
-function plantPushes(chimney) {
-  const world = worldFrom(['#CCC#', '#...#', ...chimney, '#~~~#', '##F##']);
-  const systems = allSystems();
-  for (let i = 0; i < 400; i++) tick(world, systems, blockInfo);
-  return chimney.map((row, i) => (row.includes('T') ? turbinePush(world, 2, 2 + i) : null)).filter((push) => push !== null);
+function plantWork(chimney) {
+  const world = run(worldFrom(['#CCC#', '#...#', ...chimney, '#~~~#', '##F##']), 400);
+  return chimney.map((row, i) => (row.includes('T') ? countAt(world, 2, 2 + i).work : null)).filter((work) => work !== null);
 }
 
-test('steam only gives its push once: turbines one after the other on the same steam give no more push than one, however they are joined', () => {
-  const [one] = plantPushes(['##T##']);
-  assert.ok(one > 0.5, `one turbine pushes ${one}`);
+test('turbines in one chimney share what the steam gives up: together they get its whole rise, and never more', () => {
+  const R = BOIL_RATE; // one burner's steam, rising one cell
   const chimneys = [
-    ['##T##', '##T##'], ['##T##', '##T##', '##T##'], ['##T##', '##P##', '##T##'], ['##T##', '##.##', '##T##'],
-    ['##T##', '#...#', '##T##'],                       // a wide room between them
-    ['##T##', '##PP#', '##T##'],                       // a pipe with a dead-end stub between them
-    ['##T##', '#...#', '##T##', '#...#', '##T##'],
+    [['##T##'], [2 * R]],
+    [['##T##', '##T##'], [R, 2 * R]],
+    [['##T##', '##T##', '##T##'], [R, R, 2 * R]],
+    [['##T##', '##P##', '##T##'], [2 * R, 2 * R]],
+    [['##T##', '##.##', '##T##'], [2 * R, 2 * R]],
+    [['##T##', '#...#', '##T##'], [2 * R, 2 * R]],                       // a wide room between them
+    [['##T##', '##PP#', '##T##'], [2 * R, 2 * R]],                       // a pipe with a dead-end stub between them
+    [['##T##', '#...#', '##T##', '#...#', '##T##'], [2 * R, 2 * R, 2 * R]],
+    [['##T##', '##P##', '##P##', '##P##'], [5 * R]],                     // at the top of a tall chimney: the whole rise
   ];
-  for (const chimney of chimneys) {
-    const pushes = plantPushes(chimney);
-    const together = pushes.reduce((sum, push) => sum + push, 0);
-    assert.ok(together <= one + 0.01, `${chimney.join('/')}: ${pushes} adds up to more than one turbine's ${one}`);
-    assert.ok(together > one * 0.8, `${chimney.join('/')}: ${pushes} adds up to much less than ${one}`);
-    // The turbine the steam meets first (the lowest) gets the push; the steam has none left for the others.
-    assert.ok(pushes.at(-1) > one * 0.8, `${chimney.join('/')}: the first turbine only gets ${pushes.at(-1)}`);
-    for (const push of pushes.slice(0, -1)) assert.ok(push < 0.05, `${chimney.join('/')}: used steam pushed again: ${pushes}`);
+  for (const [chimney, expected] of chimneys) {
+    const works = plantWork(chimney);
+    const together = works.reduce((sum, work) => sum + work, 0);
+    const wholeRise = R * (chimney.length + 1); // from the pot up to just above the top turbine
+    const what = `${chimney.join('/')}: ${works}`;
+    assert.ok(together <= wholeRise + 1e-9, `${what} adds up to more than the steam's whole rise, ${wholeRise}`);
+    assert.ok(together > wholeRise - 0.005, `${what} adds up to less than the steam's whole rise, ${wholeRise}`);
+    works.forEach((work, i) => assert.ok(Math.abs(work - expected[i]) < 0.005, `${what}, expected ${expected}`));
   }
 });
 
-test('turbines side by side in their own chimneys each keep all the push of their own steam', () => {
-  const world = worldFrom(['#CCCCC#', '#.....#', '##T#T##', '#~~~~~#', '##F#F##']);
-  const systems = allSystems();
-  for (let i = 0; i < 400; i++) tick(world, systems, blockInfo);
-  const [one] = plantPushes(['##T##']);
-  assert.ok(Math.abs(turbinePush(world, 2, 2) - one) < 0.1, `left pushes ${turbinePush(world, 2, 2)}, one alone ${one}`);
-  assert.ok(Math.abs(turbinePush(world, 4, 2) - turbinePush(world, 2, 2)) < 1e-9);
+test('a taller chimney under a turbine makes it faster and stronger; at the bottom of the chimney it gets only its own two cells', () => {
+  const R = BOIL_RATE;
+  const [low] = plantWork(['##T##']);
+  const [high] = plantWork(['##T##', '##P##', '##P##', '##P##']);
+  const [bottom] = plantWork(['##P##', '##P##', '##P##', '##T##']);
+  assert.ok(Math.abs(low - 2 * R) < 0.005 && Math.abs(high - 5 * R) < 0.005, `low ${low}, high ${high}`);
+  assert.ok(Math.abs(bottom - 2 * R) < 0.005, `at the bottom it got ${bottom}: the rest of the rise is thrown away`);
+  const tall = run(worldFrom(['#CCC#', '#...#', '##T##', '##P##', '##P##', '##P##', '#~~~#', '##F##']), 400);
+  const short = run(worldFrom(['#CCC#', '#...#', '##T##', '#~~~#', '##F##']), 400);
+  const a = turbineSource(short, 2, 2);
+  const b = turbineSource(tall, 2, 2);
+  assert.ok(b.speed > 1.4 * a.speed, `speeds ${a.speed} and ${b.speed}`);
+  assert.ok(b.strength > 1.4 * a.strength, `strengths ${a.strength} and ${b.strength}`);
+});
+
+test('turbines side by side in their own chimneys each get all the push of their own steam', () => {
+  const world = run(worldFrom(['#CCCCC#', '#.....#', '##T#T##', '#~~~~~#', '##F#F##']), 400);
+  const [one] = plantWork(['##T##']);
+  assert.ok(Math.abs(countAt(world, 2, 2).work - one) < 0.005, `left gets ${countAt(world, 2, 2).work}, one alone ${one}`);
+  assert.ok(Math.abs(countAt(world, 4, 2).work - countAt(world, 2, 2).work) < 1e-9);
 });
 
 test('falling water is drawn as a stream as wide as there is water; lying water as a pool as deep as there is water', () => {

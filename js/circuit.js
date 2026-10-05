@@ -15,7 +15,7 @@
  * This file knows nothing about which blocks exist. It only reads the
  * fields blocks have: `conducts`, `part`, `partWhen`, `electric`. A part
  * pushes with `part.push` volts, or, if it has `part.pushNow`, with
- * whatever that says right now (a turbine pushes harder with more steam).
+ * whatever that says right now (a generator pushes harder the faster it turns).
  * A part with `part.feelsLoad` (a generator) is also told its "load", and
  * every part in its circuit is told how much of its current comes from
  * each generator (see shareOut).
@@ -60,7 +60,7 @@ const SHORT_PATH_RESISTANCE = 0.01;
 const SHORT_CURRENT = 2 * REFERENCE_CURRENT;
 
 /**
- * A changing push (a turbine's, a generator's) is counted in steps this
+ * A changing push (a generator's) is counted in steps this
  * big, in volts. Less than one step counts as no push at all.
  */
 export const PUSH_STEP = 0.01;
@@ -183,10 +183,10 @@ export function roundPush(push) {
 
 /**
  * How hard a part pushes right now, in volts: `pushNow` if it has one
- * (a turbine), otherwise its fixed `push` (a battery), otherwise 0.
+ * (a generator), otherwise its fixed `push` (a battery), otherwise 0.
  * A changing push is rounded DOWN (toward zero) to PUSH_STEP (a hundredth
  * of a volt), the same as the circuit key does (see circuitKey in
- * electric.js), so the math always matches the key: a turbine that has
+ * electric.js), so the math always matches the key: a generator that has
  * almost stopped pushes exactly 0, not a tiny bit forever. Rounding toward
  * zero (never up) also means a motor that powers its own generator winds
  * down instead of getting stuck. The steps are small, so a slowly turned
@@ -267,7 +267,7 @@ function currentsOut(ready, members, links, points) {
  *
  *   perVolt  the current each generator sends through this part, for
  *            each volt that generator pushes
- *   fixed    the current the OTHER pushers (batteries, turbines) send
+ *   fixed    the current the OTHER pushers (batteries) send
  *            through it, with every generator standing still
  *
  * The gears use these to find how hard each generator is to turn at any
@@ -508,7 +508,7 @@ function groupsOf(indexes, links) {
  * like a lamp. However long the wire is, it's still a short circuit.
  *
  * "Plain wire" means wires, gold and closed switches. ANOTHER pusher (a
- * battery, turbine or generator) on the path counts as plain wire only if:
+ * battery or generator) on the path counts as plain wire only if:
  *   • the path goes through it the way it pushes (in at −, out at +):
  *     batteries in a row, wired straight back, short each other; or
  *   • it isn't pushing right now: a stopped generator's coil is just wire; or

@@ -65,7 +65,7 @@ export function wiringKey(world) {
 /**
  * A short text that changes whenever the circuit could change: the
  * blocks, the clicker beat (only if there's a clicker), and how hard any
- * changing pushers (turbines, generators) push, rounded down to a
+ * changing pushers (generators) push, rounded down to a
  * hundredth of a volt (partPush does it) so tiny wobbles don't count.
  * If it's the same as last time, there's no need to do the math again.
  * @param {{cells: string[], ticks: number}} world - the world
@@ -98,7 +98,7 @@ export function refreshElectric(world, blockInfo) {
   const key = circuitKey(world, blockInfo);
   if (old && old.key === key) return false;
 
-  // Same wiring as last time (only a turbine or generator pushes harder
+  // Same wiring as last time (only a generator pushes harder
   // or softer)? Then the circuit can keep what it worked out about the
   // wiring, which is most of the work when there are lots of generators.
   const wiring = wiringKey(world);
@@ -412,7 +412,7 @@ const guide = {
     'Parts turn to face their wires: wires on the left and right, or above and below. The gray metal ends show which way. Lamps side by side between two wires each get their own path, however many there are.',
     'A battery\'s + end is always its top or its right: it can\'t be turned round. Two batteries on opposite sides of a loop push against each other and nothing flows. Put them next to each other in a row instead.',
     'Note blocks need enough electricity to sing. One battery can make 4 in a row sing. With 5 in one loop each gets too little and they stay quiet, even though the dots still crawl. Add a battery, or give each note block its own path side by side.',
-    'Short circuit! A battery wired straight back to itself sparks and smokes, however long the wire. A stopped generator or turbine is just wire too. Never try that with a real battery.',
+    'Short circuit! A battery wired straight back to itself sparks and smokes, however long the wire. A stopped generator is just wire too. Never try that with a real battery.',
   ],
   blocks: {
     battery: { does: 'Pushes electricity out of its + end. Two batteries in a row push twice as hard.' },

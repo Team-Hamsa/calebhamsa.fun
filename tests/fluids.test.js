@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { createWorld, getFluid, setBlock, setFluid } from '../js/world.js';
 import { REFERENCE_CURRENT } from '../js/circuit.js';
 import {
-  BOIL_RATE, CONDENSE_RATE, DROP_POWER, FAUCET_RATE, PUMP_HEAD, PUMP_RATE, SQUISH, fallEnergy, headOf, openSides, pumpAmount,
+  BOIL_RATE, CONDENSE_RATE, DROP_POWER, FAUCET_RATE, PUMP_HEAD, PUMP_RATE, RISE_POWER, SQUISH, fallEnergy, headOf, openSides, pumpAmount,
   stableBelow, stepFluids, storedEnergy,
 } from '../js/fluids.js';
 
@@ -313,9 +313,153 @@ test('settling water only ever loses height energy: it never gains any by itself
 
 test('steam leaving a turbine is counted (that is what makes it spin)', () => {
   const world = worldFrom(['#.#', '#T#', '#s#', '###']);
+  let gross = 0;
   let out = 0;
-  for (let i = 0; i < 20; i++) out += stepFluids(world, blockInfo).steamOut.get(1 * 3 + 1) ?? 0;
-  assert.ok(out > 0.5);
+  let work = 0;
+  for (let i = 0; i < 20; i++) {
+    const count = stepFluids(world, blockInfo).turbines.get(1 * 3 + 1);
+    gross += count?.gross ?? 0;
+    out += count?.out ?? 0;
+    work += count?.work ?? 0;
+  }
+  assert.ok(gross > 0.5, `only ${gross} left it`);
+  assert.ok(out > 0.5, `it left upward, which counts +: ${out}`);
+  // A full cell of steam rose into the turbine and out of it again: 2 cells' worth at the most.
+  assert.ok(work > 1 && work <= 2 + 1e-9, `work ${work}`);
+});
+
+/**
+ * All the energy the steam in a world holds: each cell's own squish,
+ * plus how LOW the cell is (steam gives up energy by rising: water's
+ * energy upside down).
+ * @param {object} world - the world
+ * @returns {number} the total
+ */
+const steamEnergy = (world) => world.fluid.steam.reduce((sum, amount, index) => {
+  return sum + storedEnergy(amount) + amount * Math.floor(index / world.width);
+}, 0);
+
+test('rising steam only ever loses energy: it never gains any by itself', () => {
+  assert.equal(RISE_POWER, DROP_POWER); // steam is water going the other way
+  const pictures = [
+    ['###', '..s', '..s', '..s'], ['###', 's..', 's#.', 's#.', 's#.'], ['########', '#ssPPPP.', '#ss#..P.', '#ss#....', '#ss#....'],
+    ['#.#', '#T#', '#s#', '#s#', '###'], ['.....', '~~~~~', '~~s~~', '#####'],
+  ];
+  for (const rows of pictures) {
+    const world = worldFrom(rows);
+    let last = steamEnergy(world);
+    for (let i = 0; i < 200; i++) {
+      stepFluids(world, blockInfo);
+      const now = steamEnergy(world);
+      assert.ok(now <= last + 1e-9, `${rows.join('/')} tick ${i}: energy rose from ${last} to ${now}`);
+      last = now;
+    }
+  }
+});
+
+test('turbines never get more energy than the steam has lost, tick by tick', () => {
+  const pictures = [
+    ['#.#', '#.#', '#T#', '#s#', '#s#', '###'],                 // a straight chimney
+    ['#.#', '#T#', '#T#', '#s#', '#s#', '###'],                 // two stacked turbines
+    ['######', '#sTT..', '######'],                             // a level duct
+    ['#...#', '#.T.#', '#s..#', '#s..#', '#####'],              // a turbine off to the side of the rising steam
+    ['#.#.#', '#T#T#', '#...#', '#sss#', '#####'], ['sssss', 'sTTTs', 'sT.Ts', '#####'], ['.....', '.T.T.', '.sss.', '#####'],
+    ['#.#', '#T#', '#~#', '#s#', '###'],                        // bubbling up through water first
+  ];
+  for (const rows of pictures) {
+    const world = worldFrom(rows);
+    const start = steamEnergy(world);
+    let credited = 0;
+    for (let i = 0; i < 400; i++) {
+      for (const turbine of stepFluids(world, blockInfo).turbines.values()) credited += turbine.work;
+      // What the steam still carries (rising) has not been handed out yet, and never adds up to more than was lost.
+      const carried = world.signals.rising.reduce((sum, push) => sum + push, 0);
+      const lost = start - steamEnergy(world);
+      assert.ok(credited + carried <= lost + 1e-9, `${rows.join('/')} tick ${i}: credited ${credited} + carried ${carried}, lost ${lost}`);
+    }
+    assert.ok(credited > 0 || rows[1] === '#sTT..', `${rows.join('/')}: the turbines got nothing at all`);
+  }
+});
+
+test('in lots of random worlds, turbines never get more energy than the steam has given up so far, and no steam is lost', () => {
+  let seed = 11;
+  /**
+   * The next make-believe random number (the same ones every run).
+   * @returns {number} from 0 up to 1
+   */
+  const random = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  for (let trial = 0; trial < 60; trial++) {
+    const world = createWorld(6 + Math.floor(random() * 4), 5 + Math.floor(random() * 5));
+    world.cells.forEach((_, index) => {
+      const pick = random();
+      const name = pick < 0.5 ? 'air' : pick < 0.65 ? 'stone' : pick < 0.85 ? 'turbine' : 'pipe';
+      setBlock(world, index % world.width, Math.floor(index / world.width), name);
+      if (name !== 'stone' && random() < 0.5) world.fluid.steam[index] = random() < 0.3 ? 1 + random() * 0.8 : random();
+      if (name !== 'stone' && random() < 0.2) world.fluid.water[index] = random();
+    });
+    const steam = total(world, 'steam');
+    const start = steamEnergy(world);
+    let credited = 0;
+    for (let i = 0; i < 120; i++) {
+      for (const turbine of stepFluids(world, blockInfo).turbines.values()) credited += turbine.work;
+      const carried = world.signals.rising.reduce((sum, push) => sum + push, 0);
+      const lost = start - steamEnergy(world);
+      assert.ok(credited + carried <= lost + 1e-9, `world ${trial} tick ${i}: credited ${credited} + carried ${carried}, gave up ${lost}`);
+    }
+    assert.ok(Math.abs(total(world, 'steam') - steam) < 1e-9, `world ${trial}: steam ${steam} → ${total(world, 'steam')}`);
+  }
+});
+
+test('rising steam carries its push to the first turbine; steam that has spread out under a ceiling has lost it', () => {
+  // A long way up to the turbine: it gets the whole rise, not just its own two cells.
+  const tall = worldFrom(['#.#', '#T#', '#.#', '#.#', '#.#', '#.#', '#.#', '#.#', '#s#', '###']);
+  let work = 0;
+  let carriedOnTheWay = 0;
+  for (let i = 0; i < 60; i++) {
+    for (const turbine of stepFluids(tall, blockInfo).turbines.values()) work += turbine.work;
+    carriedOnTheWay = Math.max(carriedOnTheWay, tall.signals.rising.reduce((sum, push) => sum + push, 0));
+  }
+  assert.ok(carriedOnTheWay > 1, `the rising steam carried only ${carriedOnTheWay}`);
+  assert.ok(work > 7 && work <= 8 + 1e-9, `a full cell rose 8 cells to and through the turbine, which got ${work}`);
+  // Steam that rises, hits a ceiling and has to go sideways to find the turbine has splashed its push away.
+  const bent = worldFrom(['###.#', '###T#', '#...#', '#.###', '#.###', '#s###', '#####']);
+  let got = 0;
+  for (let i = 0; i < 300; i++) for (const turbine of stepFluids(bent, blockInfo).turbines.values()) got += turbine.work;
+  assert.ok(got < 2.5, `the turbine round the corner got ${got}: it should only get about its own two cells`);
+  // And once everything is still, nothing is carried any more.
+  const still = worldFrom(['#####', '#s..#', '#...#']);
+  run(still, 400);
+  assert.ok(still.signals.rising.every((push) => push < 1e-6));
+});
+
+test('water falling through a turbine does not turn it, and keeps its push for a wheel below', () => {
+  TEST_BLOCKS.waterWheel = { fluid: { sides: 'all' }, wheel: true };
+  LETTERS.O = 'waterWheel';
+  const through = worldFrom(['#~#', '#T#', '#O#', '#.#', '###']);
+  const plain = worldFrom(['#~#', '#P#', '#O#', '#.#', '###']);
+  let turbineWork = 0;
+  let wheelWork = 0;
+  let plainWork = 0;
+  for (let i = 0; i < 40; i++) {
+    const step = stepFluids(through, blockInfo);
+    for (const turbine of step.turbines.values()) turbineWork += turbine.work + turbine.gross;
+    wheelWork += step.waterWork.get(2 * 3 + 1) ?? 0;
+    plainWork += stepFluids(plain, blockInfo).waterWork.get(2 * 3 + 1) ?? 0;
+  }
+  assert.equal(turbineWork, 0);
+  assert.ok(wheelWork > 2.5, `the wheel under the turbine got ${wheelWork}`);
+  assert.ok(Math.abs(wheelWork - plainWork) < 1e-9, `to water a turbine is a pipe: ${wheelWork} through it, ${plainWork} through a pipe`);
+});
+
+test('the old "used steam" bookkeeping is gone', () => {
+  const world = worldFrom(['#.#', '#T#', '#s#', '###']);
+  const step = stepFluids(world, blockInfo);
+  assert.equal(world.signals.used, undefined);
+  assert.equal(step.steamOut, undefined);
+  assert.ok(world.signals.rising instanceof Float64Array);
 });
 
 test('a kettle (faucet into a pot on a burner) does not fill the world with endless steam', () => {

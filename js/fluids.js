@@ -14,7 +14,9 @@
  * water up a pipe, but never higher than the tower itself.
  *
  * Steam follows the very same rules upside down: it rises, and spreads
- * out under ceilings.
+ * out under ceilings. And STEAM HAS TO RISE TO GIVE ITS PUSH, the same
+ * way: low steam (and squished steam) holds energy, and the only push a
+ * turbine can catch is what its steam gives up by rising or un-squeezing.
  *
  * WATER HAS TO FALL TO GIVE ITS PUSH. High water (and squished water)
  * holds energy, like a ball at the top of a slide. Every time some water
@@ -863,10 +865,11 @@ function clamp(value, low, high) {
  * @param {'water'|'steam'} kind - which fluid
  * @param {Function} canFlow - from flowChecker
  * @param {Function} onMove - told (fromIndex, toIndex, amount, energy, drop, part)
- *   for every move: `energy` is how much the water gave up by moving (see
- *   fallEnergy; 0 for steam), `drop` is how many cells lower it ended up
- *   (1 falling, 0 sideways, −1 rising), and `part` is how much of the
- *   cell's fluid this move took (0 to 1)
+ *   for every move: `energy` is how much the fluid gave up by moving (see
+ *   fallEnergy), `drop` is how many cells lower it ended up (1 falling,
+ *   0 sideways, −1 rising; for steam it is the other way up: 1 is a
+ *   move UP), and `part` is how much of the cell's fluid this move took
+ *   (0 to 1)
  * @returns {number} the total amount that moved
  */
 export function flowFluid(world, kind, canFlow, onMove) {
@@ -941,16 +944,14 @@ export function flowFluid(world, kind, canFlow, onMove) {
   }
 
   for (const { from, to, amount, drop } of moves) {
-    let energy = 0;
-    if (kind === 'water') {
-      // This move's share of what its two cells' water lost: the cell it
-      // left (by all that left it) and the cell it entered (by all that entered).
-      const gone = left.get(from);
-      const came = entered.get(to);
-      energy = amount * drop
-        + (storedEnergy(before[from]) - storedEnergy(before[from] - gone)) * (amount / gone)
-        + (storedEnergy(before[to]) - storedEnergy(before[to] + came)) * (amount / came);
-    }
+    // This move's share of what its two cells' fluid lost: the cell it
+    // left (by all that left it) and the cell it entered (by all that entered).
+    // (Steam is worked out just like water, upside down: see RISE_POWER.)
+    const gone = left.get(from);
+    const came = entered.get(to);
+    const energy = amount * drop
+      + (storedEnergy(before[from]) - storedEnergy(before[from] - gone)) * (amount / gone)
+      + (storedEnergy(before[to]) - storedEnergy(before[to] + came)) * (amount / came);
     onMove(from, to, amount, energy, drop, Math.min(1, amount / before[from]));
   }
 
@@ -1004,6 +1005,17 @@ export const PUMP_HEAD = 6;
  * this same number: that's what keeps the energy books honest.
  */
 export const DROP_POWER = 10;
+
+/**
+ * How much turning-work the energy of RISING steam is worth: the same as
+ * falling water (DROP_POWER). Steam is water going the other way: low
+ * steam, and squished steam, holds energy the way high water does, and
+ * gives it up by rising (see storedEnergy and fallEnergy, which work for
+ * steam with "down" meaning up). So one burner's steam (0.05 a tick)
+ * rising one cell through a turbine is as good as one faucet's water
+ * falling one cell through a water wheel.
+ */
+export const RISE_POWER = DROP_POWER;
 
 /** A pump needs at least this much circuit level to work. */
 export const PUMP_ON_LEVEL = 0.25;
@@ -1203,17 +1215,18 @@ export function wheelTurn(wheel) {
  * If it lands anywhere else and stops falling, or runs off sideways, it
  * has splashed its push away, like real water.
  *
- * STEAM ONLY GIVES ITS PUSH ONCE. Steam that has been through a turbine
- * is "used" (world.signals.used says how much of each cell's steam is):
- * it spent its push spinning that turbine, and going through another
- * turbine further along gives nothing more. So three turbines on the
- * same steam give no more than one, however the pipes between them are
- * laid. Steam is fresh again once a chiller has turned it back into
- * water and a burner has boiled it again.
+ * RISING STEAM CARRIES ITS PUSH WITH IT, just the same, upside down
+ * (world.signals.rising). The energy steam gives up while it rises
+ * stays with it for as long as it keeps rising, and the first turbine
+ * it meets gets all of it. Each bit of energy goes to ONE turbine at
+ * the most: so turbines one after the other in a chimney share what the
+ * steam gave up rising past them, and never get more.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
- * @returns {{moved: number, steamOut: Map<number, number>, waterOut: Map<number, number>, waterWork: Map<number, number>, wheels: Map<number, object>, sides: string[][]}}
- *   how much changed in total, how much FRESH steam left each turbine, the
+ * @returns {{moved: number, turbines: Map<number, object>, waterOut: Map<number, number>, waterWork: Map<number, number>, wheels: Map<number, object>, sides: string[][]}}
+ *   how much changed in total, each turbine's count ({out, gross, work}:
+ *   the steam that left it, + up or right and − down or left; all the
+ *   steam that left it; and the energy that steam gave up there), the
  *   turning flow of each water wheel (see wheelTurn), how much energy the
  *   water gave up at each water wheel, each wheel's full count
  *   ({lean, sideOut, down, gross, work}), and every cell's open sides
@@ -1221,35 +1234,62 @@ export function wheelTurn(wheel) {
 export function stepFluids(world, blockInfo) {
   const sides = allOpenSides(world, blockInfo);
   const canFlow = flowChecker(world, sides, blockInfo);
-  const steamOut = new Map();
   const size = world.cells.length;
-  // How much of each cell's steam is USED: it has been through a turbine
-  // already (see above). A cell can't hold more used steam than steam.
-  const used = world.signals.used?.length === size ? world.signals.used : new Float64Array(size);
-  for (let index = 0; index < size; index++) used[index] = Math.min(used[index], world.fluid.steam[index]);
-  let usedIn = new Float64Array(size);   // used steam arriving in each cell in this step
-  let usedGone = new Float64Array(size); // how much of each cell's steam moved away in this step (0 to 1)
+  const turbines = new Map();
   /**
-   * Count FRESH steam leaving a turbine (that's what spins it), and keep
-   * track of which steam is used: steam that leaves a turbine is used
-   * from then on, and used steam stays used wherever it goes.
+   * The count for one turbine, made empty the first time.
+   * @param {number} index - the turbine's cell index
+   * @returns {{out: number, gross: number, work: number}} its count
+   */
+  const turbineAt = (index) => {
+    if (!turbines.has(index)) turbines.set(index, { out: 0, gross: 0, work: 0 });
+    return turbines.get(index);
+  };
+  // The push that rising steam is carrying, by cell (see above).
+  let rising = world.signals.rising?.length === size ? world.signals.rising : new Float64Array(size);
+  // Tidy up first: a cell whose steam has gone (chilled, dug) carries nothing,
+  // and no steam can carry more than a rise from the bottom of the world.
+  for (let index = 0; index < size; index++) {
+    rising[index] = Math.min(rising[index], world.fluid.steam[index] * world.height);
+  }
+  let riseNext = new Float64Array(size);
+  let roseFrom = new Uint8Array(size);    // 1 if steam rose out of this cell in this step
+  let riseTaken = new Float64Array(size); // how much of each cell's steam moved away in this step
+  /**
+   * Count steam going through a turbine: countWheels (below) upside
+   * down. How much leaves it and which way, and the ENERGY the steam
+   * gives up leaving a turbine, or brings with it landing on one from
+   * somewhere that isn't a turbine. Each bit of energy is only ever
+   * given to ONE turbine: when steam goes straight from one turbine into
+   * another, the one it leaves gets it.
+   *
+   * Steam that isn't at a turbine keeps the energy it gives up for as
+   * long as it keeps rising, and loses it when it goes sideways or down.
    * @param {number} from - the cell the steam left
    * @param {number} to - where it went
    * @param {number} amount - how much
-   * @param {number} energy - (not used for steam)
-   * @param {number} drop - (not used for steam)
+   * @param {number} energy - how much energy the steam gave up (see fallEnergy)
+   * @param {number} drop - how many cells HIGHER it ended up (1, 0 or −1): steam falls upward
    * @param {number} part - how much of the cell's steam this move took (0 to 1)
    * @returns {void}
    */
   const countTurbines = (from, to, amount, energy, drop, part) => {
-    const usedPart = Math.min(amount, used[from] * part);
-    usedGone[from] += part;
-    if (blockInfo(world.cells[from])?.turbine) {
-      steamOut.set(from, (steamOut.get(from) ?? 0) + amount - usedPart);
-      usedIn[to] += amount;
-    } else {
-      usedIn[to] += usedPart;
+    const leaves = Boolean(blockInfo(world.cells[from])?.turbine);
+    const lands = Boolean(blockInfo(world.cells[to])?.turbine);
+    if (leaves) {
+      const turbine = turbineAt(from);
+      turbine.gross += amount;
+      // Up (drop 1) and right count +, down and left −.
+      turbine.out += (drop === 0 ? to > from : drop === 1) ? amount : -amount;
     }
+    // What this steam has to give: what it carried, and what it gave up just now.
+    const brought = rising[from] * part;
+    riseTaken[from] += part;
+    if (drop === 1) roseFrom[from] = 1;
+    const gives = Math.max(0, brought + energy);
+    if (leaves) turbineAt(from).work += gives;
+    else if (lands) turbineAt(to).work += gives;
+    else if (drop === 1) riseNext[to] += gives; // still rising: it keeps its push
   };
   const wheels = new Map();
   /**
@@ -1323,12 +1363,17 @@ export function stepFluids(world, blockInfo) {
     fellFrom = new Uint8Array(size);
     taken = new Float64Array(size);
     moved += flowFluid(world, 'steam', canFlow, countTurbines);
-    for (let index = 0; index < size; index++) used[index] = used[index] * Math.max(0, 1 - usedGone[index]) + usedIn[index];
-    usedIn = new Float64Array(size);
-    usedGone = new Float64Array(size);
+    // The same for steam left behind in a column that is still rising.
+    for (let index = 0; index < size; index++) {
+      if (roseFrom[index] && rising[index] > 0) riseNext[index] += rising[index] * Math.max(0, 1 - riseTaken[index]);
+    }
+    rising = riseNext;
+    riseNext = new Float64Array(size);
+    roseFrom = new Uint8Array(size);
+    riseTaken = new Float64Array(size);
   }
   world.signals.falling = falling;
-  world.signals.used = used;
+  world.signals.rising = rising;
   moved += runSpecials(world, blockInfo, sides);
   const waterOut = new Map();
   const waterWork = new Map();
@@ -1336,5 +1381,5 @@ export function stepFluids(world, blockInfo) {
     waterOut.set(index, wheelTurn(wheel));
     waterWork.set(index, wheel.work);
   }
-  return { moved, steamOut, waterOut, waterWork, wheels, sides };
+  return { moved, turbines, waterOut, waterWork, wheels, sides };
 }
