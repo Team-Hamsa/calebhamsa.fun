@@ -160,9 +160,9 @@ repeat (at most NEWTON_STEPS = 20):
 
 `settle` is today's `settle` (balance, then the ratchet, then hard stops) with the brakes taken out. `give` is how much the group's speed moves for each unit of extra push: `1 ÷ slowing` when it is running freely between two edges, `0` when it is held (stalled, at a load's edge, blocked by a hard stop, jammed, or not powered). When no group changes from "free" to "held" or back, the first straight-line solve IS the answer and the second pass only confirms it: two passes, however hard the groups lean on each other. Four generators in one loop, which took `leap` and up to 200 rounds, take two.
 
-If it has not settled in 20 steps (only a winch's ratchet can do that: its catch lets go the moment a source pushes the let-out way, which is a jump, and two shafts wired together can in principle keep tipping each other over it):
+If it has not settled in 20 steps (as first built, a winch's ratchet could do that: its catch let go the moment anything pushed the let-out way, which is a jump. The second addendum takes the jump out of the solve: catches are decided for the whole cluster around it, so nothing built from real blocks gets here any more):
 
-- go round the groups one at a time (`SWEEPS = 60` plain rounds). For everything except the ratchet this always creeps to the one answer, because of what `C` is.
+- go round the groups one at a time (`SWEEPS = 60` plain rounds). This always creeps to the one answer, because of what `C` is.
 - any group still changing after that is **held still** (`stalled`), and the rest are solved again with it held. Each time round at least one more group is held, so it always ends.
 
 **The promise the solver keeps, whatever happens:** every group that is reported turning has its pushes exactly balanced at the reported speeds, and every other group stands still. A group standing still does no work. So no way out of the solver, not even the emergency one, can report turning that nothing pays for.
@@ -428,3 +428,60 @@ The steady build is a third of a millisecond slower: the old code started from l
 - **The pump** is still a plain 1-ohm part with no back-push, and still uses the current from the end of the tick before. The water-loop sweep checks that this delay makes nothing.
 - **A battery in a row with free generators starves a pump** (item 6). It is real physics, and it changes what the #17 machine does while its battery is in: the wheels are spun by the battery and the pump trickles. Worth a line in the wiki's machines page if a child builds it; nothing there shows that build today.
 - **Heat is only in words.** A stalled motor draws 2 amps and nothing shows it.
+
+## Addendum 2026-10-05 (2): the winch's catch after review
+
+Review found two things wrong with the catch under the joint solve, and one recipe in the wiki that could not be done. All three are fixed; the law itself (sections 1 to 4) is untouched.
+
+### 1. A whisper of current let a hanging load go
+
+Every coil in a connected net of wire now feels every other loop's current through the shared wire (0.0005 a half-cell). A motor with its ends wired together, beside a battery-and-lamp loop sharing one rail, got 0.00014 A: a push of 0.00014 the let-out way against an iron weight's 4. `settle` counted any push over 1e-9 as "something turns the winch the let-out way", let the catch go, and the weight ran down at 1.74 turns a second. (Books balanced: the fall became coil heat. Before this pass such a current was faded away.)
+
+**The rule now:** a catch lets go only for a REAL push the let-out way: one that would turn the gears fast enough to see (`MIN_SPEED`, at the group's fastest block) if nothing hung on any rope: `|push ÷ fading| × reach ≥ MIN_SPEED`. It is the same line the solver already draws for "too slow to see counts as standing still". Push here means everything but the loads: sources, battery current (`a`), and what other groups' turning passes through `C`. A crank too weak to lift a load by itself still counts as a real push (so a counterweight on the same gears still helps it, as before).
+
+### 2. Two catches that depend on each other were settled by reading order
+
+With the catch decided inside `settle`, from the push at that moment, two winch trains wired together could have two right answers (this load runs and holds that one, or the other way round). The straight-line steps hopped for all 20 goes and the plain rounds then gave the win to whichever group came first in the world: move a tower and the machine did something else. Most of the builds review found were item 1 in disguise (stray pushes), but the choice by order was real.
+
+**The catch is now a state, decided for the whole cluster at once, outside the solve** (`settleCluster` in spin.js):
+
+- ON: the hanging load only pulls back while it is lifted (`group.holding`). If the gears turn the let-out way anyway, the load comes down as fast as they turn it and gives no push.
+- LET GO: the load is a plain load and helps, up to its falling speed.
+
+a. Settle the cluster with every catch on. b. Every group with a real push the let-out way lets go; settle again. c. Every group that let go and is now turning against (or without) a real push is being dragged by its load: its catch goes back on for good; settle again and go to b. A catch goes at most on → let go → on for good, so it ends in at most 2n + 1 solves (measured: one extra solve when a load is being let down, otherwise none).
+
+With the catches fixed, every group's speed is a continuous, never-falling function of its push, and `C` only rubs, so each solve has ONE answer and the straight-line steps find it. Nothing depends on reading order. Two towers that could each run only while the other is held both keep their catches on (and come down, if at all, only as fast as their drive turns them: the weight's energy is lost in the catch, never gained).
+
+One lone winch behaves exactly as before, apart from item 1.
+
+**Energy:** a catch that is on can only remove a helping push, so it is a pure loss. The three sums of section 4 are untouched.
+
+### 3. The tell-tale lamp experiment
+
+A 1-ohm lamp in the loop holds one battery's stall current to 1 ÷ 1.5 = 0.67 A: a stall push of 0.67, under a crate's 1. So the recipe as written showed only two lamps and the crate never went up. The physics is right; the recipe was wrong. It now says TWO batteries (measured: free 1.73 turns a second, 0.17 A; lifting the crate 0.38, 1.04 A; stalled under the iron weight 1.29 A), and says why one battery is not enough. `wiki/Gears.md`, `wiki/Experiments.md`.
+
+### Tests
+
+- spin: a whisper of a push does not let a catch go, a real one does, a counterweight still helps; two catches that depend on each other both stay on, in either order, with no plain rounds; the "broken promise" test now uses a link with truly no answer (two cranks that push each other along harder than they rub), since the catch can no longer be used to force the emergency hold.
+- lifting: the review's build (battery and lamp beside a shorted motor on a winch with an iron weight, and its mirror) holds for 40 ticks, and comes down with a crank; the review's three towers give the same answer with towers 1 and 3 swapped.
+- gears: the wiki's lamp experiment, built as written: three different lamps, the crate goes up; with one battery it does not.
+
+### Sweeps run again on this code
+
+| Sweep | Result |
+|---|---|
+| `sweep1-ledger` 1500 builds seed 5 | 0 bad, gap 1.3e-12 (identical to before) |
+| `sweep2-soup` 1500 seed 5 | 0 bad, gap 5.9e-12 |
+| `sweep3-waterloops` 300 seed 2 | 0 bad |
+| `sweep4-winch` 600 seed 6 and 600 seed 11 | 0 bad; the ledger's slack never fell; plain rounds 0, emergency holds 0 |
+| `sweep5-feedback` 750 seed 3 | 0 bad; heat ÷ shaft work 1.000000000 |
+| `sweep7-wheels-batteries` 400 seed 2 | 0 bad |
+| `r3fix/sweep.mjs`, `repair/sweep-lift.mjs` | worst upward drift +0.0000 |
+| review's order sweep (`r1-energy-law/order.mjs`: same world solved with the groups walked forwards and backwards), 2400 tower builds, seeds 1 to 5, 264 000 checks | 0 differences (was 2 and 5 in 400); plain rounds 0; a catch was put back on 84 times in the last 1200 builds |
+
+Timing (`sweep6-timing`) did not move: 2.39, 1.54, 2.18, 0.27, 2.33 ms a tick.
+
+### Left
+
+- A winch that only a stray whisper is pushing shows no red ⬇ when the whisper points the let-out way, and does show one when it points the lift way (as before this fix). Either is defensible; a whisper is hardly "trying".
+
