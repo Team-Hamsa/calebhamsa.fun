@@ -88,7 +88,12 @@ function books(world) {
     const speed = spinAt(world, index % world.width, Math.floor(index / world.width));
     const way = blockInfo(name)?.machine;
     if (name === 'battery') sums.battery += currentOut(world, index);
-    if (name === 'crankCW' || name === 'crankCCW') sums.crank += CRANK_STRENGTH * (1 - Math.abs(speed) / CRANK_SPEED) * speed * (name === 'crankCW' ? 1 : -1);
+    if (name === 'crankCW' || name === 'crankCCW') {
+      // How fast it turns the way it pushes, as a share of its top speed. (Less than 0: it is being
+      // turned backwards by something stronger. Then it pushes harder than ever, and takes work in.)
+      const along = (speed * (name === 'crankCW' ? 1 : -1)) / CRANK_SPEED;
+      sums.crank += CRANK_STRENGTH * (1 - along) * along * CRANK_SPEED;
+    }
     if (way) {
       sums.made += way * MACHINE_K * speed * currentOut(world, index);  // volts × amps
       sums.taken += way * MACHINE_K * currentOut(world, index) * speed; // push on the shaft × speed
@@ -1857,4 +1862,48 @@ test('with no battery, crank, faucet or burner, nothing ever starts: motors and 
     assert.equal(world.signals.electric.flowing, false);
     assert.equal(world.signals.spin.turning, false);
   }
+});
+
+test('block soup: random heaps of wire, gears, motors, generators, batteries, lamps, cranks and clickers always keep their books, and never run with nothing to power them', () => {
+  // (A small copy of the scratch sweep "sweep2-soup" of the #14/#15 pass, with fixed dice.)
+  let seed = 20261005;
+  /**
+   * The next number from 0 up to (not including) 1, the same every run.
+   * @returns {number} the number
+   */
+  const random = () => {
+    seed = (seed + 0x6D2B79F5) >>> 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const palette = 'WWWWWWWWWWWWWWWWWWWWWW.......ssssGGG--MMMMEEEEBBLLLRQK/';
+  let turned = 0;
+  let lit = 0;
+  for (let n = 0; n < 60; n++) {
+    const width = 8 + Math.floor(random() * 6);
+    const rows = Array.from({ length: 6 }, () => Array.from({ length: width }, () => palette[Math.floor(random() * palette.length)]).join(''));
+    const world = build(rows);
+    let before = null;
+    for (let t = 0; t < 24; t++) {
+      more(world, 1);
+      assertBooksBalance(world, `${rows.join('/')}, tick ${t}`);
+      const now = [...world.signals.spin.cells.values()].map((cell) => cell.speed);
+      for (const speed of now) assert.ok(Number.isFinite(speed) && Math.abs(speed) < 100, `${rows.join('/')}: a block turns ${speed}`);
+      // Nothing changed since the last tick (no clicker flipped)? Then nothing may move, not by a hair.
+      if (before && world.ticks % 8 !== 0 && world.ticks % 8 !== 1) assert.deepEqual(now, before, `${rows.join('/')}, tick ${t}: it flickers`);
+      before = now;
+    }
+    if (world.signals.spin.turning) turned += 1;
+    if (world.signals.electric.flowing) lit += 1;
+    world.cells.forEach((name, index) => {
+      if (name === 'battery') setBlock(world, index % world.width, Math.floor(index / world.width), 'wire');
+      if (name.startsWith('crank')) setBlock(world, index % world.width, Math.floor(index / world.width), 'crankStop');
+    });
+    more(world, 3);
+    assert.equal(world.signals.spin.turning, false, `${rows.join('/')}: it turns with no battery or crank`);
+    assert.equal(world.signals.electric.flowing, false, `${rows.join('/')}: current flows with no battery or crank`);
+  }
+  assert.ok(turned > 30 && lit > 10, `only ${turned} turned and ${lit} had current`);
 });

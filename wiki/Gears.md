@@ -85,7 +85,7 @@ job is:
 | One battery's motor... | turns at | and takes |
 |---|---|---|
 | with nothing to turn | 0.95 turns a second | hardly any current (0.1 amps): its own push nearly cancels the battery's |
-| lifting a crate | 0.48 | about 1 amp |
+| lifting a crate | 0.47 | about 1 amp |
 | stalled under an iron weight | 0 | 2 amps, the most it ever can. It lifts nothing and just gets hot |
 
 Put a lamp in the loop and you can **see** it: the lamp is bright while the

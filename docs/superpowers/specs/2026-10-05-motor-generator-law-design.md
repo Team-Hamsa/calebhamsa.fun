@@ -346,3 +346,83 @@ The spec addendum records what the sweeps measured, as #21's did.
 4. Sweeps; fix what they find; addendum to this spec with the measurements.
 5. Guide text, wiki, README, older-spec pointers.
 6. Pictures.
+
+---
+
+## Addendum 2026-10-05: what was built, what the sweeps measured, and where the build left the plan
+
+Built as planned: one machine (`machine(way, …)`, `MACHINE_K` 1, `MACHINE_RESISTANCE` 0.45, `MACHINE_DRAG` 0.1), ports in circuit.js (`circuitPorts`, kept with the wiring by `refreshWiring`), `spinLink` and the joint solve in spin.js, and every item of section 3 deleted. Nothing is carried from one tick to the next except which way an either-way wheel or turbine was turning.
+
+### The numbers, measured on the real game (wire resistance and all)
+
+| Build | Speed | Current | Hand-worked above |
+|---|---|---|---|
+| Motor + 1 battery, nothing to turn | 0.952 | 0.095 | 0.952 / 0.095 |
+| Motor + 1 battery lifting a crate | 0.470 | 1.047 | 0.476 / 1.048 |
+| Motor + 1 battery under an iron weight | 0 (stalled) | 1.976 | 0 / 2.000 |
+| Motor + 5 batteries, nothing to turn | 4.667 | 0.467 | 4.673 / 0.467 |
+| Motor + 5 batteries lifting the iron weight | 2.001 | 4.200 | 2.056 / 4.206 |
+| Motor + battery + lamp, free | 0.869 | 0.087 | 0.870 / 0.087 |
+| Motor + battery + lamp, stalled | 0 | 0.664 | 0 / 0.667 |
+| Crank on a generator, nothing wired | 0.952 | 0 | 0.952 / 0 |
+| Crank on a generator lighting 1 lamp | 0.718 | 0.493 | 0.717 / 0.494 |
+| Crank on a generator joined by plain wire | 0.466 | 1.021 | 0.463 / 1.028 |
+| Crank ↻, 1 battery against it | 0.975 | 0.048 | 0.976 / 0.049 |
+| The same with 2 batteries | 1.435 | 1.014 | 1.438 / 1.02 |
+| Battery pushing WITH the crank | 0.006 | 1.988 | 0 / 2.000 |
+| Battery across a generator, no crank | 0.952 | 0.095 | 0.952 / 0.095 |
+
+Every difference is the wires' own small resistance (a loop of eight joints adds 0.006 to the 0.5), which the hand-worked column left out.
+
+### Where the build left the plan, and why
+
+1. **The circuit key holds the machines' pushes exactly, not to nine decimal places.** With nine places, a water wheel whose speed is still creeping (its smoothing never quite ends) left the circuit a hair behind the gears: the steam-plant ledger was off by 1.6e-9. Exact pushes cost one quick answer per circuit on the ticks a push really changes, and a redraw is asked for on those ticks anyway because something is turning. A steady machine still costs no circuit work: the solver gives bit-for-bit the same speeds every tick.
+2. **"Too slow to see" is decided for a whole group, not block by block.** A group whose fastest block turns slower than `MIN_SPEED` is held still and its cluster is settled again around it. Every other group reports every block's exact speed, however slow (a gear geared right down in a turning train creeps instead of reading 0). So `machinePush` needs no cut-off of its own: a reported speed is either exactly 0 or exactly what the solve used. Following from that, `liftSystem` now winds rope at any speed that isn't 0 (it used to skip speeds under `MIN_SPEED`, while spin.js had already counted that winch's load in the turning: a hanging weight on a winch geared down a thousand times could help its gears round without ever coming down. Tiny, but it was free).
+3. **Sparks.** A battery sparks as before, and a machine's coil is never plain wire on its path. A spinning machine can still short ITSELF through plain wire (the `spark` flag is set; nothing draws it), but a battery on the machine's own path does not count as plain wire for it. Without that, a generator barely turning in a loop with one battery was marked as sparking for the battery's 2 amps.
+4. **`fixed` counts batteries only** (parts with a plain `push`). A part with `pushNow` that wants the gears to feel it must be a `port`. Both machines are.
+5. **`spinWork`** (clusters, passes, sweeps, holds) is exported from spin.js for the tests and sweeps, like `work` in circuit.js. Each machine's `spinLink` answer is kept with the wiring (`port.link`), since it depends on nothing else.
+6. **The pump-loop tests are primed differently.** Issue #14 warned about this: a free generator in a row with a battery and a pump spins up as a motor and pushes back, so the battery no longer runs the pump flat out through it (the 3-wheel channel's pump gets 0.03 amps, not 0.9). That is right, but it left those wind-down tests with nothing to wind down. `primeLoop` in tests/gears.test.js now takes the generators out (plain wire in their place) while the batteries run the pump at full flow, then puts them back as the batteries go. The loop is left on its own at the highest flow it could ever have, which is a harder test than before. The assertions after that are unchanged. The sweep below also runs the loops as built and flooded.
+7. **Tests whose meaning changed** (each rewritten to say what the law gives, none loosened):
+   - "a battery never turns a generator into free turning" → it does turn it, and the books show the battery paying.
+   - "a battery wired straight across a stopped generator sparks" → no spark; it runs as a motor, and held still by jammed gears it is a 2 amp stalled motor.
+   - "a motor with hardly any current hardly holds its gears back" (it pinned the current-squared fade) → a generator and a motor on one shaft wired head to tail cancel exactly, through 0 to 40 lamps, with no wobble at all from the first tick.
+   - "generators that exactly balance the batteries" (built for 0.8 volts a turn) → twin cranked generators wired against each other send exactly 0 current.
+   - "a battery in a loop with two generators that push against each other never makes the gears run by themselves" → the battery does turn them (one generator motors against the other); the books balance on every tick, and with the battery out nothing moves.
+   - lifting: "two winches with hanging weights, each one's generator driving the other's motor, stop when the weights land" → with the battery gone they don't run at all. They used to run each other down on last tick's electricity; now nothing powers either train, so both catches hold.
+   - "a motor never turns against the current that really flows through it" and "a clicker gives a motor no burst" → checked exactly, on the same tick, with the full ledger on every tick.
+8. **Docs.** `wiki/Experiments.md` is a list of code experiments, so the three play experiments went into `wiki/Gears.md` ("Three things to try") with a short pointer from Experiments, plus one code experiment (`MACHINE_K`). The ⚡ guide did say "A stopped generator is just wire too": removed.
+9. **Pictures.** Only `power-plant.png` and `hydro-dam.png` changed (lamp levels 0.52 and thereabouts; both clearly lit). The picture tool also rewrote six crane pictures with no motor or generator in them; they were checked to behave identically before and after and were put back.
+
+### What the sweeps measured
+
+Scripts are in the scratchpad, folder `law/` (`lib.mjs` holds the shared ledger).
+
+| Sweep | What | Result |
+|---|---|---|
+| `sweep1-ledger.mjs` | 3300 ladders of 1 to 8 machines on shared and separate trains, two loops (sometimes bridged), cranks, batteries, lamps, clickers, a hand on the switches and cranks; 396 000 ticks | 0 bad. Worst gap in battery + crank = heat + bearings: 3.3e-12. Volts × amps − push × speed: exactly 0. Nothing moved by one bit on an untouched tick. With no battery or crank nothing turned. |
+| `sweep2-soup.mjs` | 3300 random heaps of blocks with a hand placing and digging; books checked after every tick and after every edit's redraw; 379 000 checks | 0 bad. Worst gap 6.1e-12. Fastest block 4 turns a second. |
+| `sweep3-waterloops.mjs` | 790 closed pump → wheels → generator → pump loops (channel, ring, tall; any gearing; either machine block; with clickers) and steam plant → pump → wheel chains, got going as built, primed or flooded | 0 bad: all stop without their battery or fire, water unchanged. 756 really ran first. Electric books gap at most 1.5e-11. |
+| `sweep4-winch.mjs` | 2400 tower builds: winches with crates and iron weights, motors, generators, batteries, cranks, a hand at work. Ledger: energy put in − heat − load height − part-wound rope | 0 bad: the ledger's slack never fell (it only rises, when rope goes slack or a load lands). A load was lifted in 535. |
+| `sweep5-feedback.mjs` | The #21 feedback sweep: 1500 plants (turbine or crank) whose generator feeds a motor on the plant's own train | 0 bad. Heat ÷ shaft work, tick by tick: 1.000000000 to 1.000000000 (it was up to 1.28). All stop when the fire goes out. |
+| `sweep7-wheels-batteries.mjs` | 470 either-way wheels and turbines on trains with machines AND batteries (where the echo rule lived) | 0 bad. Books gap 6.6e-12. No source was ever found turned against the way it was pointed, none changed its way, and with steady water no speed moved at all. (In about two thirds the water under a faucet itself arrives in ripples of 1e-5: a fluids matter, there before this pass.) |
+
+**Solver health** (all sweeps): a cluster takes 1.3 to 1.9 goes on average (two when groups lean on each other and nothing switches; most seen in one cluster: 20, then plain rounds). The plain rounds were reached in 2 builds of the 2400 with winches (on 149 of their ticks), and settled in 3 rounds each time. Both are the catch: two winch trains wired together, each of which lets its load down only while the other holds. There are then two right answers (this one goes, or that one), the straight-line steps hop between "both" and "neither" for ever, and the plain rounds settle on the first train in reading order. The emergency hold was never reached outside the unit test that forces it with a link that breaks its promise.
+
+**Timing** (`sweep6-timing.mjs`, ms a tick, this pass against the commit before):
+
+| Build | Before | Now |
+|---|---|---|
+| 50 cranked generators, clicker, lamp (the #17 build) | 3.67 | 2.33 |
+| 50 cranked generators, clicker, shorted | 3.78 | 2.14 |
+| 50 generators, every other one cranked, clicker | 2.81 | 2.27 |
+| 10 cranked generators, clicker, lamp | 0.35 | 0.27 |
+| 50 cranked generators on plain wire, steady | 1.14 | 1.50 |
+
+The steady build is a third of a millisecond slower: the old code started from last tick's speeds and found nothing to do; this one settles fifty groups from standing still every tick, on purpose. It is 12 ms of every second at 8 ticks a second.
+
+### Still true, and left
+
+- **No inertia.** As section 6 says. A motor or turbine with nothing to turn still stops dead when its power goes.
+- **The pump** is still a plain 1-ohm part with no back-push, and still uses the current from the end of the tick before. The water-loop sweep checks that this delay makes nothing.
+- **A battery in a row with free generators starves a pump** (item 6). It is real physics, and it changes what the #17 machine does while its battery is in: the wheels are spun by the battery and the pump trickles. Worth a line in the wiki's machines page if a child builds it; nothing there shows that build today.
+- **Heat is only in words.** A stalled motor draws 2 amps and nothing shows it.
