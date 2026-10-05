@@ -741,6 +741,7 @@ export function workingPumps(world, blockInfo, sides) {
  * energy change is shared out between its moves by how much steam each
  * one carried, so puffs that meet in one cell are never counted for
  * more than the steam really gave up, and left and right get the same.
+ * No move's share is less than nothing (see settleShares).
  *
  * @param {object} world - the world
  * @param {Function} canFlow - (index, side) => the neighbor steam may flow into, or −1 (see flowTable's `to`)
@@ -822,21 +823,84 @@ export function flowSteam(world, canFlow, onMove) {
     }
   }
 
-  for (const { from, to, amount, drop } of moves) {
+  const energy = new Float64Array(moves.length);
+  moves.forEach(({ from, to, amount, drop }, m) => {
     // This move's share of what its two cells' steam lost: the cell it
     // left (by all that left it) and the cell it entered (by all that entered).
     // (Steam's energy is worked out like water's, upside down: see RISE_POWER.)
     const gone = left.get(from);
     const came = entered.get(to);
-    const energy = amount * drop
+    energy[m] = amount * drop
       + (storedEnergy(before[from]) - storedEnergy(before[from] - gone)) * (amount / gone)
       + (storedEnergy(before[to]) - storedEnergy(before[to] + came)) * (amount / came);
-    onMove(from, to, amount, energy, drop, Math.min(1, amount / before[from]));
-  }
+  });
+  // No share below zero, and all of them together no more than the steam lost.
+  settleShares(moves.map((move) => move.from), moves.map((move) => move.to), energy, before.length);
+  moves.forEach(({ from, to, amount, drop }, m) => {
+    onMove(from, to, amount, energy[m], drop, Math.min(1, amount / before[from]));
+  });
 
   for (let index = 0; index < after.length; index++) if (after[index] < 0) after[index] = 0;
   world.fluid.steam = after;
   return moved;
+}
+
+/**
+ * Make the shares of a set of moves fair: NO MOVE'S SHARE IS LESS THAN
+ * NOTHING, and all of them together are still exactly what the fluid
+ * gave up.
+ *
+ * Why it is needed: a cell's energy change is shared between its moves
+ * by how much each one carried. That adds up right, but now and then it
+ * hands one move a share below zero and its neighbor a share that is
+ * too big by just as much. (Say a little water and a lot of water flow
+ * into the same cell from two sides. The cell's level goes up past
+ * where the little one came from, so that one looks as if it went
+ * uphill, and the big one looks better than it was.) If the too-small
+ * share were just called 0, a water wheel on the other move would be
+ * given a speck more than the water lost.
+ *
+ * So each share below zero is paid back by the moves it was shared
+ * with, each by how big its own share is: first the other moves out of
+ * the same cell, then the other moves into the same cell, and last (it
+ * hardly ever comes to that) all the moves there are.
+ * @param {ArrayLike<number>} from - for each move, the cell it left
+ * @param {ArrayLike<number>} to - for each move, the cell it went to
+ * @param {Float64Array} energy - each move's share: changed in place
+ * @param {number} size - how many cells the world has
+ * @returns {void}
+ */
+export function settleShares(from, to, energy, size) {
+  const count = energy.length;
+  let short = false;
+  for (let m = 0; m < count && !short; m++) if (energy[m] < 0) short = true;
+  if (!short) return; // the usual answer: nothing to do
+  const plus = new Float64Array(size);
+  const minus = new Float64Array(size);
+  for (const cells of [from, to]) {
+    plus.fill(0);
+    minus.fill(0);
+    for (let m = 0; m < count; m++) {
+      if (energy[m] > 0) plus[cells[m]] += energy[m];
+      else minus[cells[m]] -= energy[m];
+    }
+    for (let m = 0; m < count; m++) {
+      const cell = cells[m];
+      if (minus[cell] === 0 || plus[cell] === 0) continue;
+      // The moves at this cell with something to spare pay for the ones that are short.
+      if (energy[m] > 0) energy[m] = plus[cell] > minus[cell] ? energy[m] * (plus[cell] - minus[cell]) / plus[cell] : 0;
+      else energy[m] = minus[cell] > plus[cell] ? energy[m] * (minus[cell] - plus[cell]) / minus[cell] : 0;
+    }
+  }
+  let spare = 0;
+  let owed = 0;
+  for (let m = 0; m < count; m++) {
+    if (energy[m] > 0) spare += energy[m];
+    else owed -= energy[m];
+  }
+  if (owed === 0) return;
+  const keep = spare > owed ? (spare - owed) / spare : 0;
+  for (let m = 0; m < count; m++) energy[m] = energy[m] > 0 ? energy[m] * keep : 0;
 }
 
 // =============================================================
@@ -1559,7 +1623,8 @@ function pressWater(world, w, table, pumps, onMove, press) {
  * the moves of its part are known. Each cell's own change is shared
  * between its moves by how much water each one carried: what leaves is
  * counted off what the cell had, and what comes in lands on what was
- * left. So the shares add up to exactly what the water lost.
+ * left. So the shares add up to exactly what the water lost, and none
+ * of them is less than nothing (see settleShares).
  * @param {object} world - the world
  * @param {{to: Int32Array, joined: Int32Array, pump: Uint8Array, sky: Uint8Array, floor: Int32Array}} table - from flowTable
  * @param {Function} onMove - told (fromIndex, toIndex, amount, energy, drop, part, pressed)
@@ -1605,17 +1670,25 @@ export function flowWater(world, table, onMove, pumps = []) {
       came[moves[m + 1]] += moves[m + 2];
       moved += moves[m + 2];
     }
-    for (let m = 0; m < moves.length; m += 4) {
-      const from = moves[m];
-      const into = moves[m + 1];
-      const amount = moves[m + 2];
-      const drop = moves[m + 3];
+    const count = moves.length / 4;
+    const from = new Int32Array(count);
+    const into = new Int32Array(count);
+    const energy = new Float64Array(count);
+    for (let k = 0; k < count; k++) {
+      from[k] = moves[k * 4];
+      into[k] = moves[k * 4 + 1];
+      const amount = moves[k * 4 + 2];
       // What a cell gives leaves what it had; what comes in lands on what was left.
-      const left = had[into] - gone[into];
-      const energy = amount * drop
-        + (storedEnergy(had[from]) - storedEnergy(had[from] - gone[from])) * (amount / gone[from])
-        + (storedEnergy(left) - storedEnergy(left + came[into])) * (amount / came[into]);
-      onMove(from, into, amount, energy, drop, Math.min(1, amount / start[from]), false);
+      const left = had[into[k]] - gone[into[k]];
+      energy[k] = amount * moves[k * 4 + 3]
+        + (storedEnergy(had[from[k]]) - storedEnergy(had[from[k]] - gone[from[k]])) * (amount / gone[from[k]])
+        + (storedEnergy(left) - storedEnergy(left + came[into[k]])) * (amount / came[into[k]]);
+    }
+    // No share below zero, and all of them together still exactly what the water lost.
+    settleShares(from, into, energy, size);
+    for (let k = 0; k < count; k++) {
+      const amount = moves[k * 4 + 2];
+      onMove(from[k], into[k], amount, energy[k], moves[k * 4 + 3], Math.min(1, amount / start[from[k]]), false);
     }
   };
 

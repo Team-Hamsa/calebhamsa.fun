@@ -10,7 +10,7 @@ import { REFERENCE_CURRENT } from '../js/circuit.js';
 import {
   BOIL_RATE, CONDENSE_RATE, DROP_POWER, FAUCET_RATE, FULL, FULL_SLACK, PIPE_EASE, PUMP_HEAD, PUMP_RATE, RISE_POWER, SQUIRT_EASE,
   STEAM_SQUEEZE, SURFACE_EASE, allOpenSides, fallEnergy, flowTable, flowWater, makeRoom, openSides, placeBlock, pressWork, pumpAmount,
-  solveBanded, stableBelow, stepFluids, storedEnergy, workingPumps,
+  settleShares, solveBanded, stableBelow, stepFluids, storedEnergy, workingPumps,
 } from '../js/fluids.js';
 
 /**
@@ -1646,4 +1646,48 @@ test('a wheel at a spout is strong when its water falls away, and feeble standin
   const puddle = work(['....D', '#####', '#####']); // a level floor, with a drain at the far end
   assert.ok(puddle > 0, 'water does go through the wheel in the puddle');
   assert.ok(falls > 3 * puddle, `falling away: ${falls} a tick; standing in its puddle: ${puddle}`);
+});
+
+test('no share of the energy is less than nothing: a little water and a lot meeting in one cell give a wheel no more than was lost', () => {
+  // settleShares by itself: a share below zero is paid back by the moves it was shared with.
+  /**
+   * Settle some shares.
+   * @param {number[]} from - the cell each move left
+   * @param {number[]} to - the cell each move went to
+   * @param {number[]} shares - each move's share
+   * @returns {number[]} the shares afterwards
+   */
+  const settle = (from, to, shares) => {
+    const energy = Float64Array.from(shares);
+    settleShares(from, to, energy, 6);
+    return Array.from(energy);
+  };
+  assert.deepEqual(settle([0, 2], [1, 3], [2, 5]), [2, 5]);            // nothing short: nothing changes
+  assert.deepEqual(settle([0, 0], [1, 2], [-1, 5]), [0, 4]);           // paid by the other move out of the same cell
+  assert.deepEqual(settle([0, 2], [1, 1], [-1, 5]), [0, 4]);           // or by the other move into the same cell
+  assert.deepEqual(settle([0, 0, 0], [1, 2, 3], [-2, 6, 2]), [0, 4.5, 1.5]); // each by how big its own share is
+  assert.deepEqual(settle([0, 2], [1, 3], [-1, 5]), [0, 4]);           // or, last of all, by all the moves there are
+  assert.deepEqual(settle([0, 2], [1, 3], [-3, 2]), [0, 0]);           // never below nothing
+  // In a world: a wheel full of water and a nearly level cell both spread into the
+  // cell between them. Every move's share is 0 or more, and together they are
+  // exactly what the water lost: so the wheel is told no more than that.
+  const world = worldFrom(['#..O#', '#####']);
+  setFluid(world, 'water', 1, 0, 0.52);
+  setFluid(world, 'water', 2, 0, 0.5);
+  setFluid(world, 'water', 3, 0, 1);
+  const table = flowTable(world, allOpenSides(world, blockInfo), blockInfo);
+  for (let step = 0; step < 12; step++) {
+    const before = waterEnergy(world);
+    let told = 0;
+    let fromWheel = 0;
+    flowWater(world, table, (from, to, amount, energy) => {
+      assert.ok(energy >= 0, `small step ${step}: the move from ${from} to ${to} was given ${energy}`);
+      told += energy;
+      if (world.cells[from] === 'waterWheel') fromWheel += energy;
+    });
+    const lost = before - waterEnergy(world);
+    assert.ok(Math.abs(told - lost) < 1e-12, `small step ${step}: told ${told}, lost ${lost}`);
+    assert.ok(fromWheel <= lost + 1e-12, `small step ${step}: the wheel's water was given ${fromWheel} of ${lost}`);
+    if (step === 0) assert.ok(fromWheel > 0.04, `the wheel's water was given ${fromWheel}`);
+  }
 });
