@@ -485,3 +485,57 @@ Timing (`sweep6-timing`) did not move: 2.39, 1.54, 2.18, 0.27, 2.33 ms a tick.
 
 - A winch that only a stray whisper is pushing shows no red ⬇ when the whisper points the let-out way, and does show one when it points the lift way (as before this fix). Either is defensible; a whisper is hardly "trying".
 
+## Addendum 2026-10-05 (3): pushes that count, and drawing a block two packs know
+
+A second review found three things. None touches the law or the energy argument: two are about yes-or-no choices the solver makes before any speed is worked out, one is about drawing.
+
+### 1. A motor or generator was drawn with only half of what is known about it
+
+`signalsAt` (js/block-art.js) handed a block the first pack's record it found. A motor and a generator have two: the electric pack's (current, facing) and the gears pack's (speed, `partAxis`, jammed). On the Build page the electric record came first, so the generator's "+" never showed, the motor's shaft dot never moved and both were drawn sideways. (Older than this pass; the picture tool happened to make the records in the other order, so `power-plant.png` and `hydro-dam.png` showed what the page did not.)
+
+Now `signalsAt` joins the records of every pack that has one for the cell. A detail one pack left empty (`null`, like the gears pack's `axis` for a block that is not an axle) never rubs out another pack's, so the order of the packs does not matter, and the packs' own records are not touched. The pictures were made again and did not change: the page now draws what they show.
+
+### 2. A stray trickle turned a running turbine round
+
+The either-way rule let ANY standing push (over 1e-9) choose the way, ahead of "the way it was already turning". A battery's current now counts as a standing push, so a thousandth of an amp straying through a shared rail reversed a running plant in one tick.
+
+### 3. A few thousandths of an amp still let a catch go
+
+The catch let go for any push that would visibly turn the bare gears: about 2.3 mA through a lone motor, whatever hung on the rope.
+
+### One rule for both: `PUSH_THAT_COUNTS = 0.1`
+
+Both are yes-or-no choices (a ratchet letting go, a symmetric wheel picking a way), and both now ask the same thing: is the push at least a tenth of the thing it would change?
+
+- **Either-way sources.** A standing push picks the way only if it would visibly turn the bare gears AND is at least a tenth of the either-way sources' own strength. Otherwise: the way they were turning, then ↻. Two wheels on one shaft still never fight, and mirrored builds still mirror (those pushes are far over a tenth).
+- **The catch.** `realPush` also asks that the push be at least a tenth of the pull of the loads hanging its way. A weaker push the let-out way leaves the catch ON: the gears turn as slowly as that push turns them, the load comes down with them and gives no push (as the catch-on rule always said). So the review's 4 mA crane creeps at 0.002 turns a second instead of running down at 1.74 with 3.8 A.
+
+This changes no balance: the catch being on or off, and the way a source points, are inputs to the same exact solve. A real catch and a real wheel need a proper shove too (a hoist's load brake grips in proportion to its load).
+
+Tried and dropped: letting an already-turning wheel resist any push weaker than itself. More robust against strays, but it breaks the mirrored two-wheel test (a wheel that started first would fight a weaker side-fed wheel instead of joining it).
+
+### Tests
+
+- gears: page-order and tick-order drawing of a motor and generator (the joined record, the + on the top end, upright ends, packs' records untouched); the review's steam plant and water wheel with the loop next door, stray both ways, 30 ticks each, and a crank that does turn the wheel round.
+- lifting: the review's tapped crane, its mirror and the lift-way stray hold for 40 ticks with under 0.01 A in the motor; a battery in the motor's own loop still moves the weight.
+
+All three new tests fail on the code before this addendum.
+
+### Sweeps run again on this code
+
+| Sweep | Result |
+|---|---|
+| `sweep1-ledger` 1500 seed 5 | 0 bad, gap 1.3e-12 (identical) |
+| `sweep2-soup` 1500 seed 5 | 0 bad, gap 5.9e-12 (identical) |
+| `sweep3-waterloops` 300 seed 2 | 0 bad (identical) |
+| `sweep4-winch` 600 seed 6 and 600 seed 11 | 0 bad; the ledger's slack never fell; plain rounds 0, holds 0 (loads moved in 347 and 327 builds, was 357 and 345: fewer let down by weak pushes) |
+| `sweep5-feedback` 750 seed 3 | 0 bad; heat ÷ shaft work 1.000000000 |
+| `sweep7-wheels-batteries` 400 seed 2 | 0 bad; no source turned against its pointing, no driver changed its way |
+| `r3fix/sweep.mjs`, `repair/sweep-lift.mjs` | worst upward drift +0.0000 |
+| order sweep, 1200 tower builds seeds 1 to 3, 144 000 checks | 0 differences; plain rounds 0; no catch had to be put back on |
+
+### Left
+
+- A stray over a tenth of the load's pull (0.4 A for an iron weight) or of a turbine's strength would still count. That is no longer a trickle: it takes a motor wired across a long stretch of a heavily loaded rail.
+- If a stray creeps the bare gears visibly (over 0.001) BEFORE a turbine has any steam, the turbine joins the way they already creep ("the way its gears already go").
+- `group.powered` (the red ⬇ and rope-end ownership) still treats any standing push as "trying", as noted in addendum (2).
