@@ -334,16 +334,16 @@ A review of the built pass found six things. What was done about each, and where
 - going **up**, the steam in the cell above it is pushed down: the load is heavier to lift by `STEAM_PUSH × steam × share`;
 - going **down**, the water in the cell below it is lifted: the load pulls less by `WATER_WEIGHT × water × share`, and if that leaves nothing, it **floats** (it is `resting`, like a load on the ground: slack rope, no help, and it will not go down);
 - `WATER_WEIGHT = DROP_POWER × ROPE_PER_TURN ÷ TICKS_PER_SECOND` and `STEAM_PUSH` is the same with `RISE_POWER`: 2.5 crates for a full cell. They are not free numbers: they make one cell of rope pay exactly what the fluid's ledger gains.
-- `share` is the load's cells ÷ the rope cells per move: a hook and its load move the fluid two cells, and a hook's rope moves two cells per cell of load.
+- `share` is the load's cells ÷ the rope cells per move: a hook and its load move the fluid two cells, and a hook's rope moves two cells per cell of load. **(Replaced in addendum 3: fluid runs through a hook, so it is one cell, and `share` is ½ with a hook.)**
 - Going the easy way gives nothing back (water over a rising load, steam under a sinking one): that is lossy, never a gain. It also keeps `lifting ≥ weight ≥ pull`, which is what makes part-wound rope safe (rope wound back always costs at least what it gave).
 
-**So "nothing floats" (#24's stated simplification) is no longer true for a load on a rope.** A crate (1) floats on anything deeper than 0.4 of a cell; an iron weight (4) sinks and pulls 1.5 in full water; a hook with a load under it floats sooner than the load alone. The lifting guide and wiki say so, with the reason.
+**So "nothing floats" (#24's stated simplification) is no longer true for a load on a rope.** A crate (1) floats on anything deeper than 0.4 of a cell; an iron weight (4) sinks and pulls 1.5 in full water; a hook with a load under it floats sooner than the load alone **(no longer: see addendum 3)**. The lifting guide and wiki say so, with the reason.
 
 **How it is built.** `inTheWay` (lifting.js) reads the two cells. `winchLoad` returns `{pull, lifting, resting, topSpeed}`; `loadsOf` (spin.js, was `loadOf`) turns that into the existing kind of load plus a second one with limit 0 for the extra while lifting, so the balance solver itself is unchanged. `liftSystem` keeps what each rope has paid for fluid in `world.signals.lift.aside`, and a load only moves once that covers the fluid that is in the way at the moment it moves (steam or water that drifted in late makes it wait and keep paying; rope wound back takes its share out). Two things in `liftSystem` changed with it: rope let out faster than falling is cut to one cell before it is added (it was cut afterwards, which threw away part-wound rope the winch had been helped for), and a load that lands with more than a cell of rope out keeps it instead of forgetting it.
 
 **Not done, and why:**
 
-- **Loose blocks still sink for free** (falling sand, a crate with its rope dug away). No machine can let a block go: it takes a hand digging a rope or building a block, which is already a source of energy in this game. Making loose blocks float as well would need sand to have a weight, and meets the next point head on.
+- **Loose blocks still sink for free** **(wrong, and closed in addendum 3: a second winch could cut a rope)** (falling sand, a crate with its rope dug away). No machine can let a block go: it takes a hand digging a rope or building a block, which is already a source of energy in this game. Making loose blocks float as well would need sand to have a weight, and meets the next point head on.
 - **Deep water is squeezed** (a cell 10 deep holds about 2.0), so by the ledger it weighs more: an iron weight on a rope stops sinking about 6 cells down a full tank. That is #30's subject (pressure from depth instead of extra water), not a new law.
 - **A crate under water does not bob up.** Rope cannot push, and a block does not move by itself.
 
@@ -368,3 +368,32 @@ Not changed. A turbine with nothing to turn runs at its no-load speed for as lon
 ### 6. "More burners make it stronger"
 
 True only when each burner's steam can get to the chimney. Steam cannot push sideways through water, so a second burner in the corner of one pot fills its corner with steam and stops boiling (strength exactly as with one burner). The fluid rule is #29/#30's; the wiki and guide now say "more steam", and to give each burner its own pot with open air above it. A test pins the corner case.
+
+## Addendum 2026-10-05 (3): second review repairs
+
+A second review found two more machines that made power from nothing, and showed that two sentences of the addendum above were wrong: "No machine can let a block go: it takes a hand" (a second winch could cut a rope), and "a hook with a load under it floats sooner than the load alone" (true in the code, but not physics). Both machines are older than this pass (same numbers on 0a99d50), but the pass's claims rested on them. The law changed in four places.
+
+### 1. Loose blocks pay for the water they lift (the rest of the "known gap")
+
+`fallingBlocks` (basic.js) now asks `floatsOn(weight, water below)` (lifting.js), the same test a load on a rope uses: a block only sinks if `weight ≥ WATER_WEIGHT × water`. Its own fall (worth `4 × weight` a cell in crank work) then covers the `DROP_POWER × water` the lifted water can give a wheel. A loose crate (1) floats on anything deeper than 0.4; **sand now has a weight, 4** (like the iron weight), so sand and iron sink. This replaces "loose blocks still sink for free" above. Known edges: sand on a rope now weighs 4 (it was 1 by default), and squeezed water deep in a tank (#30) stops sand and iron about 6 cells down, loose or on a rope.
+
+### 2. Water and steam run through a pulley hook
+
+The hook is `fluid: { sides: 'all' }`, like rope, and `moveBlock` takes a `through` flag that leaves the fluid of both cells alone. So the hook displaces nothing; only the block under it trades places with fluid, and the water it lifts goes up **one** cell (into the hook's cell), not two. `inTheWay` now reads the cell above and below the load's solid block, `share` is ½ with a hook and 1 without, and `floats` is `floatsOn(whole weight, water)`: the same as the load alone. Iron on a hook sinks and pulls `(4 − 2.5) ÷ 2`; a crate on a hook floats at 0.4 like a crate alone; an empty hook goes through water (and a film on the floor) and moves none. The ledger still balances because the water really is lifted only one cell. This replaces the `share = cells ÷ rope cells` rule and the "floats sooner" sentence above.
+
+### 3. Ropes that cross are tied (`ropeIsTied`, lift.js)
+
+A winch may not wind in its rope end while another winch's rope runs **on through** that cell (it is on the other path and not its last cell). `canWindIn` refuses, so bare rope just stays (the winch turns, as it does on its last cell of rope) and a loaded one is a hard stop (orange ⬆). A winch only ever removes its own end cell, so with this rule no machine can cut another winch's rope; a shared END is still handled by `ownsRopeEnd`. Letting rope out into a gap in another rope still joins them, but that can then not be undone by a machine.
+
+### 4. Part-wound rope goes with its load (`world.signals.lift.weighed`)
+
+The part-wound amount was only safe while the load stayed the same. Now `liftSystem` remembers the load's weight for it: the heaviest for rope let out a little (owed), the lightest for rope wound in a little. `winchLoad` makes winding owed rope back cost at least that weight whatever is on the rope now (even nothing), and a part-wound-in amount is dropped when a heavier load is on the rope than it was wound against. The second half was found by the new sweep: two winches sharing a rope end, one winds half a cell of bare rope for nothing, the other lets the end down onto a block, and the first then lifted it a cell for half the price (a one-off 8 units for sand).
+
+### Not changed
+
+- **The grid's grain.** A floating crate sits in the cell above the water, even over a puddle 0.45 deep, with air drawn between. A block is always in one whole cell; the wiki says so.
+- **A chiller beside a turbine** only works when the turbine is the top of the chimney (steam crosses several cells a tick and gathers at the highest place). That is the fluid rule (#29); the wiki sentence added in this pass was wrong and is now reworded.
+
+### Measured
+
+The review's scripts: the cut-rope machine gives 0 drops and 0.00 wheel work (it was 35 and 134 for 0 and 90 of crank work); the three-winch machine with an iron weight no longer winds back at all (the hand got 196 pushed out of it before, the lamp 190). A new sweep (scratchpad `r3fix/sweep.mjs`: four layouts with one, two and three winches on tied, bridged and shared ropes over pools, wheels and turbines; seven kinds of load and a loose block; every crank flipped at random; the ledger counts every falling block's height, part-wound rope at its remembered weight, fluid energy, carried push and credited work, less crank work) never climbed back above an earlier low in 1200 runs of 2000 ticks (worst +0.0000). On the code before these repairs 16 of its first 40 runs climbed, by up to 32. The first sweep (one winch) still reads +0.0000.
