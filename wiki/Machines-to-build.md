@@ -24,14 +24,17 @@ sing, but with 5 in one loop each gets too little and they all stay quiet
 
 ![A clicker and a note block in a loop](machines/music-machine.png)
 
-**U-tube.** Build a U out of glass and pour water into one side. Squished
-water pushes up the other side until both sides are the same height.
+**U-tube.** Build a U out of glass and pour water into one side. Deep water
+presses harder, so it pushes up the other side until both sides are the same
+height.
 
 ![Water level in both sides of a glass U-tube](machines/u-tube.png)
 
 **Water tower.** A tall tank with a pipe from its bottom. The water climbs the
 pipe and pours out of the end, because the end is lower than the water in the
-tank. (Make the pipe go higher than the water, and nothing comes out.)
+tank. (Make the pipe go higher than the water, and nothing comes out.) Try a
+taller tower, and put a water wheel with a block on top of it at the end of the
+pipe.
 
 ![A water tower pushing water out of a low pipe](machines/water-tower.png)
 

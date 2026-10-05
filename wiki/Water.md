@@ -2,20 +2,21 @@ Water and steam are real **amounts**: a cell can be full, half full, or
 nearly empty, and water never appears or disappears by itself. Build a rock
 into a tank and the water is pushed out of the way, so the level goes **up**,
 like dropping a stone in a full glass. (Pipes, valves, wheels, pumps and rope
-just keep the water that was there.) Only DIG and drains take water away.
+just keep the water that was there.) Only DIG and drains take water away (and
+building a block into a full tank with a lid on it: there is nowhere for that
+water to go).
 
 **Water looks as tall as it is.** Pour 10 cells of water into a shaft and it
 stands 10 cells tall. Falling water is drawn as a stream, as wide as there is
-water: a faucet's trickle is a thin thread, a waterfall a thick one. One tap of DIG takes **one scoop**: a full cell at the
-most. You can't pour into a cell that already looks full, so pour just above
-the water. (Inside the game, deep water is really *squished* into fewer cells:
-that squish is how the game makes water push up a U-tube. The picture puts the
-squished-in water back on top, so what you see is how much there is: on a step
-or ledge inside the tank too, once the level gets that high. One thing
-still isn't right: a tank that **looks** brim-full can swallow a bit more water
-before it spills over (so can a tower joined to an open spout: it is drawn
-level with the spout, like real water, however much is squished in below),
-and a pipe that ends only just below the drawn surface may stay dry. That needs a new water engine: issue #30.)
+water: a faucet's trickle is a thin thread, a waterfall a thick one. One tap of DIG takes **one scoop**. You can't pour into a full cell, so pour just above
+the water. Water can't be squashed: ten cells of water are ten cells, at the top
+of a tank or the bottom.
+
+**Deep water presses harder.** The taller the water standing over a place, the
+harder it pushes there: that is pressure. It pushes water up a pipe until both
+sides are level, and squirts it out of a hole, harder the deeper the hole. A
+long thin pipe rubs some of the push away. Steam is different: it is a gas, and
+a gas CAN be squeezed.
 
 **Water has to fall to give its push.** Water up high holds energy, like a
 ball at the top of a slide. It gives that push away on the way down (to a
@@ -23,7 +24,8 @@ water wheel, if one is there). Water lying level has no push left.
 **Lifting water uses up a pump's push.** The higher a pump has to lift, the
 slower the water goes, and at some height the water is too heavy and it stops.
 More batteries lift **higher and faster**: one battery lifts about 5 blocks,
-two about 10.
+two about 10. A pump doesn't suck: it takes the water right behind it, so let
+the water run to it.
 
 **Steam has to rise to give its push.** Steam is water upside down: steam low
 down (or squeezed) holds the energy, and it gives that push away on the way
@@ -49,7 +51,7 @@ and it all winds down.
 
 | | Block | What it does | ✋ USE |
 |---|---|---|---|
-| ![Water](blocks/water.png) | **Water** | Not really a block: BUILD **pours** a cell full of water. It falls, spreads out and levels off. Deep water gets squished, so it pushes **up** through pipes and U-tubes. | — |
+| ![Water](blocks/water.png) | **Water** | Not really a block: BUILD **pours** a cell full of water. It falls, spreads out and levels off. Deep water presses harder, so it pushes **up** through pipes and U-tubes. | — |
 | ![Steam](blocks/steam.png) | **Steam** | Pours a cell full of steam. Steam is water's opposite: it **rises** and spreads out under ceilings. | — |
 | ![Pipe](blocks/pipe.png) | **Pipe** | Carries water and steam. Pipes join up with the pipes next to them. The sides are sealed, and the **end** of a pipe is open, so water pours out of it. | — |
 | ![Valve](blocks/valveOpen.png) | **Valve** | A pipe with a tap in it. Green = open, red = shut. ![Shut valve](blocks/valveClosed.png) | open ↔ shut |

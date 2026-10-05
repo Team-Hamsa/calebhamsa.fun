@@ -7,7 +7,8 @@
  * packs: a turbine spun by rising steam is a spinning block for the ⚙️
  * Gears pack (it turns a generator, like a water wheel does), and a
  * pump in a ⚡ circuit pushes water (lifting it uses up the pump's push:
- * see pumpAmount in fluids.js).
+ * see pumpAmount in fluids.js). Deep water presses harder, and that
+ * push is what sends water up pipes (see pressWater in fluids.js).
  *
  * A steam power plant, like the real ones:
  *
@@ -421,9 +422,9 @@ function drawChiller(ctx, info, left, top, size) {
  * Inside pipes, valves, pumps and turbines it fills the channel, darker
  * when fuller.
  *
- * Water is drawn BY DEPTH: as tall as the amount there really is, even
- * though deep water is squished into fewer cells (see waterPicture in
- * fluids.js, which works out how much to draw in each cell).
+ * Water is drawn just as it is: a cell is drawn with the water it holds
+ * (water can't be squashed, so ten cells of water stand ten cells tall).
+ * waterPicture in fluids.js works out which of it is falling.
  * @param {CanvasRenderingContext2D} ctx - the canvas paintbrush
  * @param {object} world - the world
  * @param {number} size - how big each cell is, in pixels
@@ -559,9 +560,9 @@ const blocks = {
  */
 const guide = {
   rules: [
-    'Water and steam are real amounts: a cell can be full, half full or nearly empty. Water never appears or disappears by itself. Build a block in water and the water is pushed out of the way: the level goes UP. Only DIG and drains take water away.',
-    'Water falls and spreads out. Deep water pushes UP through pipes and U-tubes.',
-    'Water is drawn as tall as there is water: pour 10 cells into a shaft and it stands 10 cells tall. Falling water is a stream as wide as there is water: a trickle looks like a trickle. One tap of DIG takes one scoop, a full cell at the most. You can\'t pour into a cell that already looks full: pour just above the water.',
+    'Water and steam are real amounts: a cell can be full, half full or nearly empty. Water never appears or disappears by itself. Build a block in water and the water is pushed out of the way: the level goes UP. Only DIG and drains take water away (and building a block into a full tank with a lid on it: there is nowhere for that water to go).',
+    'Water falls and spreads out. Deep water presses harder: the taller the water standing over it, the harder it pushes. That push sends water UP a pipe or a U-tube until it is level, and squirts it out of a hole.',
+    'Water can\'t be squashed: ten buckets are ten cells, however deep. Falling water is a stream as wide as there is water: a trickle looks like a trickle. One tap of DIG takes one scoop. You can\'t pour into a full cell: pour just above the water.',
     'Steam is the opposite: it rises and spreads out under ceilings. Steam has to RISE to give its push, like water has to fall.',
     'Water has to FALL to give its push. High water can turn a wheel on its way down. Water lying level has no push left.',
     'Lifting water uses up a pump\'s push. The higher the water has to go, the slower the pump lifts it, and at some height it is too heavy and stops. More batteries lift higher AND faster: one battery lifts about 5 blocks.',
@@ -577,7 +578,7 @@ const guide = {
     chiller: { does: 'Very cold: steam touching it turns back into water. It rains!' },
     turbine: { does: 'A fan in a pipe. Steam rising through it spins it. It makes TURNING, not electricity: put a generator (⚙️ tab) beside it and wire the generator to a lamp. More steam = stronger. A taller chimney under it = faster and stronger. Stand it upright in the chimney: steam that turns a corner first has lost most of its push. If the steam has nowhere to go, it stops.' },
     pumpRight: {
-      does: 'Uses electricity to push water the way its arrow points, even uphill. Wire it into a loop with a battery. Uphill is hard work: the higher, the slower. If the water stops part way up, add a battery.',
+      does: 'Uses electricity to push water the way its arrow points, even uphill. Wire it into a loop with a battery. Uphill is hard work: the higher, the slower. If the water stops part way up, add a battery. A pump doesn\'t suck: it takes the water right behind it, so let the water run to it.',
       use: 'turns it: → ↓ ← ↑',
     },
   },

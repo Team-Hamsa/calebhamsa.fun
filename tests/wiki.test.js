@@ -90,3 +90,16 @@ for (const name of [...PAGES, '_Sidebar']) {
     });
   });
 }
+
+test('the wiki says deep water presses harder, and no longer says it is squished', () => {
+  for (const name of ['Water', 'Machines-to-build', 'Lifting', 'Experiments']) {
+    assert.doesNotMatch(readPage(name), /squish/i, `wiki/${name}.md still says "squish"`);
+  }
+  const water = readPage('Water');
+  assert.match(water, /Deep water presses harder/);
+  assert.match(water, /can't be squashed/);
+  assert.match(water, /doesn't suck/);
+  assert.doesNotMatch(water, /issue #30/, 'the note about needing a new water engine can go: this is it');
+  const readme = readFileSync(new URL('README.md', ROOT), 'utf8');
+  assert.doesNotMatch(readme, /squish/i);
+});

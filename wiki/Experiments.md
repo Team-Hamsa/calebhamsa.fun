@@ -13,7 +13,7 @@ Search the code for `🧪 Try this!` to find them all. Some favorites:
 11. **Redraw the app icon:** change letters in `img/icon-pixels.txt` (try a different letter instead of the C), then run `node tools/make-icons.js`.
 12. **Slow-motion sand:** in `js/build.js`, set `TICKS_PER_SECOND` to 2.
 13. **Dimmer lamps:** in `js/blocks/electric.js`, change the lamp's `resistance` to 2.
-14. **Slow-motion water:** in `js/fluids.js`, set `FLUID_STEPS` to 1.
+14. **Slow-motion water:** in `js/fluids.js`, set `FLUID_STEPS` to 1. Or make long pipes sluggish: set `PIPE_EASE` to 0.1.
 15. **Super gears:** in `js/blocks/gears.js`, give the big gear 24 teeth: small gears it drives spin 3 times as fast.
 16. **Easy carbon:** in `js/chem/book.js`, change the N step's goal from 3 carbon molecules to 1.
 17. **Your own molecule:** add one to `js/chem/kid-names.js` with its SMILES, a name and a fact, then run `npm test`.
@@ -24,3 +24,7 @@ And three to do on the Build page, with no code at all (they are on the [⚙️ 
 1. **The tell-tale lamp:** a lamp in a row with a motor (and two batteries) is nearly dark when the motor runs free, bright while it lifts a crate and brightest when it is stuck.
 2. **Help the crank:** two batteries wired against a cranked generator drive it faster than the crank can go.
 3. **Swap them:** swap a generator block for a motor block. It works just the same.
+
+And one for the [💧 Water](Water) page:
+
+1. **How deep can you make it squirt?** Build a tall tank of water. Dig one hole in its side near the top, and one near the bottom. Which squirts harder? (Deep water presses harder.)

@@ -80,3 +80,13 @@ test('the Power guide no longer talks about turbines: a turbine is not an electr
   for (const text of guideTexts(power)) assert.doesNotMatch(text, /turbine/i, `"${text}"`);
   assert.equal(blockInfo('turbine').part, undefined);
 });
+
+test('the Water guide says deep water presses harder, and no longer says it is squished', () => {
+  const water = PACKS.find((pack) => pack.tab.id === 'water');
+  for (const text of guideTexts(water)) assert.doesNotMatch(text, /squish/i, `"${text}"`);
+  assert.ok(water.guide.rules.some((rule) => /presses harder/.test(rule)), 'the Water rules should say deep water presses harder');
+  assert.ok(water.guide.rules.some((rule) => /can't be squashed/.test(rule)), 'the Water rules should say water can\'t be squashed');
+  assert.match(water.guide.blocks.pumpRight.does, /doesn't suck/);
+  const gears = PACKS.find((pack) => pack.tab.id === 'gears');
+  assert.match(gears.guide.blocks.waterWheel.does, /end of a pipe from a tall tank/);
+});
