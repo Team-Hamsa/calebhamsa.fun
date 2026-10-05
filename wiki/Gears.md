@@ -1,6 +1,7 @@
 Spinning things pass their turning on to whatever they touch. **Gears**
 that touch turn **opposite** ways. Things on the same **shaft** (an axle,
-or a crank, wheel, motor or generator touching a gear) turn the **same** way.
+or a crank, wheel, turbine, motor or generator touching a gear) turn the **same** way.
+A 💧 **turbine** (on the Water tab) is a spinning block too: rising steam turns it.
 
 | | Block | What it does | ✋ USE |
 |---|---|---|---|
@@ -12,8 +13,8 @@ or a crank, wheel, motor or generator touching a gear) turn the **same** way.
 | ![Motor](blocks/motor.png) | **Motor** | Turns ⚡ electricity into turning. Put it in a loop with a battery (wires on its sides). Move the battery to the other side of the loop and it turns the other way. | — |
 | ![Generator](blocks/generator.png) | **Generator** | Turns turning into ⚡ electricity: wire it up like a battery. Its **+** end swaps when it turns the other way. | — |
 
-**Follow the yellow tooth.** Every gear has one yellow tooth, and every water
-wheel one yellow paddle tip. On a fast gear the plain teeth all look alike, so
+**Follow the yellow tooth.** Every gear has one yellow tooth, every water
+wheel one yellow paddle tip, and every turbine one yellow blade tip. On a fast gear the plain teeth all look alike, so
 they can seem to stand still or even creep backwards (like wagon wheels in a
 film). The yellow tooth never fools you: it goes round the way the gear really
 turns, faster on a faster gear. A gear that slows down slows down smoothly, and
@@ -38,7 +39,13 @@ first wheel it lands on. If it lands on the ground or in a pool first, it has
 splashed its push away. Water that spills off both sides of a wheel pushes it
 both ways, and that cancels out. Build a machine the other way round (mirrored)
 and its wheel turns the other way, just as fast.
-In a level stream it still turns, but only feebly: that water hardly falls. A motor gets
+In a level stream it still turns, but only feebly: that water hardly falls.
+A **turbine** is a water wheel upside down: its push comes from **how much
+steam** goes through it and **how far that steam rises**. One burner's steam
+rising one block makes it just like a crank too. More burners make it
+stronger; a taller chimney under it makes it faster and stronger. It has no
+left or right of its own, so it helps whichever way its gears already go (↻
+if nothing else is turning them). A motor gets
 stronger with more electricity. Two of them on the same gears **add up**. Two
 cranks turning opposite ways push against each other: the stronger one wins.
 
@@ -74,4 +81,7 @@ powered by a generator on its own gears slows down and stops. The same goes
 for a pump lifting water for the water wheels that turn the pump's own
 generator, however many wheels and gears you use: the wheels only get the push
 of water that **falls**, and the pump has to spend more than that lifting it
-back up. Take the battery away and it all winds down.
+back up. Take the battery away and it all winds down. A steam plant is the
+same: a turbine only gets the push of steam that **rises**, never more than
+the steam gave up, and only a burner makes steam. Turn the burner off and the
+turbine, its generator and everything they power stop.

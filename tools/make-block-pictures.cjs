@@ -131,12 +131,12 @@ const SCENES = {
     '##########',
   ] },
   'power-plant': { ticks: 40, rows: [
-    'WWWLWWW',
-    'W....CW',
-    'WWWTWWW',
-    '###~###',
-    '###F###',
-    '#######',
+    '#CC#...',
+    '#..#...',
+    '#..WWW.',
+    '##TE.L.',
+    '##~WWW.',
+    '##F###.',
   ] },
   'pump-uphill': { ticks: 20, rows: [
     'WWWWW',

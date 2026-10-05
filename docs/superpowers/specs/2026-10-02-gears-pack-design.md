@@ -373,3 +373,7 @@ The round 1 addendum said no solve reaches `MAX_ROUNDS`. That was wrong: in a sw
 - Now a spoiled leap is followed by ONE plain round, and then leaping carries on. The loop still only ends on a plain round that changes nothing (or at `MAX_ROUNDS`), so the answer is still a fixed point of the plain rounds.
 - Result: that build settles in 9 rounds on tick 0, with both twins at −1.1604. In 4000 random stacks (4 seeds × 1000) one still reaches `MAX_ROUNDS`, with 1.5e-7 turns a second left per round; the most rounds any other needs is 103. So `MAX_ROUNDS` can still be hit, rarely, and what is left over then is far below anything that can be seen or measured in the energy sums.
 
+
+## Addendum 2026-10-05: the turbine joins the spinning blocks (issue #21)
+
+See `2026-10-05-turbine-spin-source-design.md`. The 💧 turbine is now a hub with a `spinSource` (`turbineSource` in water.js, always `eitherWay`), and every spin record has a `sides` field (the open fluid sides of a spinning block that is also a fluid block, else `null`). Where the addenda above say "batteries and turbines" for the pushers that are not generators, read "batteries": the generator is now the only changing pusher (`used`, `turbinePush` and `TURBINE_GAIN` are gone).

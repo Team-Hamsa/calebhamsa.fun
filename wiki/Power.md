@@ -26,7 +26,7 @@ row instead, and they push twice as hard.
 end with nothing in between, it **sparks and smokes** (![Sparking battery](blocks/battery-spark.png)). Real
 batteries get dangerously hot when you do that, so never try it with a real
 one. Nothing breaks here: fix the wiring and it stops. It doesn't matter how
-long the wire is. A **stopped** generator or turbine counts as plain wire too
+long the wire is. A **stopped** generator counts as plain wire too
 (its coil is just wire), so a battery wired straight across one sparks. But
 two batteries side by side lighting lots of lamps do **not** spark: that isn't
 a short circuit, each battery is just sharing the work.

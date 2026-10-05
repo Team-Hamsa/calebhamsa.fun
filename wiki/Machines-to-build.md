@@ -36,11 +36,15 @@ tank. (Make the pipe go higher than the water, and nothing comes out.)
 ![A water tower pushing water out of a low pipe](machines/water-tower.png)
 
 **Steam power plant.** Water in a pot on a **burner**, a **turbine** above it,
-and wires from the turbine's sides to a lamp. The burner boils the water, the
-steam rushes up through the turbine, and the turbine makes electricity. The
-**chiller** turns the steam back into water. That's how real power plants work!
+a **generator** right beside the turbine, and wires from the top and bottom of
+the generator to a lamp. The burner boils the water, the steam rushes up and
+spins the turbine, the turbine turns the generator, and the generator makes
+electricity. The **chillers** turn the steam back into water, which runs back
+down into the pot. That's how real power plants work! Try more lamps: the
+turbine slows down. (A turbine makes turning, not electricity. A plant with
+wires straight on the turbine's sides stays dark: it needs a generator.)
 
-![Burner, turbine, chiller and a lit lamp](machines/power-plant.png)
+![Burner, turbine, generator, chillers and a lit lamp](machines/power-plant.png)
 
 **Pump water uphill.** A pump (arrow pointing up) with water under it and a
 battery loop on its sides. The pump pushes the water up, against gravity.

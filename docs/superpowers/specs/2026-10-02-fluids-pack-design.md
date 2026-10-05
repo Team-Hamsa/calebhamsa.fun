@@ -366,3 +366,7 @@ Rule 1 of the drawing kept the old look "a cell with water standing on it is dra
 - Result (drawn total against real, at every tick): never over, in all five scenes tried (was up to +5.35 cells of 24). 24-cell block in a tank: 23.47 at tick 1, 22.35 at tick 5, 24.00 from tick 24. Tower through a spout: 17.12 at tick 40 for 18.00. Ledge: 7.78 at tick 1, 8.00 from tick 10. What is missing while it rushes is squished-in water with no level surface to be drawn on yet, as documented above.
 - Machine pictures taken again: hydro-dam, power-plant, water-tower.
 
+
+## Addendum 2026-10-05: the turbine is a spin source now (issue #21)
+
+See `2026-10-05-turbine-spin-source-design.md`. The turbine is no longer an electric part: rising steam gives it a top speed and a strength (like the water wheel), and it needs a generator to make electricity. `world.signals.used`, `steamOut`, `turbineFlow`, `turbinePush`, `TURBINE_GAIN` and `MAX_TURBINE_PUSH` are gone; `world.signals.rising` and `stepFluids(...).turbines` (`{out, gross, work}`) replace them. Everything above about the turbine's `pushNow`, its electric axis and "steam only gives its push once" is history.
