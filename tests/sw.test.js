@@ -113,7 +113,7 @@ test('every page and every js file is saved for offline use', () => {
   const scripts = readdirSync(new URL('../js/', import.meta.url), { recursive: true })
     .filter((name) => name.endsWith('.js'))
     .map((name) => `./js/${name}`);
-  for (const path of [...scripts, './index.html', './music.html', './draw.html', './build.html', './chem.html']) {
+  for (const path of [...scripts, './index.html', './music.html', './draw.html', './build.html', './chem.html', './type.html']) {
     assert.ok(PRECACHE.includes(path), `PRECACHE is missing ${path}`);
   }
 });

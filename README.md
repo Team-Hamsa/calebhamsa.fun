@@ -24,11 +24,13 @@ Then open <http://localhost:8000>. Change a file, save, and reload the page.
 
 | File | What it does |
 |---|---|
-| `index.html` | The homepage: title, five big blocks, favorite things |
+| `index.html` | The homepage: title, six big blocks, favorite things |
 | `music.html` | The Note Blocks page layout |
 | `draw.html` | The Draw & Trace page layout |
 | `build.html` | The Build page layout |
 | `chem.html` | The Chemistry room layout |
+| `type.html` | The Typing game layout |
+| `css/type.css` | How the Typing game looks: the wall, keyboard and hands |
 | `css/blocks.css` | How everything **looks**: colors, block buttons, animations |
 | `js/music-theory.js` | The music brain: notes as numbers, chords, scales (pure math) |
 | `js/music.js` | Makes Note Blocks work: sound, modes, record, Guess it! |
@@ -54,6 +56,10 @@ Then open <http://localhost:8000>. Change a file, save, and reload the page.
 | `js/chem/kid-names.js` | The hand-written molecules: kid names and fun facts |
 | `js/chem/chem-art.js` | Draws atoms, sticks and hands |
 | `js/chem/save.js` | Keeps the chemistry board and book saved |
+| `js/type/game.js` | Makes the Typing game work: keys, sounds, the wall, the keyboard picture |
+| `js/type/levels.js` | Which keys each level teaches, and which finger presses each key (pure) |
+| `js/type/wall.js` | The Typing game's rules: building walls, hits and misses (pure) |
+| `js/type/progress.js` | Keeps the Typing game's stars saved |
 | `data/molecules.json` | 69,000 real molecule names from PubChem (made by `tools/chem-db/`) |
 | `js/draw.js` | The drawing pad: brushes, colors, clear, save |
 | `js/trace.js` | Handwriting sheets: lines, print/cursive letters, fade-out rows |

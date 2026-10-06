@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 
 const ROOT = new URL('../', import.meta.url);
-const PAGES = ['index.html', 'music.html', 'draw.html', 'build.html', 'chem.html'];
+const PAGES = ['index.html', 'music.html', 'draw.html', 'build.html', 'chem.html', 'type.html'];
 const SITE = 'https://calebhamsa.fun/';
 
 /**
@@ -93,5 +93,10 @@ test('the sharing picture exists and is 1200 × 630 (the size link previews expe
 
 test('the homepage links to the Build page (big block and favorite thing)', () => {
   const links = [...read('index.html').matchAll(/href="build\.html"/g)];
+  assert.equal(links.length, 2);
+});
+
+test('the homepage links to the Typing page (big block and favorite thing)', () => {
+  const links = [...read('index.html').matchAll(/href="type\.html"/g)];
   assert.equal(links.length, 2);
 });

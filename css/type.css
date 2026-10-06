@@ -1,0 +1,179 @@
+/* =================================================================
+   type.css: how the typing page (type.html) LOOKS.
+
+   The block buttons, colors and the shake/cheer animations come from
+   blocks.css. This file adds the wall, the drawn keyboard, the hands,
+   and the "pop" when a block breaks.
+   ================================================================= */
+
+.type-page { --page-bg: #6fb3e0; } /* a slightly deeper sky */
+
+.type-main {
+  align-items: center;
+  gap: 24px;
+}
+
+/* ---- The level strip ---- */
+.level {
+  flex-direction: column;
+  gap: 4px;
+  min-width: 56px;
+  padding: 6px 4px;
+  font-size: 11px;
+}
+.level .stars { font-size: 9px; letter-spacing: -1px; }
+
+/* ---- The wall ----
+   min() keeps blocks big on an iPad but small enough that 8 fit on a phone. */
+.wall {
+  --size: min(88px, calc((100vw - 64px) / 8 - 6px));
+  display: flex;
+  gap: 6px;
+  min-height: calc(var(--size) + 8px);
+}
+
+.wall-block {
+  width: var(--size);
+  height: var(--size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--size) * 0.45);
+  color: #fff;
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.5);
+  background: var(--stone);
+  border-bottom: 8px solid var(--stone-dark);
+  box-shadow:
+    inset 4px 4px 0 rgba(255, 255, 255, 0.25),
+    inset -4px -4px 0 rgba(0, 0, 0, 0.15);
+}
+
+/* The block Caleb is on: gold, and gently glowing. */
+.wall-block.target {
+  background: var(--gold);
+  border-bottom-color: var(--gold-dark);
+  animation: pulse 1s infinite;
+}
+
+/* A broken block pops, then leaves an empty gap.
+   🧪 Try this! Change 250ms to 2s for a slow-motion pop. */
+.wall-block.broken {
+  animation: pop 250ms forwards;
+}
+
+@keyframes pop {
+  0%   { transform: scale(1);   opacity: 1; }
+  50%  { transform: scale(1.3); opacity: 0.7; }
+  100% { transform: scale(0);   opacity: 0; }
+}
+
+/* ---- The drawn keyboard ---- */
+.keyboard {
+  --key: min(52px, calc((100vw - 64px) / 10 - 6px));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--obsidian);
+  border-bottom: 8px solid var(--obsidian-dark);
+}
+
+/* Each row starts a little further right, like a real keyboard. */
+.key-row { display: flex; gap: 6px; }
+.key-row:nth-child(2) { padding-left: calc(var(--key) * 0.3); }
+.key-row:nth-child(3) { padding-left: calc(var(--key) * 0.8); }
+
+/* Each key is tinted with its finger's color (game.js sets --finger). */
+.key {
+  position: relative;
+  width: var(--key);
+  height: var(--key);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--key) * 0.32);
+  color: #fff;
+  background: color-mix(in srgb, var(--finger) 45%, #333);
+  border-bottom: 4px solid rgba(0, 0, 0, 0.5);
+}
+
+/* F and J have a little bump, like on a real keyboard. */
+.key.bump::after {
+  content: '';
+  position: absolute;
+  bottom: 18%;
+  width: 30%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+/* The key to press: full finger color, big and bright. */
+.key.target {
+  background: var(--finger);
+  outline: 4px solid #fff;
+  transform: scale(1.12);
+  z-index: 1;
+}
+
+/* A wrong key flashes gray, so Caleb can see where he was. */
+.key.wrong { background: #bbb; }
+
+/* ---- The hands ---- */
+.hands {
+  display: flex;
+  gap: 48px;
+}
+
+.hand {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.finger {
+  width: 22px;
+  height: 64px;
+  background: var(--finger);
+  border-bottom: 6px solid rgba(0, 0, 0, 0.35);
+  opacity: 0.5;
+}
+.finger.middle  { height: 76px; }
+.finger.ring    { height: 68px; }
+.finger.pinky   { height: 52px; }
+.finger.thumb   { height: 36px; }
+
+/* The finger to use: full color, lifted up. */
+.finger.target {
+  opacity: 1;
+  outline: 4px solid #fff;
+  transform: translateY(-10px);
+}
+
+/* ---- The start sign ---- */
+.start {
+  position: fixed;
+  inset: 0;
+  font-family: var(--pixel-font);
+  font-size: clamp(16px, 4vw, 28px);
+  line-height: 1.6;
+  color: #fff;
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.5);
+  background: rgba(18, 11, 28, 0.85);
+  border: none;
+  cursor: pointer;
+}
+.start[hidden] { display: none; }
+
+/* ---- Wobble and cheer ----
+   The glowing block already has an animation (pulse), so a wrong key's
+   shake must be named here too, or the pulse would win. */
+.wall-block.target.shake { animation: shake 400ms; }
+.level.cheer { animation: cheer 600ms ease-out; }
+
+/* Some people's devices ask for less movement. Broken blocks just vanish. */
+@media (prefers-reduced-motion: reduce) {
+  .wall-block.target,
+  .wall-block.target.shake,
+  .level.cheer { animation: none; }
+  .wall-block.broken { animation: none; opacity: 0; }
+}
