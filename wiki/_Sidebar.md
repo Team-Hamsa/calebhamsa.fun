@@ -12,6 +12,7 @@
 **🧪 More**
 
 - [🧪 Chemistry room](Chemistry-room)
+- [⌨️ Typing](Typing)
 - [🧪 Experiments](Experiments)
 
 [▶️ Play at calebhamsa.fun](https://calebhamsa.fun)

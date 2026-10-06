@@ -18,7 +18,7 @@ const ROOT = new URL('../', import.meta.url);
 const WIKI = new URL('wiki/', ROOT);
 
 /** Every page the wiki must have (the side menu, _Sidebar, is extra). */
-const PAGES = ['Home', 'Blocks', 'Water', 'Power', 'Gears', 'Lifting', 'Machines-to-build', 'Chemistry-room', 'Experiments'];
+const PAGES = ['Home', 'Blocks', 'Water', 'Power', 'Gears', 'Lifting', 'Machines-to-build', 'Chemistry-room', 'Typing', 'Experiments'];
 
 /**
  * Every file in wiki/, with its exact capital letters. The wiki cares

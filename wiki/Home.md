@@ -1,7 +1,7 @@
 Welcome to the wiki for **[calebhamsa.fun](https://calebhamsa.fun)**, Caleb's
 blocky corner of the internet. These pages tell you how to play: what every
 block on the ⛏️ Build page does, machines you can build with them, how the
-🧪 Chemistry room works, and experiments to try in the code.
+🧪 Chemistry room and ⌨️ Typing game work, and experiments to try in the code.
 
 ## ⛏️ The Build page
 
@@ -30,6 +30,7 @@ Then put them together: **[🛠️ Machines to build](Machines-to-build)**.
 ## 🧪 More to do
 
 - **[🧪 The Chemistry room](Chemistry-room)**: build molecules out of atoms.
+- **[⌨️ Typing](Typing)**: find the keys on a real keyboard by breaking letter blocks.
 - **[🧪 Experiments to try](Experiments)**: little changes to the code, to see what happens.
 
 ## 🛠️ Changing these pages
