@@ -7,7 +7,7 @@
  * hands, listens for key presses, and plays the sounds.
  */
 import { LEVELS, KEYBOARD_ROWS, FINGERS, FINGER_COLORS } from './levels.js';
-import { newGame, pressKey, isLetterKey, STARS_PER_LEVEL } from './wall.js';
+import { newGame, pressKey, isLetterKey, isBlockedKey, STARS_PER_LEVEL } from './wall.js';
 import { loadProgress, saveProgress, addStar, isUnlocked, highestUnlocked } from './progress.js';
 import { listenForUnlock, playTones, VOICES } from '../sound.js';
 import { flash } from '../ui.js';
@@ -36,6 +36,7 @@ const page = {
   game: null,
   started: false, // has the "press a key to start" sign been closed?
   waiting: false, // is a cleared wall still showing (keys wait for the new one)?
+  newWallTimer: 0, // the countdown to the new wall, so a level change can cancel it
 };
 
 /**
@@ -114,6 +115,9 @@ function currentLetter() {
  * @returns {void}
  */
 function startLevel(level) {
+  // A wall that was just cleared may still be counting down to its new
+  // wall. Cancel that, or it would redraw this level's wall a moment later.
+  clearTimeout(page.newWallTimer);
   page.game = newGame(level, page.progress.stars[level - 1]);
   page.waiting = false;
   drawLevels();
@@ -134,6 +138,8 @@ function onKeyDown(event) {
     if (!event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey) start();
     return;
   }
+  // Space and arrows would scroll the wall away; Tab and Enter could press a button.
+  if (isBlockedKey(event)) event.preventDefault();
   if (!isLetterKey(event) || page.waiting) return;
   event.preventDefault();
 
@@ -166,7 +172,7 @@ function onKeyDown(event) {
   drawLevels();
   flash(byId('levels').children[state.level - 1], 'cheer', 600);
   page.waiting = true;
-  setTimeout(() => {
+  page.newWallTimer = setTimeout(() => {
     page.waiting = false;
     drawWall();
     speak(currentLetter());

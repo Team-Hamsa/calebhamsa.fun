@@ -116,6 +116,23 @@ export function isLetterKey(event) {
 }
 
 /**
+ * Keys that would scroll the page (the space bar is the biggest key, so
+ * it gets pressed a lot!) or press whichever button is selected.
+ */
+const BLOCKED_KEYS = [' ', 'Enter', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End'];
+
+/**
+ * Should the game hold this key back, so it doesn't scroll the wall out of
+ * sight or restart a level? Shortcuts (like ⌘← for "back") still work.
+ * @param {{key: string, ctrlKey?: boolean, metaKey?: boolean, altKey?: boolean}} event - the browser's keydown event
+ * @returns {boolean} true if the browser shouldn't do its usual thing
+ */
+export function isBlockedKey(event) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return false;
+  return BLOCKED_KEYS.includes(event.key);
+}
+
+/**
  * Caleb pressed a key. What happens?
  *
  *   'ignored'   not a letter: nothing happens

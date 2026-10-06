@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { LEVELS, newKeys, keysUpTo } from '../js/type/levels.js';
 import {
-  WALL_SIZE, MIN_NEW, STARS_PER_LEVEL, makeWall, newGame, pressKey, isLetterKey, hasTripleRun,
+  WALL_SIZE, MIN_NEW, STARS_PER_LEVEL, makeWall, newGame, pressKey, isLetterKey, isBlockedKey, hasTripleRun,
 } from '../js/type/wall.js';
 
 /**
@@ -139,4 +139,13 @@ test('isLetterKey: plain letters yes; held keys, shortcuts and other keys no', (
   assert.equal(isLetterKey({ key: 'Shift' }), false);
   assert.equal(isLetterKey({ key: 'ArrowLeft' }), false);
   assert.equal(isLetterKey({ key: ';' }), false);
+});
+
+test('isBlockedKey: keys that would scroll the page or press a button are held back', () => {
+  for (const key of [' ', 'Enter', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End']) {
+    assert.equal(isBlockedKey({ key }), true, key);
+  }
+  assert.equal(isBlockedKey({ key: 'f' }), false);
+  assert.equal(isBlockedKey({ key: 'Shift' }), false);
+  assert.equal(isBlockedKey({ key: 'ArrowLeft', metaKey: true }), false); // ⌘← is the browser's "back"
 });
