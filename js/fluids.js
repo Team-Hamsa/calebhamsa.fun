@@ -2021,6 +2021,14 @@ export function pumpAmount(level, lift) {
 }
 
 /**
+ * How much of the steam in a cell under the open sky cools into rain
+ * each tick: a sixteenth of it. A thick cloud rains hard, a thin wisp
+ * rains slowly. (A chiller is much colder: it takes a whole wisp at once.)
+ * 🧪 Try this! 1 / 2 for a sky so cold that clouds never form.
+ */
+export const SKY_COOL = 1 / 16;
+
+/**
  * A burner stops boiling when the cell above it already holds this much
  * steam: a burner cannot boil into steam that is already packed tight,
  * like a pot with its lid screwed down.
@@ -2028,21 +2036,35 @@ export function pumpAmount(level, lift) {
 const BOIL_STEAM_CAP = FULL + STEAM_SQUEEZE;
 
 /**
- * Let the HEAT blocks do their jobs for one small step: burners boil
- * water into steam and chillers turn steam back into water. They work
+ * Let the HEAT do its job for one small step: burners boil water into
+ * steam, chillers turn steam back into water, and so does the cold of
+ * the open sky. They work
  * in every small step (stepFluids calls this FLUID_STEPS times a tick,
  * with a `share` of 1 ÷ FLUID_STEPS), because steam moves in every
  * small step too: a chiller that only looked once a tick would miss
  * the steam that rushed past it in between.
+ *
+ * And THE OPEN SKY COOLS STEAM INTO RAIN. A sky cell is a cell in the
+ * top row of the world that is open upward (the same cells that are
+ * open sky for water: see flowTable). Steam that gets there cools into
+ * a cloud, and the cloud rains. Under a lid (any block in the top row,
+ * or a ceiling lower down) steam stays steam.
  *
  * In words:
  *   a burner boils    the smallest of: its rate, the water above it,
  *                     and the room for steam there (see BOIL_STEAM_CAP)
  *   a chiller cools   the smallest of: its rate, the steam in a cell
  *                     it touches, and the room for water there
+ *   the sky cools     a share of the steam in a sky cell (see SKY_COOL:
+ *                     a thick cloud rains hard, a thin one slowly);
+ *                     and ALL the steam over a cellful, because nothing
+ *                     can be squeezed under an open sky;
+ *                     and the last wisp (under MIN_AMOUNT) all at once,
+ *                     so that a cloud ends and the world comes to rest;
+ *                     but never more than there is room for as water
  *
  * Nothing is lost or made: every bit of steam that cools is that much
- * water, in the same cell. Only as much as fits: water can't be
+ * water, in the same cell (it falls as rain in the next small step). Only as much as fits: water can't be
  * squashed in. And WATER MADE IN A DRAIN'S CELL HAS GONE DOWN THE
  * DRAIN: it is never put there, so a chiller beside a drain leaks
  * nothing to the cells around it.
@@ -2119,7 +2141,15 @@ export function runHeat(world, blockInfo, sides, share, chilled, watch) {
       }
     }
   }
-  //SKY//
+  // The open sky, after every chiller (so a chiller to the left of a sky
+  // cell and one to the right give mirrored answers).
+  for (let index = 0; index < world.width; index++) {
+    if (steam[index] <= 0 || !sides[index].includes('up')) continue;
+    const want = steam[index] < MIN_AMOUNT
+      ? steam[index]                                                       // the last wisp goes all at once
+      : Math.max(steam[index] * SKY_COOL * share, steam[index] - FULL);    // a share of the cloud, and all that is squeezed
+    condense(index, Math.min(want, Math.max(0, FULL - water[index])));     // rain has to fit
+  }
   return changed;
 }
 
@@ -2202,8 +2232,8 @@ export function wheelTurn(wheel) {
 
 /**
  * One tick of fluids: water and steam move in FLUID_STEPS small steps
- * (see flowWater and flowSteam), with the burners and chillers working
- * in every one of them (see runHeat). Then the faucets and drains do
+ * (see flowWater and flowSteam), with the burners, the chillers and the
+ * cold open sky working in every one of them (see runHeat). Then the faucets and drains do
  * their jobs once (see runSpecials).
  *
  * HEAT WORKS ALL THE TIME. Steam crosses four cells in a tick. A
@@ -2241,12 +2271,18 @@ export function wheelTurn(wheel) {
  * the most: so turbines one after the other in a chimney share what the
  * steam gave up rising past them, and never get more.
  *
+ * COOLED STEAM TAKES ITS PUSH WITH IT. Cooling only ever takes steam
+ * away: it makes no push. The push that the cooled steam was carrying
+ * is dropped with it, and the water it turns into (rain!) starts with
+ * none: it has to earn its push by falling, like any other water.
+ *
  * STEAM CHILLED INSIDE A TURBINE HAS GONE THROUGH IT. A chiller right
  * next to a turbine turns the steam back into water while it is still
  * in the turbine's cell. That steam came in through the blades and gave
  * up its push there, so it is counted as steam that went through, the
  * way it was going (a real power plant's turbine blows straight into
- * its condenser, just like this).
+ * its condenser, just like this). The same goes for steam that the
+ * open sky cools inside a turbine standing in the top row.
  * @param {object} world - the world
  * @param {Function} blockInfo - looks up what a block name means
  * @param {Function} [watchHeat] - only for tests that check the energy

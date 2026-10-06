@@ -10,7 +10,7 @@ import { createWorld, getFluid, setBlock, setFluid } from '../js/world.js';
 import { REFERENCE_CURRENT } from '../js/circuit.js';
 import {
   BOIL_RATE, CONDENSE_RATE, DROP_POWER, FAUCET_RATE, FLUID_STEPS, FULL, FULL_SLACK, MIN_AMOUNT, PIPE_EASE, PUMP_HEAD, PUMP_RATE, RISE_POWER, SQUIRT_EASE,
-  STEAM_SQUEEZE, allOpenSides, fallEnergy, flowTable, flowWater, makeRoom, openSides, placeBlock, pressWork, pumpAmount,
+  SKY_COOL, STEAM_SQUEEZE, allOpenSides, fallEnergy, flowTable, flowWater, makeRoom, openSides, placeBlock, pressWork, pumpAmount,
   settleShares, solveBanded, stableBelow, stepFluids, storedEnergy, workingPumps,
 } from '../js/fluids.js';
 
@@ -264,9 +264,10 @@ test('steam rises and spreads out under a ceiling', () => {
 });
 
 test('steam bubbles up through water', () => {
-  const world = worldFrom(['#.#', '#~#', '#~#', '#s#', '###']);
+  // (Under a lid: under the open sky the steam would cool into rain.)
+  const world = worldFrom(['###', '#.#', '#~#', '#~#', '#s#', '###']);
   run(world, 300);
-  assert.ok(getFluid(world, 'steam', 1, 0) > 0.5);
+  assert.ok(getFluid(world, 'steam', 1, 1) > 0.5);
 });
 
 test('a burner boils the water above it into steam', () => {
@@ -488,7 +489,9 @@ test('in lots of random worlds, turbines never get more energy than the steam ha
     const world = createWorld(6 + Math.floor(random() * 4), 5 + Math.floor(random() * 5));
     world.cells.forEach((_, index) => {
       const pick = random();
-      const name = pick < 0.5 ? 'air' : pick < 0.65 ? 'stone' : pick < 0.85 ? 'turbine' : 'pipe';
+      // A stone top row: this test is about steam MOVING. (Under an open sky it would
+      // cool into rain: see 'the books under the sky and the fire' for that.)
+      const name = index < world.width ? 'stone' : pick < 0.5 ? 'air' : pick < 0.65 ? 'stone' : pick < 0.85 ? 'turbine' : 'pipe';
       setBlock(world, index % world.width, Math.floor(index / world.width), name);
       if (name !== 'stone' && random() < 0.5) world.fluid.steam[index] = random() < 0.3 ? 1 + random() * 0.8 : random();
       if (name !== 'stone' && random() < 0.2) world.fluid.water[index] = random();
@@ -568,6 +571,29 @@ test('a kettle (faucet into a pot on a burner) does not fill the world with endl
   const before = total(world, 'steam');
   run(world, 1000);
   const after = total(world, 'steam');
+  assert.ok(after - before < 0.5, `steam kept growing: ${before.toFixed(2)} → ${after.toFixed(2)}`);
+  assert.ok(Math.max(...world.fluid.steam) < 3, `steam squeezed to ${Math.max(...world.fluid.steam).toFixed(2)}`);
+});
+
+test('a kettle under a lid does not fill its box with endless steam either', () => {
+  // The same kettle with a stone top row: now the sky cannot cool the
+  // steam, and it is the burner that has to stop (it cannot boil into
+  // steam that is already packed tight).
+  const world = worldFrom([
+    '#######',
+    '#..F..#',
+    '#.....#',
+    '#.....#',
+    '#.#.#.#',
+    '#.#.#.#',
+    '###B###',
+    '#######',
+  ]);
+  run(world, 3000);
+  const before = total(world, 'steam');
+  run(world, 1000);
+  const after = total(world, 'steam');
+  assert.ok(before > 5, `under a lid the steam does build up: ${before.toFixed(2)}`);
   assert.ok(after - before < 0.5, `steam kept growing: ${before.toFixed(2)} → ${after.toFixed(2)}`);
   assert.ok(Math.max(...world.fluid.steam) < 3, `steam squeezed to ${Math.max(...world.fluid.steam).toFixed(2)}`);
 });
@@ -704,22 +730,23 @@ test('in lots of random worlds, wheels never get more energy than the water has 
 test('a chiller beside a drain is the same on either side: the water it makes in the drain goes down the drain', () => {
   LETTERS.C = 'chiller';
   LETTERS.D = 'drain';
-  const left = worldFrom(['#CD.#', '#####']);
-  const right = worldFrom(['#.DC#', '#####']);
-  setFluid(left, 'steam', 2, 0, 1);
-  setFluid(right, 'steam', 2, 0, 1);
+  // (Under a lid, so that only the chiller cools the steam and not the open sky.)
+  const left = worldFrom(['#####', '#CD.#', '#####']);
+  const right = worldFrom(['#####', '#.DC#', '#####']);
+  setFluid(left, 'steam', 2, 1, 1);
+  setFluid(right, 'steam', 2, 1, 1);
   for (let i = 0; i < 20; i++) {
     stepFluids(left, blockInfo);
     stepFluids(right, blockInfo);
     for (let x = 0; x < 5; x++) {
       for (const kind of ['water', 'steam']) {
-        const a = getFluid(left, kind, x, 0);
-        const b = getFluid(right, kind, 4 - x, 0);
+        const a = getFluid(left, kind, x, 1);
+        const b = getFluid(right, kind, 4 - x, 1);
         assert.ok(Math.abs(a - b) < 1e-12, `tick ${i}, ${kind} in column ${x}: ${a} with the chiller on the left, ${b} on the right`);
       }
     }
   }
-  assert.equal(getFluid(right, 'water', 1, 0), 0); // none leaks past the drain
+  assert.equal(getFluid(right, 'water', 1, 1), 0); // none leaks past the drain
 });
 
 // =============================================================
@@ -1291,9 +1318,10 @@ test('makeRoom finds room for water that does not fit (an old save, with deep wa
 });
 
 test('stepFluids gives over-full water room by itself, and steam may stay squeezed', () => {
-  const world = worldFrom(['#.#', '#.#', '#.#', '#.#', '###']);
-  writeColumn(world, 1, 1, [1, 1.3, 1.6]);
-  setFluid(world, 'steam', 1, 0, 1.4);
+  // (The steam is under a lid: nothing stays squeezed under the open sky.)
+  const world = worldFrom(['###', '#.#', '#.#', '#.#', '#.#', '###']);
+  writeColumn(world, 1, 2, [1, 1.3, 1.6]);
+  setFluid(world, 'steam', 1, 1, 1.4);
   stepFluids(world, blockInfo);
   assert.ok(Math.max(...world.fluid.water) <= FULL + 1e-9);
   assert.ok(Math.abs(total(world, 'water') - 3.9) < 1e-9);
@@ -2009,5 +2037,209 @@ test('steam leaves the pot as a steady stream: a burner boils a little in every 
       assert.ok(Math.abs(steam - BOIL_RATE / FLUID_STEPS) < 1e-9, `tick ${100 + i}, row ${y}: ${steam} of steam`);
     }
     stepFluids(world, blockInfo);
+  }
+});
+
+/**
+ * A world of plain air, w wide and h tall, with a picture standing on
+ * the ground at its left edge (the way a build stands in the real game).
+ * @param {string[]} rows - the picture
+ * @param {number} w - how wide the world is
+ * @param {number} h - how tall the world is
+ * @returns {{world: object, top: number}} the world, and the row its picture's top row is in
+ */
+function standIn(rows, w, h) {
+  const world = createWorld(w, h);
+  const small = worldFrom(rows);
+  const top = h - rows.length;
+  for (let y = 0; y < rows.length; y++) {
+    for (let x = 0; x < rows[0].length; x++) {
+      const from = y * rows[0].length + x;
+      const to = (y + top) * w + x;
+      world.cells[to] = small.cells[from];
+      world.fluid.water[to] = small.fluid.water[from];
+      world.fluid.steam[to] = small.fluid.steam[from];
+    }
+  }
+  return { world, top };
+}
+
+test('steam under the open sky cools into rain: one boiled cell of water does not stay steam for ever', () => {
+  const { world } = standIn(['#~#', '#B#'], 24, 14);
+  for (let i = 1; i <= 200; i++) {
+    stepFluids(world, blockInfo);
+    const both = total(world, 'water') + total(world, 'steam');
+    assert.ok(Math.abs(both - 1) < 1e-9, `tick ${i}: water and steam together are ${both}`);
+  }
+  assert.ok(total(world, 'steam') < 0.01, `after 200 ticks ${total(world, 'steam')} is still steam`);
+  assert.ok(total(world, 'water') > 0.99);
+});
+
+test('a thick cloud rains harder than a thin one', () => {
+  const world = worldFrom(['.#.', '###']);
+  setFluid(world, 'steam', 0, 0, 0.8);
+  setFluid(world, 'steam', 2, 0, 0.2);
+  stepFluids(world, blockInfo);
+  // Four small steps, each taking a sixteenth of a quarter of what is there.
+  const kept = (1 - SKY_COOL / FLUID_STEPS) ** FLUID_STEPS;
+  const thick = getFluid(world, 'water', 0, 0);
+  const thin = getFluid(world, 'water', 2, 0);
+  assert.ok(Math.abs(thick - 0.8 * (1 - kept)) < 1e-12 && Math.abs(thick - 0.0488) < 1e-4, `the thick cloud rained ${thick}`);
+  assert.ok(Math.abs(thin - 0.2 * (1 - kept)) < 1e-12 && Math.abs(thin - 0.0122) < 1e-4, `the thin cloud rained ${thin}`);
+  assert.ok(Math.abs(thick - 4 * thin) < 1e-12, 'four times the cloud, four times the rain');
+  assert.ok(Math.abs(getFluid(world, 'steam', 0, 0) + thick - 0.8) < 1e-12, 'and every bit of rain is steam that cooled');
+});
+
+test('nothing is squeezed under the open sky: steam over a cellful rains out at once', () => {
+  const world = worldFrom(['#.#', '###']);
+  setFluid(world, 'steam', 1, 0, 1.6);
+  stepFluids(world, blockInfo);
+  const steam = getFluid(world, 'steam', 1, 0);
+  const water = getFluid(world, 'water', 1, 0);
+  assert.ok(steam < FULL && steam > 0.9, `steam ${steam}`);
+  assert.ok(Math.abs(steam + water - 1.6) < 1e-12, `steam ${steam} + water ${water}`);
+  // Under a lid the same steam stays squeezed.
+  const shut = worldFrom(['###', '#.#', '###']);
+  setFluid(shut, 'steam', 1, 1, 1.6);
+  run(shut, 50);
+  assert.equal(getFluid(shut, 'steam', 1, 1), 1.6);
+});
+
+test('the last wisp goes, and an open world comes to rest', () => {
+  const wisp = worldFrom(['#.#', '###']);
+  setFluid(wisp, 'steam', 1, 0, MIN_AMOUNT * 0.9);
+  stepFluids(wisp, blockInfo);
+  assert.equal(getFluid(wisp, 'steam', 1, 0), 0);
+  assert.ok(Math.abs(getFluid(wisp, 'water', 1, 0) - MIN_AMOUNT * 0.9) < 1e-15);
+  // One poured cell of steam in an open world: it all rains, and then NOTHING moves.
+  const world = worldFrom(['.....', '.....', '.....', '..s..', '#####']);
+  let rest = -1;
+  for (let i = 1; i <= 400 && rest < 0; i++) if (stepFluids(world, blockInfo).moved === 0) rest = i;
+  assert.ok(rest > 0, 'the world never came to rest');
+  assert.equal(total(world, 'steam'), 0);
+  let ground = 0;
+  for (let x = 0; x < 5; x++) ground += getFluid(world, 'water', x, 3);
+  assert.ok(Math.abs(ground - 1) < 1e-9, `water on the ground: ${ground}`);
+});
+
+test('under a lid nothing cools; a standing pipe or turbine in the top row is an open chimney top', () => {
+  const lids = [
+    ['#####', '#s..#', '#...#', '#####'],          // stone along the top row
+    ['.....', '#####', '#s..#', '#####'],          // a ceiling lower down
+    ['#PPP#', '#####'],                            // a pipe lying along the top row
+    ['#P#P#', '#PPP#', '#####'].map((row, y) => (y === 0 ? '#####' : row)), // pipes under a lid
+  ];
+  for (const rows of lids) {
+    const world = worldFrom(rows);
+    if (rows[0] === '#PPP#') setFluid(world, 'steam', 2, 0, 1);
+    if (rows[1] === '#PPP#') setFluid(world, 'steam', 2, 1, 1);
+    run(world, 400);
+    assert.ok(Math.abs(total(world, 'steam') - 1) < 1e-12, `${rows.join('/')}: steam ${total(world, 'steam')}`);
+    assert.equal(total(world, 'water'), 0, rows.join('/'));
+  }
+  const chimneys = [['#P#', '#P#', '#s#', '###'], ['#T#', '#.#', '#s#', '###'], ['#.#', '#s#', '###']];
+  for (const rows of chimneys) {
+    const world = run(worldFrom(rows), 400);
+    assert.ok(total(world, 'steam') < 0.01, `${rows.join('/')}: steam ${total(world, 'steam')}`);
+    assert.ok(Math.abs(total(world, 'steam') + total(world, 'water') - 1) < 1e-9, rows.join('/'));
+  }
+});
+
+test('rain has to fit: a sky cell full of water keeps its steam', () => {
+  const full = worldFrom(['#~#', '###']);
+  setFluid(full, 'steam', 1, 0, 0.5);
+  run(full, 400);
+  assert.equal(getFluid(full, 'steam', 1, 0), 0.5);
+  assert.equal(getFluid(full, 'water', 1, 0), 1);
+  const nearly = worldFrom(['#.#', '###']);
+  setFluid(nearly, 'water', 1, 0, 0.9);
+  setFluid(nearly, 'steam', 1, 0, 0.5);
+  run(nearly, 400);
+  assert.ok(Math.abs(getFluid(nearly, 'steam', 1, 0) - 0.4) < 1e-9, `steam ${getFluid(nearly, 'steam', 1, 0)}`);
+  assert.ok(Math.abs(getFluid(nearly, 'water', 1, 0) - 1) < 1e-9 && getFluid(nearly, 'water', 1, 0) <= FULL + 1e-12);
+});
+
+test('rain made in a drain\'s cell goes straight down the drain', () => {
+  const walled = worldFrom(['#D#', '###']);
+  setFluid(walled, 'steam', 1, 0, 1);
+  for (let i = 0; i < 300; i++) {
+    stepFluids(walled, blockInfo);
+    assert.equal(total(walled, 'water'), 0, `tick ${i}`);
+  }
+  assert.equal(total(walled, 'steam'), 0);
+  // With room beside the drain: the same either way round.
+  const left = worldFrom(['#D..#', '#####']);
+  const right = worldFrom(['#..D#', '#####']);
+  setFluid(left, 'steam', 1, 0, 1);
+  setFluid(right, 'steam', 3, 0, 1);
+  for (let i = 0; i < 100; i++) {
+    stepFluids(left, blockInfo);
+    stepFluids(right, blockInfo);
+    for (let x = 0; x < 5; x++) {
+      for (const kind of ['water', 'steam']) {
+        assert.ok(Math.abs(getFluid(left, kind, x, 0) - getFluid(right, kind, 4 - x, 0)) < 1e-12, `tick ${i}, ${kind} in column ${x}`);
+      }
+    }
+    assert.equal(getFluid(left, 'water', 1, 0), 0, `tick ${i}: water in the drain`);
+  }
+});
+
+test('a mirrored world rains the mirrored rain', () => {
+  const pictures = [
+    ['C..s.', '..#..', 's....', '~~.#.', '#####'],
+    ['.C.#...', '.s...#.', '.#.s...', '..~~.s.', '###B###'],
+    ['#.T.C.', '#.s...', '#s#.s.', '#~~~~#', '##B###'],
+  ];
+  for (const rows of pictures) {
+    const world = worldFrom(rows);
+    const mirror = worldFrom(mirrored(rows));
+    const w = rows[0].length;
+    for (let i = 0; i < 200; i++) {
+      stepFluids(world, blockInfo);
+      stepFluids(mirror, blockInfo);
+      for (let index = 0; index < world.cells.length; index++) {
+        const other = index - index % w + (w - 1 - index % w);
+        for (const kind of ['water', 'steam']) {
+          const a = world.fluid[kind][index];
+          const b = mirror.fluid[kind][other];
+          assert.ok(Math.abs(a - b) < 1e-12, `${rows.join('/')} tick ${i}, ${kind} in cell ${index}: ${a} and ${b}`);
+        }
+      }
+    }
+  }
+});
+
+test('cooled steam takes its push with it: the cloud at the top of a chimney carries none on', () => {
+  // (8 cells up: the steam gets to the top just as the second tick ends, still carrying its push.)
+  const world = worldFrom(['#.#', '#.#', '#.#', '#.#', '#.#', '#.#', '#.#', '#.#', '#s#', '###']);
+  let carried = 0;
+  for (let i = 0; i < 300; i++) {
+    stepFluids(world, blockInfo);
+    const steam = getFluid(world, 'steam', 1, 0);
+    const push = world.signals.rising[1];
+    carried = Math.max(carried, push);
+    assert.ok(push <= steam * world.height + 1e-12, `tick ${i}: ${steam} of steam at the sky carries ${push}`);
+  }
+  assert.ok(carried > 0.5, `the steam did bring its push to the top: ${carried}`);
+  assert.equal(getFluid(world, 'steam', 1, 0), 0);
+  assert.equal(world.signals.rising[1], 0);
+});
+
+test('a chiller beside a turbine works wherever the turbine is in its chimney', () => {
+  const chimneys = {
+    'the turbine is the top': ['###', '#TC', '#~#', '#B#'],
+    'a dead-end stub of 1': ['###', '#.#', '#TC', '#~#', '#B#'],
+    'a dead-end stub of 3': ['###', '#.#', '#.#', '#.#', '#TC', '#~#', '#B#'],
+    'a sealed room': ['#####', '#...#', '#...#', '##TC#', '##~##', '##B##'],
+    'open sky 1 cell up': ['#.#', '#TC', '#~#', '#B#'],
+    'open sky 3 cells up': ['#.#', '#.#', '#.#', '#TC', '#~#', '#B#'],
+  };
+  for (const [name, rows] of Object.entries(chimneys)) {
+    const world = run(worldFrom(rows), 400);
+    const at = rows.findIndex((row) => row.includes('T')) * rows[0].length + rows.find((row) => row.includes('T')).indexOf('T');
+    for (let i = 0; i < 8; i++) {
+      const count = stepFluids(world, blockInfo).turbines.get(at);
+      assert.ok(count && Math.abs(count.gross - BOIL_RATE) < 1e-6, `${name}, tick ${400 + i}: ${count?.gross} went through the turbine`);
+    }
   }
 });
