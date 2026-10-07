@@ -161,8 +161,16 @@
   background: rgba(18, 11, 28, 0.85);
   border: none;
   cursor: pointer;
+  z-index: 1;
 }
 .start[hidden] { display: none; }
+
+/* The 🔊 button sits above the start sign, so the sound can be turned
+   off before the game says its first letter. */
+#mute {
+  position: relative;
+  z-index: 2;
+}
 
 /* ---- Wobble and cheer ----
    The glowing block already has an animation (pulse), so a wrong key's

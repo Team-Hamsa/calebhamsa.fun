@@ -8,7 +8,7 @@
  */
 import { LEVELS, KEYBOARD_ROWS, FINGERS, FINGER_COLORS } from './levels.js';
 import { newGame, pressKey, isLetterKey, isBlockedKey, STARS_PER_LEVEL } from './wall.js';
-import { loadProgress, saveProgress, addStar, isUnlocked, highestUnlocked } from './progress.js';
+import { loadProgress, saveProgress, addStar, isUnlocked, highestUnlocked, loadMuted, saveMuted } from './progress.js';
 import { listenForUnlock, playTones, VOICES } from '../sound.js';
 import { flash } from '../ui.js';
 
@@ -37,6 +37,7 @@ const page = {
   started: false, // has the "press a key to start" sign been closed?
   waiting: false, // is a cleared wall still showing (keys wait for the new one)?
   newWallTimer: 0, // the countdown to the new wall, so a level change can cancel it
+  muted: false, // 🔇: no sounds and no talking
 };
 
 /**
@@ -66,6 +67,7 @@ function storage() {
  * @returns {void}
  */
 function speak(text) {
+  if (page.muted) return;
   try {
     speechSynthesis.cancel();
     const words = new SpeechSynthesisUtterance(text);
@@ -77,11 +79,56 @@ function speak(text) {
 }
 
 /**
+ * Play some notes, unless the sound is off.
+ * @param {number[]} midis - the notes, as MIDI numbers
+ * @param {{wave: string, volume: number}} voice - one of the VOICES
+ * @returns {void}
+ */
+function beep(midis, voice) {
+  if (!page.muted) playTones(midis, voice);
+}
+
+/**
+ * The 🔊 button: turn all the sounds and talking off, or back on.
+ * @param {MouseEvent} event - the tap
+ * @returns {void}
+ */
+function toggleMute(event) {
+  event.currentTarget.blur(); // so the space bar can't flip it again
+  page.muted = !page.muted;
+  saveMuted(storage(), page.muted);
+  showMute();
+  if (page.muted) {
+    try {
+      speechSynthesis.cancel(); // stop a letter halfway through
+    } catch {
+      // No voice here anyway.
+    }
+  } else if (page.started) {
+    speak(currentLetter());
+  }
+}
+
+/**
+ * Show 🔊 or 🔇 on the mute button.
+ * @returns {void}
+ */
+function showMute() {
+  const button = byId('mute');
+  button.textContent = page.muted ? '🔇' : '🔊';
+  button.setAttribute('aria-pressed', String(page.muted));
+  button.setAttribute('aria-label', page.muted ? 'Sound is off' : 'Sound is on');
+}
+
+/**
  * Set up the whole page. type.html calls this once.
  * @returns {void}
  */
 export function initType() {
   page.progress = loadProgress(storage());
+  page.muted = loadMuted(storage());
+  showMute();
+  byId('mute').addEventListener('click', toggleMute);
   buildKeyboard();
   buildHands();
   startLevel(highestUnlocked(page.progress));
@@ -150,13 +197,13 @@ function onKeyDown(event) {
   if (result === 'miss') {
     flash(block, 'shake', 400);
     flash(keyFor(event.key.toUpperCase()), 'wrong', 500);
-    playTones(BONK_NOTES, VOICES.soft);
+    beep(BONK_NOTES, VOICES.soft);
     speak(target);
     return;
   }
 
   block.classList.add('broken');
-  playTones(POP_NOTES, VOICES.bell);
+  beep(POP_NOTES, VOICES.bell);
   page.game = state;
 
   if (result === 'hit') {
@@ -168,7 +215,7 @@ function onKeyDown(event) {
   // The wall is clear: a star, a cheer, then a new wall.
   page.progress = addStar(page.progress, state.level);
   saveProgress(storage(), page.progress);
-  playTones(result === 'levelDone' ? LEVEL_CHEER_NOTES : CHEER_NOTES, VOICES.bell);
+  beep(result === 'levelDone' ? LEVEL_CHEER_NOTES : CHEER_NOTES, VOICES.bell);
   drawLevels();
   flash(byId('levels').children[state.level - 1], 'cheer', 600);
   page.waiting = true;

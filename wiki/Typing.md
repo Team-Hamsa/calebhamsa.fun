@@ -12,6 +12,8 @@ key for the glowing block and it breaks!
   and no losing.
 - **Clear the wall** to earn a ⭐. Three ⭐ finish a level and open the next one.
   You can tap any open level at the top to play it again.
+- **🔊 / 🔇** at the top turns all the sounds and the talking off (and back on).
+  The game remembers it, and it works on the start screen too.
 
 ## The levels
 

@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { LEVELS } from '../js/type/levels.js';
 import {
-  PROGRESS_KEY, freshProgress, loadProgress, saveProgress, addStar, isUnlocked, highestUnlocked,
+  PROGRESS_KEY, freshProgress, loadProgress, saveProgress, addStar, isUnlocked, highestUnlocked, loadMuted, saveMuted,
 } from '../js/type/progress.js';
 
 /**
@@ -92,4 +92,16 @@ test('a level opens when the one before it has 3 stars', () => {
 test('with every level finished, the last level is the highest open', () => {
   const progress = { stars: LEVELS.map(() => 3) };
   assert.equal(highestUnlocked(progress), LEVELS.length);
+});
+
+test('the mute switch is remembered, and starts with sound on', () => {
+  const storage = fakeStorage();
+  assert.equal(loadMuted(storage), false);
+  assert.equal(saveMuted(storage, true), true);
+  assert.equal(loadMuted(storage), true);
+  saveMuted(storage, false);
+  assert.equal(loadMuted(storage), false);
+  assert.equal(loadMuted(null), false);
+  assert.equal(loadMuted(blocked), false);
+  assert.equal(saveMuted(blocked, true), false);
 });

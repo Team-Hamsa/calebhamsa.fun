@@ -95,3 +95,34 @@ export function highestUnlocked(progress) {
   while (isUnlocked(progress, level + 1)) level++;
   return level;
 }
+
+/** The localStorage name the 🔇 mute switch is saved under. */
+export const MUTE_KEY = 'calebhamsa.type.muted';
+
+/**
+ * Was the sound turned off last time? Sound starts on if nothing was saved.
+ * @param {Storage|null} storage - localStorage, or null when it's blocked
+ * @returns {boolean} true if muted
+ */
+export function loadMuted(storage) {
+  try {
+    return storage?.getItem(MUTE_KEY) === 'yes';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remember whether the sound is off.
+ * @param {Storage|null} storage - localStorage, or null when it's blocked
+ * @param {boolean} muted - true for 🔇 off, false for 🔊 on
+ * @returns {boolean} true if it was saved
+ */
+export function saveMuted(storage, muted) {
+  try {
+    storage.setItem(MUTE_KEY, muted ? 'yes' : 'no');
+    return true;
+  } catch {
+    return false;
+  }
+}
