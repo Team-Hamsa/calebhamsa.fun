@@ -94,12 +94,30 @@
     </form>
   </dialog>
 
+  <!-- One 💡 invention, opened by tapping it in the book: look at it, hear
+       its name, or give it a new one. -->
+  <dialog class="chem-dialog" id="invention">
+    <form method="dialog">
+      <div class="card-picture" id="invention-picture"></div>
+      <h2 id="invention-name"></h2>
+      <div class="rename-row" id="rename-row" hidden>
+        <input type="text" class="rename-box" id="rename-box" aria-label="A new name"
+               autocomplete="off" autocapitalize="words" enterkeyhint="done">
+        <button type="button" class="block grass" id="rename-save">✅ Save</button>
+      </div>
+      <div class="toolbar">
+        <button type="button" class="block" id="invention-say">🔊 Say it</button>
+        <button type="button" class="block gold" id="invention-rename">✏️ Rename</button>
+      </div>
+      <button class="block grass">👍 Done</button>
+    </form>
+  </dialog>
+
   <!-- The grown-up corner. -->
   <dialog class="chem-dialog" id="grownup">
     <form method="dialog">
       <h2>Grown-ups</h2>
       <button type="button" class="block gold" id="unlock-all">🔓 Unlock every atom</button>
-      <button type="button" class="block" id="name-invention">💡 Name the newest invention</button>
       <button type="button" class="block obsidian" id="reset-book">🗑️ Erase the book</button>
       <button class="block grass">Done</button>
     </form>

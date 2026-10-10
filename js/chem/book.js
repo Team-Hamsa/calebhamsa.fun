@@ -146,15 +146,25 @@ export function resolvePending(book, look) {
 }
 
 /**
- * Give the newest invention a name (a grown-up types it).
- * @param {ReturnType<typeof createBook>} book - the book (changed in place)
- * @param {string} name - the new name
- * @returns {boolean} true if there was an invention to name
+ * The longest name an invention can have, so it still fits under its
+ * picture in the book.
+ * 🧪 Try this! Make it 10 and see a long name get cut short.
  */
-export function nameNewestInvention(book, name) {
-  const trimmed = name.trim();
-  if (!book.inventions.length || !trimmed) return false;
-  book.inventions[0].name = trimmed;
+export const INVENTION_NAME_MAX = 30;
+
+/**
+ * Give one of Caleb's inventions a new name (any of them, old or new).
+ * @param {ReturnType<typeof createBook>} book - the book (changed in place)
+ * @param {string} label - which invention (its label)
+ * @param {string} name - the new name (spaces at the ends don't count)
+ * @returns {boolean} true if it was renamed; false if the name was blank
+ *   or there's no invention with that label
+ */
+export function renameInvention(book, label, name) {
+  const trimmed = name.trim().slice(0, INVENTION_NAME_MAX).trim();
+  const invention = book.inventions.find((r) => r.label === label);
+  if (!invention || !trimmed) return false;
+  invention.name = trimmed;
   return true;
 }
 

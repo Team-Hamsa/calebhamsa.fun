@@ -12,13 +12,16 @@ finished: it glows, the room says its name, and it goes in the 📖 book.
 - **Name cards:** 📖 a molecule from the book (with a fun fact), 🌟 a real
   molecule with its real chemistry name ("super rare!"), 💡 a molecule nobody
   has named: your invention. ⏳ means "no internet yet, I'll look it up later".
+- **Naming your inventions:** open the 📖 book, go to 💡, and tap an invention.
+  Its window shows it big: 🔊 says its name, ✏️ lets you type a new name
+  (up to 30 letters), ✅ saves it. Make it again and the card uses your name.
 - **Unlocking:** start with H and O. 💧 Water unlocks ⚫ C. Three carbon
   molecules unlock 🔵 N. Two nitrogen molecules unlock 🟢 Cl and 🟡 S.
 - **Crowding:** H atoms take up a cell, so some shapes don't fit. A hand with
   no room left turns red and squished, with a 💥. Move something!
 - **Rings:** a ring of 6 carbons (benzene) is a 2×3 rectangle. The two middle
   carbons grab hands across the ring, so pull them apart with 🔗.
-- **Grown-ups (⚙️):** unlock every atom, name the newest invention, or erase the book.
+- **Grown-ups (⚙️):** unlock every atom, or erase the book.
 
 The big name list comes from [PubChem](https://pubchem.ncbi.nlm.nih.gov)
 (public domain, from the US National Library of Medicine): every molecule

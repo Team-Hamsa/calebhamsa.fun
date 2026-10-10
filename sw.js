@@ -26,7 +26,7 @@
  * 🧪 Change the number (v1 → v2) after adding or renaming files in PRECACHE
  *    below, so every device fetches a fresh set.
  */
-const CACHE_NAME = 'caleb-v9';
+const CACHE_NAME = 'caleb-v10';
 
 /**
  * Files to save straight away, the first time the site is opened, so

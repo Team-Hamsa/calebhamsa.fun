@@ -671,6 +671,16 @@ main {
 .chem-dialog .card-badge { font-family: var(--pixel-font); font-size: 14px; }
 #card[open] { animation: cheer 700ms ease-out; }
 
+/* The 💡 invention window's name box: big letters, easy to tap. */
+.rename-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.rename-box {
+  width: min(70vw, 360px);
+  padding: 8px;
+  border: 4px solid var(--stone-dark);
+  font-family: 'Andika', sans-serif;
+  font-size: 24px;
+}
+
 .book { width: min(92vw, 640px); }
 .book-list {
   display: flex;

@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  WATER, climbLadder, countWith, createBook, elementsIn, nameNewestInvention, record, resolvePending, unlockAll, unlockedAtoms,
+  WATER, climbLadder, countWith, createBook, elementsIn, INVENTION_NAME_MAX, record, renameInvention, resolvePending, unlockAll, unlockedAtoms,
 } from '../js/chem/book.js';
 import { canonLabel } from '../js/chem/canon.js';
 import { kidIndex, loadDatabase, lookUp } from '../js/chem/lookup.js';
@@ -73,11 +73,33 @@ test('inventions do not count toward unlocks, and get numbered names', () => {
   }
   assert.equal(book.step, 2);
   assert.deepEqual(book.inventions.map((i) => i.name), ['Invention #3', 'Invention #2', 'Invention #1']);
-  assert.ok(nameNewestInvention(book, '  Super Chain  '));
-  assert.equal(book.inventions[0].name, 'Super Chain');
-  assert.equal(nameNewestInvention(book, '   '), false);
-  const again = record(book, label('CCCCCCCCCCC'), layout, { kind: 'invention' });
+});
+
+test('any invention can be renamed, not just the newest', () => {
+  const book = createBook();
+  for (const smiles of ['CCCCCCCCC', 'CCCCCCCCCC', 'CCCCCCCCCCC']) {
+    record(book, label(smiles), layout, { kind: 'invention' });
+  }
+  const oldest = label('CCCCCCCCC');
+  assert.ok(renameInvention(book, oldest, '  Super Chain  '));
+  assert.deepEqual(book.inventions.map((i) => i.name), ['Invention #3', 'Invention #2', 'Super Chain']);
+  const again = record(book, oldest, layout, { kind: 'invention' });
   assert.equal(again.name, 'Super Chain');
+});
+
+test('a blank name or a molecule that is not an invention changes nothing', () => {
+  const book = createBook();
+  record(book, label('CCCCCCCCC'), layout, { kind: 'invention' });
+  assert.equal(renameInvention(book, label('CCCCCCCCC'), '   '), false);
+  assert.equal(renameInvention(book, WATER, 'Splashy'), false);
+  assert.deepEqual(book.inventions.map((i) => i.name), ['Invention #1']);
+});
+
+test('a very long invention name is cut to fit the book', () => {
+  const book = createBook();
+  record(book, label('CCCCCCCCC'), layout, { kind: 'invention' });
+  assert.ok(renameInvention(book, label('CCCCCCCCC'), 'a'.repeat(INVENTION_NAME_MAX + 10)));
+  assert.equal(book.inventions[0].name, 'a'.repeat(INVENTION_NAME_MAX));
 });
 
 test('lookup order: hand-written, then the big list, then waiting, then invention', () => {

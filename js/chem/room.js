@@ -15,7 +15,7 @@
  * chem.html calls initChem() once. Everything else here only runs after that.
  */
 import { APART, BOARD_HEIGHT, BOARD_WIDTH, createBoard, findGroups, groupGraph, groupLayout, newlyFinished, placeAtom, removeAtom, tapBond } from './board.js';
-import { ALL_ATOMS, LADDER, createBook, nameNewestInvention, record, resolvePending, unlockAll, unlockedAtoms } from './book.js';
+import { ALL_ATOMS, LADDER, createBook, INVENTION_NAME_MAX, record, renameInvention, resolvePending, unlockAll, unlockedAtoms } from './book.js';
 import { canonLabel } from './canon.js';
 import { ATOM_INFO, drawAtom, drawBoard } from './chem-art.js';
 import { KID_MOLECULES } from './kid-names.js';
@@ -674,11 +674,7 @@ function setupDialogs() {
     save();
     buildPalette();
   });
-  byId('name-invention').addEventListener('click', () => {
-    if (!state.book.inventions.length) return;
-    const name = window.prompt('A name for the newest 💡 invention?', state.book.inventions[0].name);
-    if (name && nameNewestInvention(state.book, name)) save();
-  });
+  setupInventionWindow();
   byId('reset-book').addEventListener('click', () => {
     if (!window.confirm('Erase the whole collection book and the board? This can’t be undone.')) return;
     state.board = createBoard(BOARD_WIDTH, BOARD_HEIGHT);
@@ -687,6 +683,85 @@ function setupDialogs() {
     save();
     buildPalette();
     draw();
+  });
+}
+
+/** The label of the 💡 invention showing in its window (null = none). */
+let openLabel = null;
+
+/**
+ * Open the window for one 💡 invention: its big picture and its name.
+ * 🧪 Try this! Add speak(invention.name) at the end so it says the name
+ * as soon as the window opens.
+ * @param {string} label - which invention
+ * @returns {void}
+ */
+function openInvention(label) {
+  const invention = state.book.inventions.find((r) => r.label === label);
+  if (!invention) return;
+  openLabel = label;
+  byId('invention-picture').replaceChildren(picture(invention.layout, false, CARD_CELL_PX));
+  byId('invention-name').textContent = invention.name;
+  showRenaming(false);
+  byId('invention').showModal();
+}
+
+/**
+ * Switch the invention window between showing the name and the name box.
+ * @param {boolean} on - true to show the box (with the name ready to type over)
+ * @returns {void}
+ */
+function showRenaming(on) {
+  const name = byId('invention-name');
+  const box = byId('rename-box');
+  name.hidden = on;
+  byId('rename-row').hidden = !on;
+  byId('invention-rename').hidden = on;
+  if (on) {
+    box.value = name.textContent;
+    box.focus(); // on an iPad this pops the keyboard up
+    box.select(); // so the first letter typed replaces the old name
+  } else if (box === document.activeElement) {
+    byId('invention-rename').focus(); // the box is hidden now: keep the finger (or keys) in the window
+  }
+}
+
+/**
+ * Save the name in the box: the window, the book and the save all get it,
+ * and the room says it. A blank box just goes back to the old name.
+ * @returns {void}
+ */
+function saveRename() {
+  if (renameInvention(state.book, openLabel, byId('rename-box').value)) {
+    save();
+    const { name } = state.book.inventions.find((r) => r.label === openLabel);
+    byId('invention-name').textContent = name;
+    showBookTab('inventions'); // the tile behind the window gets the new name too
+    speak(name);
+  }
+  showRenaming(false);
+}
+
+/**
+ * Hook up the 💡 invention window's buttons.
+ * @returns {void}
+ */
+function setupInventionWindow() {
+  const box = byId('rename-box');
+  box.maxLength = INVENTION_NAME_MAX;
+  byId('invention-say').addEventListener('click', () => speak(byId('invention-name').textContent));
+  byId('invention-rename').addEventListener('click', () => showRenaming(true));
+  byId('rename-save').addEventListener('click', saveRename);
+  // Enter saves (instead of pressing 👍 Done and closing the window).
+  // Esc just stops renaming; a second Esc closes the window.
+  box.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== 'Escape') return;
+    event.preventDefault();
+    if (event.key === 'Enter') saveRename();
+    else showRenaming(false);
+  });
+  byId('invention').addEventListener('close', () => {
+    openLabel = null;
   });
 }
 
@@ -715,7 +790,11 @@ function showBookTab(tab) {
     credit.textContent = 'Rare names come from PubChem (pubchem.ncbi.nlm.nih.gov).';
     list.append(credit);
   } else {
-    for (const item of state.book.inventions) list.append(tile(item.layout, item.name, item.name));
+    for (const item of state.book.inventions) {
+      const button = tile(item.layout, item.name, null);
+      button.addEventListener('click', () => openInvention(item.label));
+      list.append(button);
+    }
   }
   if (!list.querySelector('.book-tile')) {
     const empty = document.createElement('p');
@@ -748,6 +827,7 @@ function foundTile(entry) {
  */
 function tile(layout, text, say) {
   const button = document.createElement('button');
+  button.type = 'button'; // a plain button: tapping it mustn't close the book
   button.className = 'book-tile';
   if (layout) button.append(picture(layout));
   else {
