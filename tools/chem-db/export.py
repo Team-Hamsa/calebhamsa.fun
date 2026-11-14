@@ -5,11 +5,14 @@ free download files and writes molecules.tsv, which make-db.js turns
 into data/molecules.json (see README.md in this folder).
 
 It keeps a PubChem compound only if Caleb could build it on the board:
-  * only H, C, N, O, S, Cl atoms; no charges, no special isotopes; one piece
-  * every atom has exactly its number of hands (H 1, C 4, N 3, O 2, S 2, Cl 1)
+  * only H C N O S Cl F Br I B Si P atoms; no charges, no special
+    isotopes; one piece
+  * every atom uses one of its numbers of hands (HANDS below: sulfur may
+    use 2, 4 or 6, phosphorus 3 or 5, every other atom just one number)
   * at most MAX_HEAVY atoms that aren't H
-  * it fits flat on a square grid, one atom (H's too) per cell, with
-    every bonded pair side by side (fits_grid below)
+  * it fits flat on the triangle board (each cell touches 6 others), one
+    atom (H's too) per cell, every bonded pair side by side, inside the
+    board's BOARD_WIDTH x BOARD_HEIGHT cells (fits_tri below)
 
 For each one it writes:   name <TAB> smiles|smiles|...
 with EVERY Kekule form (each way the double bonds in a benzene-like ring
@@ -29,16 +32,28 @@ RDLogger.DisableLog('rdApp.*')
 # The most non-H atoms a molecule can have. Try this! 9 makes a bigger list.
 MAX_HEAVY = 8
 
-# Hands per atom: the same numbers as js/chem/smiles.js.
-HANDS = {'H': 1, 'C': 4, 'N': 3, 'O': 2, 'S': 2, 'Cl': 1}
+# Every number of hands each atom may use: the same numbers as
+# js/chem/smiles.js (HANDS, plus EXTRA_HANDS for S and P).
+HANDS = {'H': {1}, 'C': {4}, 'N': {3}, 'O': {2}, 'S': {2, 4, 6}, 'Cl': {1},
+         'F': {1}, 'Br': {1}, 'I': {1}, 'B': {3}, 'Si': {4}, 'P': {3, 5}}
 
-# How hard fits_grid tries before giving up (and saying "doesn't fit").
-GRID_BUDGET = 200_000
+# The board's size in cells: the same numbers as js/chem/board.js.
+BOARD_WIDTH = 12
+BOARD_HEIGHT = 10
+
+# How hard fits_tri tries before giving up (and saying "doesn't fit").
+# Try this! 200_000 gives up on about 1,300 molecules; this many gives up on
+# far fewer (the run prints how many on stderr).
+GRID_BUDGET = 2_000_000
 
 # Quick text checks, before the slow RDKit ones.
-OK_CHARS = re.compile(r'^[CNOSHcnosl\[\]()=#0-9@/\\]+$')
-ATOM_TOKEN = re.compile(r'Cl|\[[^\]]*\]|[CNOScnos]')
-SIDES = ((1, 0), (-1, 0), (0, 1), (0, -1))
+OK_CHARS = re.compile(r'^[CNOSPFIBHcnospbrli\[\]()=#0-9@/\\]+$')
+ATOM_TOKEN = re.compile(r'Cl|Br|Si|\[[^\]]*\]|[CNOSPFIBcnospb]')
+
+# The 6 cells around a cell on the triangle board, in "axial" steps (q, r):
+# r is the row, and q moves along the row. (1, -1) and (-1, 1) are the two
+# slanted neighbours a square grid doesn't have.
+TRI_SIDES = ((1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (-1, 1))
 
 
 def keep(smiles):
@@ -51,20 +66,22 @@ def keep(smiles):
     if mol is None or len(Chem.GetMolFrags(mol)) != 1 or mol.GetNumHeavyAtoms() > MAX_HEAVY:
         return None
     for atom in Chem.AddHs(mol).GetAtoms():
-        el = atom.GetSymbol()
-        if (el not in HANDS or atom.GetFormalCharge() or atom.GetIsotope()
-                or atom.GetNumRadicalElectrons() or atom.GetTotalValence() != HANDS[el]):
+        if (atom.GetTotalValence() not in HANDS.get(atom.GetSymbol(), ()) or atom.GetFormalCharge()
+                or atom.GetIsotope() or atom.GetNumRadicalElectrons()):
             return None
     Chem.RemoveStereochemistry(mol)  # the board is flat: no 3D
     return mol
 
 
-def fits_grid(mol):
-    """Can every atom (H's too) sit in its own cell, bonded pairs side by side?"""
+def fits_tri(mol):
+    """Can every atom (H's too) sit in its own cell of the triangle board,
+    bonded pairs side by side, all inside BOARD_WIDTH x BOARD_HEIGHT?
+
+    Raises TimeoutError after GRID_BUDGET tries (check() counts those)."""
     mol = Chem.AddHs(mol)
     n = mol.GetNumAtoms()
     nbrs = [[b.GetIdx() for b in a.GetNeighbors()] for a in mol.GetAtoms()]
-    if any(len(x) > 4 for x in nbrs):
+    if any(len(x) > 6 for x in nbrs):
         return False
     start = max(range(n), key=lambda i: (mol.GetAtomWithIdx(i).GetAtomicNum() > 1, len(nbrs[i])))
     order, seen = [start], {start}
@@ -75,6 +92,15 @@ def fits_grid(mol):
                 order.append(j)
     pos, used, steps = {start: (0, 0)}, {(0, 0)}, [0]
 
+    def fits_board():
+        # Across: 2q + r is twice the cell's real left-right place (rows are
+        # shifted half a cell). Two cells 2*(BOARD_WIDTH-1) apart still fit
+        # in one row. Down: the rows used.
+        across = [2 * q + r for q, r in pos.values()]
+        rows = [r for _, r in pos.values()]
+        return (max(across) - min(across) <= 2 * (BOARD_WIDTH - 1)
+                and max(rows) - min(rows) <= BOARD_HEIGHT - 1)
+
     def place(k):
         if k == n:
             return True
@@ -84,22 +110,19 @@ def fits_grid(mol):
         a = order[k]
         placed = [b for b in nbrs[a] if b in pos]
         x0, y0 = pos[placed[0]]
-        for dx, dy in SIDES:
+        for dx, dy in TRI_SIDES:
             c = (x0 + dx, y0 + dy)
-            if c in used or any(abs(pos[b][0] - c[0]) + abs(pos[b][1] - c[1]) != 1 for b in placed[1:]):
+            if c in used or any((pos[b][0] - c[0], pos[b][1] - c[1]) not in TRI_SIDES for b in placed[1:]):
                 continue
             pos[a] = c
             used.add(c)
-            if place(k + 1):
+            if fits_board() and place(k + 1):
                 return True
             del pos[a]
             used.discard(c)
         return False
 
-    try:
-        return place(1)
-    except TimeoutError:
-        return False
+    return place(1)
 
 
 def kekule_forms(mol):
@@ -138,11 +161,16 @@ def kekule_forms(mol):
 
 
 def check(line):
-    """One CID-SMILES line → (cid, canonical smiles, forms) or None."""
+    """One CID-SMILES line → (cid, canonical smiles, forms), 'gave up', or None."""
     cid, _, smiles = line.rstrip('\n').partition('\t')
     mol = keep(smiles)
-    if mol is None or not fits_grid(mol):
+    if mol is None:
         return None
+    try:
+        if not fits_tri(mol):
+            return None
+    except TimeoutError:
+        return 'gave up'
     return int(cid), Chem.MolToSmiles(mol), kekule_forms(mol)
 
 
@@ -150,9 +178,13 @@ def main(smiles_file, title_file):
     """Write molecules.tsv to stdout (oldest CID wins for each molecule)."""
     best = {}  # canonical smiles → (cid, forms)
     with gzip.open(smiles_file, 'rt') as lines, Pool() as pool:
+        gave_up = 0
         for found in pool.imap(check, lines, chunksize=5000):
-            if found and (found[1] not in best or found[0] < best[found[1]][0]):
+            if found == 'gave up':
+                gave_up += 1
+            elif found and (found[1] not in best or found[0] < best[found[1]][0]):
                 best[found[1]] = (found[0], found[2])
+    print(f'{len(best):,} molecules fit; gave up on {gave_up:,}', file=sys.stderr)
     wanted = {cid: forms for cid, forms in best.values()}
     names = {}
     with gzip.open(title_file, 'rt') as lines:

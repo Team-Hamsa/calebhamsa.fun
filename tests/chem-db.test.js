@@ -6,6 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { canonLabel } from '../js/chem/canon.js';
+import { partOf, splitParts } from '../js/chem/lookup.js';
 import { parseSmiles } from '../js/chem/smiles.js';
 import { buildDatabase } from '../tools/chem-db/make-db.js';
 
@@ -40,4 +41,11 @@ test('PubChem compounds with no real name ("CID 123") are left out', () => {
   const { names } = buildDatabase('CID 53627737\tCCCC=O\nWater\tO\n');
   assert.equal(names[label('CCCC=O')], undefined);
   assert.equal(names[label('O')], 'Water');
+});
+
+test('the list is written in parts: each label in the part the room looks in', () => {
+  const { names } = buildDatabase('Water\tO\nEthanol\tCCO\nSulfuric acid\tOS(=O)(=O)O\n');
+  const parts = splitParts(names);
+  for (const [l, name] of Object.entries(names)) assert.equal(parts[partOf(l)][l], name);
+  assert.equal(names[label('OS(=O)(=O)O')], 'Sulfuric acid'); // S with 6 hands is read fine
 });

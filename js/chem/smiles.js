@@ -99,8 +99,10 @@ export function parseSmiles(smiles) {
       const hCount = match[2] === undefined ? 0 : Number(match[2] || 1);
       addAtom(match[1], true, hCount);
       i = close + 1;
-    } else if (ch === '-' || ch === '=' || ch === '#') {
-      pendingOrder = { '-': 1, '=': 2, '#': 3 }[ch];
+    } else if (ch === '-' || ch === '=' || ch === '#' || ch === '/' || ch === '\\') {
+      // "/" and "\\" are single bonds that say which way round a double
+      // bond sits in 3D. The board is flat, so they're just single bonds.
+      pendingOrder = { '-': 1, '=': 2, '#': 3, '/': 1, '\\': 1 }[ch];
       i += 1;
     } else if (ch === '(') {
       branchStack.push(previous);

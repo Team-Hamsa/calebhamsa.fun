@@ -116,4 +116,24 @@ export const KID_MOLECULES = [
   { step: 4, smiles: 'O=C=S', name: 'Carbonyl sulfide', fact: 'Found in volcano gas and in outer space.' },
   { step: 4, smiles: 'ClSCl', name: 'Sulfur dichloride', fact: 'A red liquid used to make rubber tough.' },
   { step: 4, smiles: 'NC(CS)C(=O)O', name: 'Cysteine', fact: 'A protein building block. Hair and nails are full of it.' },
+  { step: 4, smiles: 'O=S=O', name: 'Sulfur dioxide', fact: 'Volcanoes puff it out. Tap the sulfur with 🔗 to give it 4 hands!' },
+  { step: 4, smiles: 'OS(=O)(=O)O', name: 'Sulfuric acid', fact: 'A super strong acid inside car batteries. Its sulfur uses all 6 hands!' },
+
+  // ---- Step 5: F, Br and I join ----
+  { step: 5, smiles: 'F', name: 'Hydrogen fluoride', fact: 'So strong it can eat right through glass!' },
+  { step: 5, smiles: 'FF', name: 'Fluorine', fact: 'The grabbiest atom of all. It snatches hands from almost anything.' },
+  { step: 5, smiles: 'BrBr', name: 'Bromine', fact: 'A dark red liquid that turns into a smelly brown gas.' },
+  { step: 5, smiles: 'II', name: 'Iodine', fact: 'Shiny purple-black crystals that turn into purple smoke when warmed.' },
+  { step: 5, smiles: 'BrC(Br)Br', name: 'Bromoform', fact: 'Seaweed makes it. It smells sweet.' },
+  { step: 5, smiles: 'FC(F)=C(F)F', name: 'Tetrafluoroethylene', fact: 'Becomes Teflon, the slippery stuff on non-stick pans.' },
+  { step: 5, smiles: 'FC(F)(Cl)Cl', name: 'Freon', fact: 'Kept fridges cold long ago, until we found out it hurts the sky’s ozone.' },
+  { step: 5, smiles: 'FS(F)(F)(F)(F)F', name: 'Sulfur hexafluoride', fact: 'A heavy gas that makes your voice super deep! Its sulfur uses all 6 hands.' },
+
+  // ---- Step 6: B, Si and P join ----
+  { step: 6, smiles: '[SiH4]', name: 'Silane', fact: 'Silicon with four hydrogens. It catches fire all by itself in air!' },
+  { step: 6, smiles: 'C[Si](C)(C)C', name: 'Tetramethylsilane', fact: 'Scientists use it as the zero mark when they measure molecules with giant magnets.' },
+  { step: 6, smiles: 'OB(O)O', name: 'Boric acid', fact: 'A gentle acid that washes eyes and keeps ants away.' },
+  { step: 6, smiles: 'FB(F)F', name: 'Boron trifluoride', fact: 'Boron has only 3 hands, so it holds just 3 fluorines.' },
+  { step: 6, smiles: 'P', name: 'Phosphine', fact: 'Smells like garlic and rotten fish.' },
+  { step: 6, smiles: 'O=P(O)(O)O', name: 'Phosphoric acid', fact: 'Gives cola its tangy taste. Tap the phosphorus with 🔗 for 5 hands!' },
 ];

@@ -111,3 +111,8 @@ test('writeSmiles puts sulfur with extra hands AND hydrogens in [ ], so the H co
 test('ring numbers past 9 are written %10, %11… and read back', () => {
   assert.deepEqual(formula(parseSmiles('C%10CC%10')), { C: 3, H: 6 });
 });
+
+test('3D marks / and \\ are read as plain single bonds (the board is flat)', () => {
+  assert.equal(label('F/C=C/F'), label('FC=CF'));
+  assert.equal(label('B1=NOO/C=C\\C=C1'), label('B1=NOOC=CC=C1'));
+});

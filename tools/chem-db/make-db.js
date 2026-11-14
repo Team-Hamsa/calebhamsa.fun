@@ -1,17 +1,19 @@
 /**
  * make-db.js — turns tools/chem-db/export.py's list of molecules into
- * data/molecules.json, the chemistry room's big name list.
+ * data/molecules/0.json … 15.json, the chemistry room's big name list
+ * (split into parts, so the iPad never has to read one huge file).
  *
  * Each input line is: name <TAB> smiles|smiles|... (every Kekulé form).
  * Each form is read with the SAME smiles.js and labelled with the SAME
  * canon.js the room uses, so a molecule Caleb builds always finds its name.
  *
  * Run (from the repo folder):
- *   node tools/chem-db/make-db.js molecules.tsv
- * It writes data/molecules.json and says how many names it kept.
+ *   node tools/chem-db/make-db.js tools/chem-db/molecules.tsv
+ * It writes data/molecules/ and says how many names it kept.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { canonLabel } from '../../js/chem/canon.js';
+import { splitParts } from '../../js/chem/lookup.js';
 import { parseSmiles } from '../../js/chem/smiles.js';
 
 /**
@@ -54,13 +56,16 @@ export function buildDatabase(text) {
 }
 
 /**
- * Read the .tsv named on the command line and write data/molecules.json.
+ * Read the .tsv named on the command line and write data/molecules/.
  * @returns {void}
  */
 function main() {
   const input = process.argv[2];
   const { names, clashes, skipped } = buildDatabase(readFileSync(input, 'utf8'));
-  writeFileSync(new URL('../../data/molecules.json', import.meta.url), `${JSON.stringify(names, null, 0)}\n`);
+  const folder = new URL('../../data/molecules/', import.meta.url);
+  rmSync(new URL('../../data/molecules.json', import.meta.url), { force: true }); // the old one-file list
+  mkdirSync(folder, { recursive: true });
+  splitParts(names).forEach((part, k) => writeFileSync(new URL(`${k}.json`, folder), `${JSON.stringify(part)}\n`));
   console.log(`${Object.keys(names).length} labels, ${clashes} clashes, ${skipped.length} skipped`);
   if (skipped.length) console.log('skipped (first 10):', skipped.slice(0, 10).join(' '));
 }
