@@ -4,9 +4,11 @@
  * The book remembers:
  *   found       labels of hand-written molecules Caleb has made (📖)
  *   pictures    label → layout: how he built each 📖 one
- *   rare        real molecules from the big list: {label, name, layout} (🌟)
+ *   rare        real molecules from the big list or PubChem:
+ *               {label, name, layout, cid?, realName?} (🌟)
  *   inventions  molecules nobody has named: {label, name, layout} (💡)
- *   pending     made while the big list wasn't loaded: {label, layout} (⏳)
+ *   pending     made while we couldn't check yet: {label, layout} (⏳)
+ *   asked       PubChem's answers: label → {cid, name} (or {cid: 0}: unknown)
  *   step        how far up the unlock LADDER he is
  *
  * A "layout" is the little picture of how he built it (board.js groupLayout).
@@ -24,20 +26,22 @@ export const LADDER = [
   { step: 2, unlocks: ['C'], hint: '💧 make water', goal: (book) => book.found.includes(WATER) },
   { step: 3, unlocks: ['N'], hint: '3 molecules with ⚫ carbon', goal: (book) => countWith(book, 'C') >= 3 },
   { step: 4, unlocks: ['Cl', 'S'], hint: '2 molecules with 🔵 nitrogen', goal: (book) => countWith(book, 'N') >= 2 },
+  { step: 5, unlocks: ['F', 'Br', 'I'], hint: '2 molecules with 🟢 chlorine or 🟡 sulfur', goal: (book) => countWithAny(book, ['Cl', 'S']) >= 2 },
+  { step: 6, unlocks: ['B', 'Si', 'P'], hint: '2 molecules with fluorine, bromine or iodine', goal: (book) => countWithAny(book, ['F', 'Br', 'I']) >= 2 },
 ];
 
 /** Water's label (see canon.js): one O with two H's. */
 export const WATER = 'O2|';
 
 /** Every atom, in palette order. */
-export const ALL_ATOMS = ['H', 'O', 'C', 'N', 'Cl', 'S'];
+export const ALL_ATOMS = ['H', 'O', 'C', 'N', 'Cl', 'S', 'F', 'Br', 'I', 'B', 'Si', 'P'];
 
 /**
  * A brand-new, empty book.
- * @returns {{step: number, found: string[], pictures: Record<string, object>, rare: object[], inventions: object[], pending: object[]}} the book
+ * @returns {{step: number, found: string[], pictures: Record<string, object>, rare: object[], inventions: object[], pending: object[], asked: Record<string, object>}} the book
  */
 export function createBook() {
-  return { step: 1, found: [], pictures: {}, rare: [], inventions: [], pending: [] };
+  return { step: 1, found: [], pictures: {}, rare: [], inventions: [], pending: [], asked: {} };
 }
 
 /**
@@ -60,8 +64,21 @@ export function elementsIn(label) {
  * @returns {number} how many
  */
 export function countWith(book, element) {
+  return countWithAny(book, [element]);
+}
+
+/**
+ * How many different checked molecules (📖 and 🌟) contain ANY of these elements.
+ * @param {ReturnType<typeof createBook>} book - the book
+ * @param {string[]} elements - like ['Cl', 'S']
+ * @returns {number} how many
+ */
+export function countWithAny(book, elements) {
   const labels = [...book.found, ...book.rare.map((r) => r.label)];
-  return labels.filter((label) => elementsIn(label).has(element)).length;
+  return labels.filter((label) => {
+    const inIt = elementsIn(label);
+    return elements.some((el) => inIt.has(el));
+  }).length;
 }
 
 /**
@@ -110,14 +127,18 @@ export function record(book, label, layout, result) {
       book.pictures[label] = layout;
     }
   } else if (result.kind === 'rare') {
-    again = book.rare.some((r) => r.label === label);
-    if (!again) book.rare.unshift({ label, name: result.name, layout });
+    // The same PubChem number (CID) is the same molecule, built with its
+    // double bonds the other way round: found again, not a new one.
+    const old = book.rare.find((r) => r.label === label || (result.cid && r.cid === result.cid));
+    again = Boolean(old);
+    if (old) name = old.name;
+    else book.rare.unshift(result.cid ? { label, name: result.name, layout, cid: result.cid } : { label, name: result.name, layout });
   } else if (result.kind === 'invention') {
     const old = book.inventions.find((r) => r.label === label);
     again = Boolean(old);
     if (old) name = old.name;
     else {
-      name = `Invention #${book.inventions.length + 1}`;
+      name = `Invention #${nextInventionNumber(book)}`;
       book.inventions.unshift({ label, name, layout });
     }
   } else if (result.kind === 'pending') {
@@ -128,21 +149,65 @@ export function record(book, label, layout, result) {
 }
 
 /**
- * The big list just arrived: sort out everything that was waiting (⏳).
+ * The number for the next "Invention #n": one more than any used so far
+ * (inventions that turned out to be real molecules leave gaps).
+ * @param {ReturnType<typeof createBook>} book - the book
+ * @returns {number} the next number
+ */
+function nextInventionNumber(book) {
+  const used = book.inventions.map((r) => Number(r.name.match(/^Invention #(\d+)$/)?.[1] ?? 0));
+  return Math.max(book.inventions.length, ...used) + 1;
+}
+
+/**
+ * The big list (or a PubChem answer) just arrived: sort out everything
+ * that was waiting (⏳).
  * @param {ReturnType<typeof createBook>} book - the book (changed in place)
- * @param {Function} look - label → lookup result (lookUp with the list filled in)
- * @returns {string[]} atoms this unlocked (rare finds count toward goals)
+ * @param {Function} look - label → lookup result (lookUp with what we know now)
+ * @returns {{unlocked: string[], settled: {label: string, layout: object, result: object, recorded: object}[]}}
+ *   atoms this unlocked (rare finds count toward goals), and each molecule
+ *   that stopped waiting (so the room can show its name card)
  */
 export function resolvePending(book, look) {
   const waiting = book.pending;
   book.pending = [];
   const unlocked = [];
+  const settled = [];
   for (const { label, layout } of waiting) {
     const result = look(label);
-    if (result.kind === 'pending') book.pending.push({ label, layout }); // still not loaded
-    else unlocked.push(...record(book, label, layout, result).unlocked);
+    if (result.kind === 'pending') book.pending.push({ label, layout }); // still waiting
+    else {
+      const recorded = record(book, label, layout, result);
+      unlocked.push(...recorded.unlocked);
+      settled.push({ label, layout, result, recorded });
+    }
   }
-  return unlocked;
+  return { unlocked, settled };
+}
+
+/**
+ * Some 💡 inventions turn out to be real molecules (PubChem knew them):
+ * move those to 🌟. A name Caleb gave it himself stays, and PubChem's
+ * name is kept as its realName; an "Invention #n" gets PubChem's name.
+ * @param {ReturnType<typeof createBook>} book - the book (changed in place)
+ * @param {Function} look - label → lookup result
+ * @returns {{unlocked: string[], promoted: object[]}} atoms this unlocked, and the new 🌟 entries
+ */
+export function promoteInventions(book, look) {
+  const promoted = [];
+  book.inventions = book.inventions.filter((invention) => {
+    const result = look(invention.label);
+    if (result.kind !== 'rare') return true;
+    if (!book.rare.some((r) => r.label === invention.label || (result.cid && r.cid === result.cid))) {
+      const named = !/^Invention #\d+$/.test(invention.name);
+      const entry = { label: invention.label, name: named ? invention.name : result.name, layout: invention.layout, cid: result.cid };
+      if (named) entry.realName = result.name;
+      book.rare.unshift(entry);
+      promoted.push(entry);
+    }
+    return false;
+  });
+  return { unlocked: climbLadder(book), promoted };
 }
 
 /**

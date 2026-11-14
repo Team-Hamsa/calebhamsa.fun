@@ -5,10 +5,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  WATER, climbLadder, countWith, createBook, elementsIn, INVENTION_NAME_MAX, record, renameInvention, resolvePending, unlockAll, unlockedAtoms,
+  WATER, climbLadder, countWith, createBook, elementsIn, INVENTION_NAME_MAX, promoteInventions, record, renameInvention, resolvePending,
+  unlockAll, unlockedAtoms,
 } from '../js/chem/book.js';
 import { canonLabel } from '../js/chem/canon.js';
-import { kidIndex, loadDatabase, lookUp } from '../js/chem/lookup.js';
+import { DATABASE_PARTS, kidIndex, loadDatabase, lookUp, partOf, partUrl, splitParts } from '../js/chem/lookup.js';
 import { parseSmiles } from '../js/chem/smiles.js';
 
 /**
@@ -19,8 +20,11 @@ import { parseSmiles } from '../js/chem/smiles.js';
 const label = (smiles) => canonLabel(parseSmiles(smiles));
 
 const kids = kidIndex();
-/** A tiny pretend big list: butanone (rare) and water. */
-const database = { [label('CCC(C)=O')]: 'Butanone', [label('O')]: 'Water' };
+/** A tiny pretend big list: butanone (rare) and water, split into its parts. */
+const names = { [label('CCC(C)=O')]: 'Butanone', [label('O')]: 'Water' };
+const database = { parts: splitParts(names) };
+/** DMT has 14 non-H atoms: too big for the built-in list, so PubChem is asked. */
+const DMT = label('CN(C)CCC1=CNC2=CC=CC=C12');
 /** A tiny pretend picture. */
 const layout = { width: 1, height: 1, atoms: ['O'], right: [0], down: [0] };
 
@@ -67,7 +71,7 @@ test('three carbon molecules unlock N, and rare finds count toward it', () => {
 test('inventions do not count toward unlocks, and get numbered names', () => {
   const book = createBook();
   record(book, WATER, layout, lookUp(WATER, kids, null));
-  for (const smiles of ['CCCCCCCCC', 'CCCCCCCCCC', 'CCCCCCCCCCC']) {
+  for (const smiles of ['OOOOOO', 'OOOOOOO', 'OOOOOOOO']) { // not in the pretend list
     const made = record(book, label(smiles), layout, lookUp(label(smiles), kids, database));
     assert.deepEqual(made.unlocked, []);
   }
@@ -107,18 +111,91 @@ test('lookup order: hand-written, then the big list, then waiting, then inventio
   assert.equal(lookUp(WATER, kids, null).kind, 'found'); // hand-written ones work offline
   assert.deepEqual(lookUp(label('CCC(C)=O'), kids, database), { kind: 'rare', name: 'Butanone' });
   assert.deepEqual(lookUp(label('CCC(C)=O'), kids, null), { kind: 'pending' });
-  assert.deepEqual(lookUp(label('CCCCCCCCCC'), kids, database), { kind: 'invention' });
-  assert.deepEqual(lookUp('constructor', kids, {}), { kind: 'invention' }); // no tricks from Object's own names
+  assert.deepEqual(lookUp(label('OOOOOOOO'), kids, database), { kind: 'invention' }); // 8 atoms, not in the list
+  assert.deepEqual(lookUp('constructor', kids, { parts: splitParts({}) }), { kind: 'invention' }); // no tricks from Object's own names
+});
+
+test('lookup: molecules with more than 8 non-H atoms wait for PubChem, whatever the list says', () => {
+  assert.deepEqual(lookUp(DMT, kids, database), { kind: 'pending', ask: true });
+  assert.deepEqual(lookUp(DMT, kids, null), { kind: 'pending', ask: true });
+  const asked = { [DMT]: { cid: 6089, name: 'N,N-Dimethyltryptamine' } };
+  assert.deepEqual(lookUp(DMT, kids, null, asked), { kind: 'rare', name: 'N,N-Dimethyltryptamine', cid: 6089 });
+  assert.deepEqual(lookUp(DMT, kids, null, { [DMT]: { cid: 0 } }), { kind: 'invention' });
+});
+
+test('the list is split into parts, and each label always lives in the same part', () => {
+  assert.equal(DATABASE_PARTS, 16);
+  assert.equal(partOf(WATER), partOf(WATER));
+  const used = new Set();
+  for (let k = 0; k < 1000; k += 1) used.add(partOf(`C${k}|0-1:1`));
+  assert.equal(used.size, DATABASE_PARTS);
+  const parts = splitParts(names);
+  assert.equal(parts.length, DATABASE_PARTS);
+  assert.equal(parts[partOf(WATER)][WATER], 'Water');
+  assert.equal(partUrl(3), 'data/molecules/3.json');
+});
+
+test('a second way of building a PubChem molecule (same CID) is "found again", and counts once', () => {
+  const book = createBook();
+  record(book, 'A', layout, { kind: 'rare', name: 'Indole thing', cid: 42 });
+  const second = record(book, 'B', layout, { kind: 'rare', name: 'Indole thing', cid: 42 });
+  assert.equal(second.again, true);
+  assert.equal(book.rare.length, 1);
+  assert.equal(book.rare[0].cid, 42);
+});
+
+test('a big molecule made offline waits (⏳), and gets its PubChem name once it is answered', () => {
+  const book = createBook();
+  record(book, DMT, layout, lookUp(DMT, kids, database, book.asked));
+  assert.equal(book.pending.length, 1);
+  assert.equal(book.inventions.length, 0); // never called an invention just because there was no answer
+  let { settled } = resolvePending(book, (l) => lookUp(l, kids, database, book.asked)); // still no answer
+  assert.deepEqual(settled, []);
+  book.asked[DMT] = { cid: 6089, name: 'N,N-Dimethyltryptamine' };
+  ({ settled } = resolvePending(book, (l) => lookUp(l, kids, database, book.asked)));
+  assert.equal(settled.length, 1);
+  assert.equal(settled[0].result.kind, 'rare');
+  assert.equal(book.rare[0].name, 'N,N-Dimethyltryptamine');
+  assert.equal(book.pending.length, 0);
+});
+
+test('an old invention PubChem knows becomes 🌟; a name Caleb gave it stays', () => {
+  const book = createBook();
+  record(book, 'A', layout, { kind: 'invention' }); // Invention #1
+  record(book, 'B', layout, { kind: 'invention' }); // Invention #2
+  record(book, 'C', layout, { kind: 'invention' }); // Invention #3: PubChem doesn't know it
+  renameInvention(book, 'A', 'Zoomy');
+  const answers = { A: { cid: 1, name: 'Real A' }, B: { cid: 2, name: 'Real B' }, C: { cid: 0 } };
+  const look = (l) => (answers[l]?.name ? { kind: 'rare', name: answers[l].name, cid: answers[l].cid } : { kind: 'invention' });
+  const { promoted } = promoteInventions(book, look);
+  assert.equal(promoted.length, 2);
+  assert.deepEqual(book.inventions.map((i) => i.label), ['C']);
+  const a = book.rare.find((r) => r.label === 'A');
+  assert.equal(a.name, 'Zoomy');
+  assert.equal(a.realName, 'Real A');
+  assert.equal(book.rare.find((r) => r.label === 'B').name, 'Real B');
+  // The next invention gets a number nobody has used.
+  assert.equal(record(book, 'D', layout, { kind: 'invention' }).name, 'Invention #4');
+});
+
+test('steps 5 and 6: Cl or S molecules unlock F, Br and I; F, Br or I molecules unlock B, Si and P', () => {
+  const book = createBook();
+  book.step = 4;
+  record(book, label('CCl'), layout, { kind: 'found', entry: {} });
+  assert.deepEqual(record(book, label('S'), layout, { kind: 'rare', name: 'Hydrogen sulfide' }).unlocked, ['F', 'Br', 'I']);
+  record(book, label('F'), layout, { kind: 'rare', name: 'HF' });
+  assert.deepEqual(record(book, label('CBr'), layout, { kind: 'rare', name: 'Bromomethane' }).unlocked, ['B', 'Si', 'P']);
+  assert.deepEqual(unlockedAtoms(book), ['H', 'O', 'C', 'N', 'Cl', 'S', 'F', 'Br', 'I', 'B', 'Si', 'P']);
 });
 
 test('waiting molecules are sorted out when the big list arrives', () => {
   const book = createBook();
   record(book, WATER, layout, lookUp(WATER, kids, null));
-  for (const smiles of ['C', 'CC', 'CCC(C)=O', 'CCCCCCCCCC']) record(book, label(smiles), layout, lookUp(label(smiles), kids, null));
+  for (const smiles of ['C', 'CC', 'CCC(C)=O', 'OOOOOOOO']) record(book, label(smiles), layout, lookUp(label(smiles), kids, null));
   assert.equal(book.pending.length, 2);
-  assert.deepEqual(resolvePending(book, (l) => lookUp(l, kids, null)), []); // still offline
+  assert.deepEqual(resolvePending(book, (l) => lookUp(l, kids, null)).unlocked, []); // still offline
   assert.equal(book.pending.length, 2);
-  assert.deepEqual(resolvePending(book, (l) => lookUp(l, kids, database)), ['N']);
+  assert.deepEqual(resolvePending(book, (l) => lookUp(l, kids, database)).unlocked, ['N']);
   assert.equal(book.pending.length, 0);
   assert.equal(book.rare.length, 1);
   assert.equal(book.inventions.length, 1);
@@ -127,7 +204,7 @@ test('waiting molecules are sorted out when the big list arrives', () => {
 test('unlockAll opens every atom; climbing twice does nothing more', () => {
   const book = createBook();
   unlockAll(book);
-  assert.deepEqual(unlockedAtoms(book), ['H', 'O', 'C', 'N', 'Cl', 'S']);
+  assert.deepEqual(unlockedAtoms(book), ['H', 'O', 'C', 'N', 'Cl', 'S', 'F', 'Br', 'I', 'B', 'Si', 'P']);
   assert.deepEqual(climbLadder(book), []);
 });
 
@@ -141,5 +218,14 @@ test('loadDatabase gives null instead of crashing when offline or broken', async
   assert.equal(await loadDatabase(async () => { throw new Error('offline'); }), null);
   assert.equal(await loadDatabase(async () => ({ ok: false })), null);
   assert.equal(await loadDatabase(async () => ({ ok: true, json: async () => { throw new SyntaxError('bad'); } })), null);
-  assert.deepEqual(await loadDatabase(async () => ({ ok: true, json: async () => database })), database);
+  // Every part arrives: the list is all the parts, in order.
+  const fetched = [];
+  const loaded = await loadDatabase(async (url) => {
+    fetched.push(url);
+    return { ok: true, json: async () => database.parts[Number(url.match(/(\d+)\.json$/)[1])] };
+  });
+  assert.deepEqual(loaded, database);
+  assert.deepEqual(fetched, database.parts.map((_, k) => partUrl(k)));
+  // One part missing: no list yet (the room tries again later).
+  assert.equal(await loadDatabase(async (url) => (url.endsWith('/7.json') ? { ok: false } : { ok: true, json: async () => ({}) })), null);
 });
