@@ -6,7 +6,7 @@ It reads PubChem's CID-SMILES.gz with export.py's rules, but allows up to
 P, and sulfur with 4 or 6 hands), and for every molecule it keeps it
 tries two boards:
 
-  square    the board we have: 4 cells beside each cell (export.fits_grid)
+  square    the board we have: 4 cells beside each cell (fits_grid)
   triangle  a board where each cell touches 6 others (fits_tri below)
 
 It writes one line per molecule (oldest CID wins, like export.py):
@@ -41,6 +41,56 @@ ATOM_TOKEN = re.compile(r'Cl|Br|Si|\[[^\]]*\]|[CNOSPFIBcnospb]')
 # Axial coordinates: the 6 cells around a cell on a triangle board.
 TRI_SIDES = ((1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (-1, 1))
 
+# The old square board (export.py used to check this before the triangle board).
+SIDES = ((1, 0), (-1, 0), (0, 1), (0, -1))
+
+# The step budgets the 2026-10-28 measurements used.
+SQUARE_BUDGET = 200_000
+TRI_BUDGET = 200_000
+
+
+def fits_grid(mol):
+    """Can every atom (H's too) sit in its own cell, bonded pairs side by side?"""
+    mol = Chem.AddHs(mol)
+    n = mol.GetNumAtoms()
+    nbrs = [[b.GetIdx() for b in a.GetNeighbors()] for a in mol.GetAtoms()]
+    if any(len(x) > 4 for x in nbrs):
+        return False
+    start = max(range(n), key=lambda i: (mol.GetAtomWithIdx(i).GetAtomicNum() > 1, len(nbrs[i])))
+    order, seen = [start], {start}
+    for i in order:  # breadth-first: each atom is placed next to one already placed
+        for j in sorted(nbrs[i], key=lambda k: -len(nbrs[k])):
+            if j not in seen:
+                seen.add(j)
+                order.append(j)
+    pos, used, steps = {start: (0, 0)}, {(0, 0)}, [0]
+
+    def place(k):
+        if k == n:
+            return True
+        steps[0] += 1
+        if steps[0] > SQUARE_BUDGET:
+            raise TimeoutError
+        a = order[k]
+        placed = [b for b in nbrs[a] if b in pos]
+        x0, y0 = pos[placed[0]]
+        for dx, dy in SIDES:
+            c = (x0 + dx, y0 + dy)
+            if c in used or any(abs(pos[b][0] - c[0]) + abs(pos[b][1] - c[1]) != 1 for b in placed[1:]):
+                continue
+            pos[a] = c
+            used.add(c)
+            if place(k + 1):
+                return True
+            del pos[a]
+            used.discard(c)
+        return False
+
+    try:
+        return place(1)
+    except TimeoutError:
+        return False
+
 
 def keep(smiles):
     """export.keep with the wider HANDS: (molecule, elements, extra) or None."""
@@ -71,7 +121,7 @@ def tri_touching(p, q):
 
 
 def fits_tri(mol):
-    """Like export.fits_grid, on a board where each cell touches 6 others."""
+    """Like fits_grid, on a board where each cell touches 6 others."""
     mol = Chem.AddHs(mol)
     n = mol.GetNumAtoms()
     nbrs = [[b.GetIdx() for b in a.GetNeighbors()] for a in mol.GetAtoms()]
@@ -90,7 +140,7 @@ def fits_tri(mol):
         if k == n:
             return True
         steps[0] += 1
-        if steps[0] > export.GRID_BUDGET:
+        if steps[0] > TRI_BUDGET:
             raise TimeoutError
         a = order[k]
         placed = [b for b in nbrs[a] if b in pos]
@@ -125,8 +175,8 @@ def check(line):
     if kept is None:
         return None
     mol, elements, extra = kept
-    # export.fits_grid counts "gave up" as "doesn't fit", just like the real list.
-    square = '1' if export.fits_grid(mol) else '0'
+    # fits_grid counts "gave up" as "doesn't fit", just like the real list.
+    square = '1' if fits_grid(mol) else '0'
     # The triangle board has the square's 4 sides plus 2 more, so whatever
     # fits the square fits it too: only search when the square said no.
     triangle = '1' if square == '1' else tri_result(mol)
