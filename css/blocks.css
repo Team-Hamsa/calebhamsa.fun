@@ -717,6 +717,7 @@ main {
 .book-tile .mystery { font-size: 32px; }
 /* A 🌟 Caleb named himself: PubChem's real name, small, under his. */
 .book-tile .real-name { font-size: 11px; opacity: 0.75; }
+.chem-dialog .real-name { margin: 0; font-size: 12px; opacity: 0.75; overflow-wrap: anywhere; }
 .molecule-picture { display: block; max-width: 100%; height: auto; }
 .book-tile .molecule-picture { max-width: 168px; }
 

@@ -94,12 +94,13 @@
     </form>
   </dialog>
 
-  <!-- One 💡 invention, opened by tapping it in the book: look at it, hear
-       its name, or give it a new one. -->
+  <!-- One 💡 invention or 🌟 molecule, opened by tapping it in the book:
+       look at it, hear its name, or give it a new one. -->
   <dialog class="chem-dialog" id="invention">
     <form method="dialog">
       <div class="card-picture" id="invention-picture"></div>
       <h2 id="invention-name"></h2>
+      <p class="real-name" id="invention-real" hidden></p>
       <div class="rename-row" id="rename-row" hidden>
         <input type="text" class="rename-box" id="rename-box" aria-label="A new name"
                autocomplete="off" autocapitalize="words" enterkeyhint="done">

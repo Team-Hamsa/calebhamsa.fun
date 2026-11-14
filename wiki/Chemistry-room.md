@@ -58,11 +58,12 @@ below). That means rings of any size fit.
   your invention. If PubChem's main name is a chemist's name full of numbers
   ("3-(1-Methylpyrrolidin-2-yl)pyridine"), the room looks through its other
   names for the everyday one ("Nicotine"). With no internet it waits ⏳ and asks again later.
-- **Naming your inventions:** open the 📖 book, go to 💡, and tap an invention.
-  Its window shows it big: 🔊 says its name, ✏️ lets you type a new name
-  (up to 30 letters), ✅ saves it. Make it again and the card uses your name.
-  If PubChem later finds out it's a real molecule, it moves to 🌟 and keeps
-  your name, with its real name in small letters under it.
+- **Naming your molecules:** open the 📖 book, go to 💡 or 🌟, and tap a
+  molecule. Its window shows it big: 🔊 says its name, ✏️ lets you type a new
+  name (up to 30 letters), ✅ saves it. Make it again and the card uses your
+  name. A 🌟 you renamed keeps its real name in small letters under yours;
+  type the real name again to put it back. If PubChem later finds out an
+  invention is a real molecule, it moves to 🌟 and keeps your name too.
 - **Unlocking:** start with H and O. 💧 Water unlocks ⚫ C. Three carbon
   molecules unlock 🔵 N. Two nitrogen molecules unlock 🟢 Cl and 🟡 S. Two
   molecules with Cl or S unlock 🍏 F, 🟤 Br and 🟣 I. Two molecules with F, Br

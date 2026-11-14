@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  WATER, betterName, climbLadder, countWith, createBook, elementsIn, INVENTION_NAME_MAX, promoteInventions, record, renameInvention, resolvePending,
+  WATER, betterName, climbLadder, countWith, createBook, elementsIn, INVENTION_NAME_MAX, promoteInventions, record, renameInvention, renameRare, resolvePending,
   unlockAll, unlockedAtoms,
 } from '../js/chem/book.js';
 import { canonLabel } from '../js/chem/canon.js';
@@ -251,4 +251,21 @@ test('a better PubChem name replaces the old one, but never a name Caleb gave', 
   book.rare.push({ label: 'c', name: address, layout: null, cid: 7 }); // another molecule
   assert.equal(betterName(book, 942, address, 'Nicotine'), 2);
   assert.deepEqual(book.rare.map((r) => [r.name, r.realName]), [['Nicotine', undefined], ['Smoky', 'Nicotine'], [address, undefined]]);
+});
+
+test('a 🌟 can get Caleb\'s own name; its real name is kept, and typing it again puts it back', () => {
+  const book = createBook();
+  book.rare.push({ label: 'N', name: 'Nicotine', layout: null, cid: 942 });
+  assert.ok(renameRare(book, 'N', '  Smoky  '));
+  assert.deepEqual([book.rare[0].name, book.rare[0].realName], ['Smoky', 'Nicotine']);
+  assert.ok(renameRare(book, 'N', 'Cloudy')); // renamed twice: still the real name underneath
+  assert.deepEqual([book.rare[0].name, book.rare[0].realName], ['Cloudy', 'Nicotine']);
+  assert.ok(renameRare(book, 'N', 'Nicotine'));
+  assert.deepEqual(book.rare[0], { label: 'N', name: 'Nicotine', layout: null, cid: 942 });
+  assert.equal(renameRare(book, 'N', '   '), false);
+  assert.equal(renameRare(book, 'nope', 'X'), false);
+  assert.ok(renameRare(book, 'N', 'x'.repeat(INVENTION_NAME_MAX + 5)));
+  assert.equal(book.rare[0].name.length, INVENTION_NAME_MAX);
+  // Making it again: the card uses Caleb's name.
+  assert.equal(record(book, 'N', null, { kind: 'rare', name: 'Nicotine', cid: 942 }).name, book.rare[0].name);
 });

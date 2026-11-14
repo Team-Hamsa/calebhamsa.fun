@@ -244,7 +244,7 @@ export function betterName(book, cid, oldName, newName) {
 }
 
 /**
- * The longest name an invention can have, so it still fits under its
+ * The longest name Caleb can give an invention or a 🌟, so it still fits under its
  * picture in the book.
  * 🧪 Try this! Make it 10 and see a long name get cut short.
  */
@@ -259,10 +259,40 @@ export const INVENTION_NAME_MAX = 30;
  *   or there's no invention with that label
  */
 export function renameInvention(book, label, name) {
-  const trimmed = name.trim().slice(0, INVENTION_NAME_MAX).trim();
+  const trimmed = cleanName(name);
   const invention = book.inventions.find((r) => r.label === label);
   if (!invention || !trimmed) return false;
   invention.name = trimmed;
+  return true;
+}
+
+/**
+ * Tidy a name Caleb typed: no spaces at the ends, and not too long.
+ * @param {string} name - what was typed
+ * @returns {string} the tidy name ('' if it was blank)
+ */
+function cleanName(name) {
+  return name.trim().slice(0, INVENTION_NAME_MAX).trim();
+}
+
+/**
+ * Give a 🌟 molecule Caleb's own name. Its real chemistry name is kept as
+ * its realName (shown small under his name); typing the real name again
+ * puts it back the way it was.
+ * @param {ReturnType<typeof createBook>} book - the book (changed in place)
+ * @param {string} label - which 🌟 molecule (its label)
+ * @param {string} name - the new name (spaces at the ends don't count)
+ * @returns {boolean} true if it was renamed; false if the name was blank
+ *   or there's no 🌟 with that label
+ */
+export function renameRare(book, label, name) {
+  const trimmed = cleanName(name);
+  const entry = book.rare.find((r) => r.label === label);
+  if (!entry || !trimmed) return false;
+  const real = entry.realName ?? entry.name;
+  if (trimmed === real) delete entry.realName;
+  else entry.realName = real;
+  entry.name = trimmed;
   return true;
 }
 

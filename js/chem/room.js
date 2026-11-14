@@ -24,7 +24,7 @@ import {
   neighbors, newlyFinished, placeAtom, removeAtom, tapAtom, tapBond, touching,
 } from './board.js';
 import {
-  ALL_ATOMS, LADDER, betterName, createBook, INVENTION_NAME_MAX, promoteInventions, record, renameInvention, resolvePending, unlockAll, unlockedAtoms,
+  ALL_ATOMS, LADDER, betterName, createBook, INVENTION_NAME_MAX, promoteInventions, record, renameInvention, renameRare, resolvePending, unlockAll, unlockedAtoms,
 } from './book.js';
 import { canonLabel, FULL_SEARCH_MAX, heavyCount } from './canon.js';
 import { ATOM_INFO, drawAtom, drawBoard, pictureSize } from './chem-art.js';
@@ -872,28 +872,56 @@ function setupDialogs() {
   });
 }
 
-/** The label of the 💡 invention showing in its window (null = none). */
-let openLabel = null;
+/** The molecule showing in the naming window: its book tab and label (null = none). */
+let named = null;
 
 /**
- * Open the window for one 💡 invention: its big picture and its name.
- * 🧪 Try this! Add speak(invention.name) at the end so it says the name
- * as soon as the window opens.
- * @param {string} label - which invention
+ * The 💡 invention or 🌟 molecule showing in the naming window.
+ * @returns {object|undefined} its book entry
+ */
+function openEntry() {
+  if (!named) return undefined;
+  const list = named.tab === 'rare' ? state.book.rare : state.book.inventions;
+  return list.find((r) => r.label === named.label);
+}
+
+/**
+ * Show the open molecule's name in the window (and, for a 🌟 Caleb
+ * named himself, its real name in small letters under it).
  * @returns {void}
  */
-function openInvention(label) {
-  const invention = state.book.inventions.find((r) => r.label === label);
-  if (!invention) return;
-  openLabel = label;
-  byId('invention-picture').replaceChildren(picture(invention.layout, false, CARD_CELL_PX));
-  byId('invention-name').textContent = invention.name;
+function showOpenName() {
+  const entry = openEntry();
+  byId('invention-name').textContent = entry.name;
+  const real = byId('invention-real');
+  real.textContent = entry.realName ? `Real name: ${entry.realName}` : '';
+  real.hidden = !entry.realName;
+}
+
+/**
+ * Open the naming window for one 💡 invention or 🌟 molecule: its big
+ * picture and its name.
+ * 🧪 Try this! Add speak(openEntry().name) at the end so it says the name
+ * as soon as the window opens.
+ * @param {string} tab - 'inventions' or 'rare'
+ * @param {string} label - which molecule
+ * @returns {void}
+ */
+function openNamed(tab, label) {
+  named = { tab, label };
+  const entry = openEntry();
+  if (!entry) {
+    named = null;
+    return;
+  }
+  byId('invention-picture').replaceChildren(picture(entry.layout, false, CARD_CELL_PX));
+  showOpenName();
   showRenaming(false);
   byId('invention').showModal();
 }
 
 /**
- * Switch the invention window between showing the name and the name box.
+ * Switch the naming window between showing the name and the name box.
  * @param {boolean} on - true to show the box (with the name ready to type over)
  * @returns {void}
  */
@@ -918,18 +946,18 @@ function showRenaming(on) {
  * @returns {void}
  */
 function saveRename() {
-  if (renameInvention(state.book, openLabel, byId('rename-box').value)) {
+  const rename = named?.tab === 'rare' ? renameRare : renameInvention;
+  if (named && rename(state.book, named.label, byId('rename-box').value)) {
     save();
-    const { name } = state.book.inventions.find((r) => r.label === openLabel);
-    byId('invention-name').textContent = name;
-    showBookTab('inventions'); // the tile behind the window gets the new name too
-    speak(name);
+    showOpenName();
+    showBookTab(named.tab); // the tile behind the window gets the new name too
+    speak(openEntry().name);
   }
   showRenaming(false);
 }
 
 /**
- * Hook up the 💡 invention window's buttons.
+ * Hook up the naming window's buttons (for 💡 inventions and 🌟 molecules).
  * @returns {void}
  */
 function setupInventionWindow() {
@@ -947,7 +975,7 @@ function setupInventionWindow() {
     else showRenaming(false);
   });
   byId('invention').addEventListener('close', () => {
-    openLabel = null;
+    named = null;
   });
 }
 
@@ -970,7 +998,11 @@ function showBookTab(tab) {
     }
   } else if (tab === 'rare') {
     for (const item of state.book.pending) list.append(tile(item.layout, '⏳ …', null));
-    for (const item of state.book.rare) list.append(tile(item.layout, item.name, item.name, item.realName));
+    for (const item of state.book.rare) {
+      const button = tile(item.layout, item.name, null, item.realName);
+      button.addEventListener('click', () => openNamed('rare', item.label));
+      list.append(button);
+    }
     const credit = document.createElement('p');
     credit.className = 'credit';
     credit.textContent = 'Rare names come from PubChem (pubchem.ncbi.nlm.nih.gov).';
@@ -978,7 +1010,7 @@ function showBookTab(tab) {
   } else {
     for (const item of state.book.inventions) {
       const button = tile(item.layout, item.name, null);
-      button.addEventListener('click', () => openInvention(item.label));
+      button.addEventListener('click', () => openNamed('inventions', item.label));
       list.append(button);
     }
   }
