@@ -8,3 +8,4 @@ tools/chem-db/venv/
 tools/chem-db/measure.tsv
 tools/chem-db/measure.log
 __pycache__/
+tools/chem-db/export.log
