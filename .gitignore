@@ -3,3 +3,8 @@
 tools/chem-db/*.gz
 tools/chem-db/molecules.tsv
 tools/chem-db/venv/
+
+# chem-db measurement output (tools/chem-db/measure.py)
+tools/chem-db/measure.tsv
+tools/chem-db/measure.log
+__pycache__/
