@@ -9,20 +9,31 @@
  *   🧱 PLACE   tap or drag to put the chosen atom down
  *   ⛏️ REMOVE  tap or drag to take atoms away
  *   🔗 BOND    tap between two atoms (or slide from one to the other): one
- *             more stick, or pull them apart. It happens when the finger
- *             lifts, so Caleb sees what it will do first (and can slide away)
+ *             more stick, or pull them apart. Tap the middle of a sulfur
+ *             or phosphorus atom: two more hands. It happens when the
+ *             finger lifts, so Caleb sees what it will do first (and can
+ *             slide away)
+ *
+ * Big molecules (more than 8 non-H atoms) are looked up on PubChem
+ * (pubchem.js): their name card shows when the answer comes back.
  *
  * chem.html calls initChem() once. Everything else here only runs after that.
  */
-import { APART, BOARD_HEIGHT, BOARD_WIDTH, createBoard, findGroups, groupGraph, groupLayout, newlyFinished, placeAtom, removeAtom, tapBond } from './board.js';
-import { ALL_ATOMS, LADDER, createBook, INVENTION_NAME_MAX, record, renameInvention, resolvePending, unlockAll, unlockedAtoms } from './book.js';
-import { canonLabel } from './canon.js';
-import { ATOM_INFO, drawAtom, drawBoard } from './chem-art.js';
+import {
+  APART, BOARD_HEIGHT, BOARD_WIDTH, boardSize, cellAtPoint, cellCentre, createBoard, findGroups, groupGraph, groupLayout, handsOf,
+  neighbors, newlyFinished, placeAtom, removeAtom, tapAtom, tapBond, touching,
+} from './board.js';
+import {
+  ALL_ATOMS, LADDER, createBook, INVENTION_NAME_MAX, promoteInventions, record, renameInvention, resolvePending, unlockAll, unlockedAtoms,
+} from './book.js';
+import { canonLabel, FULL_SEARCH_MAX, heavyCount } from './canon.js';
+import { ATOM_INFO, drawAtom, drawBoard, pictureSize } from './chem-art.js';
 import { KID_MOLECULES } from './kid-names.js';
 import { kidIndex, labelsOf, loadDatabase, lookUp } from './lookup.js';
+import { makeAsker } from './pubchem.js';
 import { loadState, saveState } from './save.js';
-import { HANDS, parseSmiles } from './smiles.js';
-import { cellsAlongLine, choose, flash } from '../ui.js';
+import { HAND_STEPS, HANDS, parseSmiles } from './smiles.js';
+import { choose, flash } from '../ui.js';
 import { listenForUnlock, playTones } from '../sound.js';
 
 // =============================================================
@@ -50,6 +61,12 @@ const CHEER = [64, 67, 72];
 /** How big book pictures are drawn, per cell, in CSS pixels. */
 const PICTURE_CELL_PX = 22;
 
+/**
+ * Names longer than this many letters get smaller letters on the name card.
+ * 🧪 Try this! 10 makes "Hydrogen peroxide" small too.
+ */
+const LONG_NAME = 24;
+
 /** How big the name card's picture is drawn, per cell (bigger: it's the star). */
 const CARD_CELL_PX = 44;
 
@@ -61,12 +78,12 @@ const CARD_CELL_PX = 44;
  * How big each cell can be so the whole board fits in the box.
  * @param {number} boxWidth - the space we have, in CSS pixels
  * @param {number} boxHeight - the space we have, in CSS pixels
- * @param {number} columns - cells across
- * @param {number} rows - cells down
+ * @param {{width: number, height: number, shift: number}} board - the board
  * @returns {number} the cell size in whole pixels (at least 1)
  */
-export function fitCellSize(boxWidth, boxHeight, columns, rows) {
-  return Math.max(1, Math.floor(Math.min(boxWidth / columns, boxHeight / rows)));
+export function fitCellSize(boxWidth, boxHeight, board) {
+  const size = boardSize(board);
+  return Math.max(1, Math.floor(Math.min(boxWidth / size.width, boxHeight / size.height)));
 }
 
 /**
@@ -78,50 +95,52 @@ export function fitCellSize(boxWidth, boxHeight, columns, rows) {
 const BOND_REACH = 0.9;
 
 /**
+ * How close to a sulfur or phosphorus atom's middle a 🔗 tap must be to
+ * mean "grow more hands" (not "the gap next to it"), in cells.
+ * 🧪 Try this! 0.4 makes it easier to hit, but harder to reach its gaps.
+ */
+const ATOM_TAP = 0.25;
+
+/**
  * 🔗 BOND: which two atoms does the finger mean?
  *
- * Slid from one atom onto the atom beside it? Then those two. Otherwise,
- * the gap between two side-by-side atoms that's nearest the finger. Gaps
+ * Slid from one atom onto an atom touching it? Then those two. Otherwise,
+ * the gap between two touching atoms that's nearest the finger. Gaps
  * with an empty cell on one side don't count, so a tap never "misses"
  * onto nothing.
  * @param {number} x - finger position, in pixels from the board's left
  * @param {number} y - finger position, in pixels from the board's top
  * @param {number} cell - cell size in pixels
- * @param {{width: number, height: number, atoms: (string|null)[]}} board - the board
+ * @param {ReturnType<typeof createBoard>} board - the board
  * @param {number|null} [from] - the cell the finger first touched (for a slide)
- * @returns {[number, number]|null} the two atoms' cells, or null if none is near
+ * @returns {[number, number]|null} the two atoms' cells (smaller first), or null if none is near
  */
 export function bondTarget(x, y, cell, board, from = null) {
-  const { width, height, atoms } = board;
   const gx = x / cell; // finger position, in cells
   const gy = y / cell;
-  const cx = Math.floor(gx);
-  const cy = Math.floor(gy);
-  if (cx < 0 || cy < 0 || cx >= width || cy >= height) return null;
-  const here = cy * width + cx;
+  const here = cellAtPoint(board, gx, gy);
+  if (here === null) return null;
+  const { atoms } = board;
 
-  // A slide from an atom onto the atom right beside it.
-  if (from !== null && from !== here && atoms[from] && atoms[here]) {
-    const fx = from % width;
-    const fy = Math.floor(from / width);
-    if (Math.abs(fx - cx) + Math.abs(fy - cy) === 1) return [from, here];
+  // A slide from an atom onto an atom touching it.
+  if (from !== null && from !== here && atoms[from] && atoms[here] && touching(board, from, here)) {
+    return from < here ? [from, here] : [here, from];
   }
 
-  // The nearest gap with an atom on both sides.
+  // The nearest gap with an atom on both sides: look at this cell and the cells around it.
   let best = null;
   let bestDistance = BOND_REACH;
-  for (let y0 = cy - 1; y0 <= cy + 1; y0 += 1) {
-    for (let x0 = cx - 1; x0 <= cx + 1; x0 += 1) {
-      if (x0 < 0 || y0 < 0 || x0 >= width || y0 >= height || !atoms[y0 * width + x0]) continue;
-      const a = y0 * width + x0;
-      for (const [x1, y1] of [[x0 + 1, y0], [x0, y0 + 1]]) { // the gap on its right, the gap below it
-        if (x1 >= width || y1 >= height || !atoms[y1 * width + x1]) continue;
-        // The gap's middle is halfway between the two atoms' middles.
-        const distance = Math.hypot(gx - (x0 + x1 + 1) / 2, gy - (y0 + y1 + 1) / 2);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          best = [a, y1 * width + x1];
-        }
+  for (const a of [here, ...neighbors(board, here).map((n) => n.cell)]) {
+    if (!atoms[a]) continue;
+    for (const { cell: b } of neighbors(board, a)) {
+      if (b < a || !atoms[b]) continue; // each gap once
+      const [ax, ay] = cellCentre(board, a);
+      const [bx, by] = cellCentre(board, b);
+      // The gap's middle is halfway between the two atoms' middles.
+      const distance = Math.hypot(gx - (ax + bx) / 2, gy - (ay + by) / 2);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = [a, b];
       }
     }
   }
@@ -129,21 +148,78 @@ export function bondTarget(x, y, cell, board, from = null) {
 }
 
 /**
+ * 🔗 BOND: is the finger right on the middle of a sulfur or phosphorus
+ * atom (to grow it more hands)?
+ * @param {number} x - finger position, in pixels from the board's left
+ * @param {number} y - finger position, in pixels from the board's top
+ * @param {number} cell - cell size in pixels
+ * @param {ReturnType<typeof createBoard>} board - the board
+ * @returns {number|null} that atom's cell, or null
+ */
+export function atomTarget(x, y, cell, board) {
+  const here = cellAtPoint(board, x / cell, y / cell);
+  if (here === null || !HAND_STEPS[board.atoms[here]]) return null;
+  const [cx, cy] = cellCentre(board, here);
+  return Math.hypot(x / cell - cx, y / cell - cy) <= ATOM_TAP ? here : null;
+}
+
+/**
+ * Every cell a finger passes over, going from one point to another
+ * (checked every quarter of a cell, so none is skipped).
+ * @param {ReturnType<typeof createBoard>} board - the board
+ * @param {{x: number, y: number}} from - where the finger was, in pixels
+ * @param {{x: number, y: number}} to - where it is now, in pixels
+ * @param {number} cell - cell size in pixels
+ * @returns {number[]} the cells, in order, each once
+ */
+export function cellsAlong(board, from, to, cell) {
+  const steps = Math.max(1, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / (cell / 4)));
+  const cells = [];
+  for (let k = 0; k <= steps; k += 1) {
+    const i = cellAtPoint(board, (from.x + ((to.x - from.x) * k) / steps) / cell, (from.y + ((to.y - from.y) * k) / steps) / cell);
+    if (i !== null && !cells.includes(i)) cells.push(i);
+  }
+  return cells;
+}
+
+/**
+ * The bonds on a board, as one bit of text (to see if anything changed).
+ * @param {ReturnType<typeof createBoard>} board - the board
+ * @returns {string} every bond list, joined
+ */
+function bondsText(board) {
+  return [board.right, board.downLeft, board.downRight].join('|');
+}
+
+/**
  * What would 🔗 do to these two atoms? (Tries it on a copy of the board,
  * so the real one doesn't change.)
  * @param {ReturnType<typeof createBoard>} board - the board
  * @param {number} a - one atom's cell
- * @param {number} b - the other atom's cell, right beside it
+ * @param {number} b - the other atom's cell, touching it
  * @returns {'more'|'apart'|'join'|'nothing'} one more stick, pulled apart,
  *   joined again, or nothing can change
  */
 export function bondPreview(board, a, b) {
   const copy = structuredClone(board);
-  const before = [copy.right, copy.down].join();
+  const before = bondsText(copy);
   const after = tapBond(copy, a, b);
-  if ([copy.right, copy.down].join() === before) return 'nothing';
+  if (bondsText(copy) === before) return 'nothing';
   if (after === APART) return 'apart';
   return after === 1 ? 'join' : 'more';
+}
+
+/**
+ * What would 🔗 do to this sulfur or phosphorus atom?
+ * @param {ReturnType<typeof createBoard>} board - the board
+ * @param {number} i - the atom's cell
+ * @returns {'grow'|'shrink'|'nothing'} two more hands, back to its usual
+ *   hands, or nothing (its hands are holding on)
+ */
+export function handsPreview(board, i) {
+  const after = tapAtom(structuredClone(board), i);
+  if (after === 0) return 'nothing';
+  return after > handsOf(board, i) ? 'grow' : 'shrink';
 }
 
 /**
@@ -170,9 +246,20 @@ export function atomHint(smiles) {
 export function cardWords(result, recorded) {
   const again = recorded.again ? ' Found again!' : '';
   if (result.kind === 'found') return { name: result.entry.name, badge: `📖${again}`, fact: result.entry.fact };
-  if (result.kind === 'rare') return { name: result.name, badge: `🌟 Super rare!${again}`, fact: 'A real molecule, with its real chemistry name.' };
+  if (result.kind === 'rare') return { name: recorded.name ?? result.name, badge: `🌟 Super rare!${again}`, fact: 'A real molecule, with its real chemistry name.' };
   if (result.kind === 'invention') return { name: recorded.name, badge: `💡 Your invention!${again}`, fact: 'Nobody has a name for this one. You made it up!' };
   return { name: 'Finished!', badge: '⏳', fact: "I'll look up its name when we have internet." };
+}
+
+/**
+ * What an atom's hands are, in words: "2 hands", or for sulfur and
+ * phosphorus, a reminder that they can grow more.
+ * @param {string} el - the atom
+ * @returns {string} e.g. 'Sulfur has 2 hands. Tap it with 🔗 to give it more!'
+ */
+export function handWords(el) {
+  const words = `${ATOM_INFO[el].name} has ${HANDS[el]} ${HANDS[el] === 1 ? 'hand' : 'hands'}.`;
+  return HAND_STEPS[el] ? `${words} Tap it with 🔗 to give it more!` : words;
 }
 
 /** Taps that count as "the person did something" for speech (same as sound.js). */
@@ -218,8 +305,14 @@ const state = {
   cell: 0,
   boom: new Map(), // cell → time its 💥 ends
   cards: [], // name cards waiting to be shown
-  aim: null, // 🔗 while a finger is down: {from, pair, will}
+  aim: null, // 🔗 while a finger is down: {from, pair, atom, will}
 };
+
+/** Big molecules finished just now, waiting for PubChem before their name card shows. */
+const awaitingCard = new Set();
+
+/** Asks PubChem about big molecules, one at a time (made in initChem). */
+let asker = null;
 
 /** label → hand-written entry (made once, at the start). */
 let kids = new Map();
@@ -247,6 +340,7 @@ export function initChem() {
   kids = kidIndex();
   Object.assign(state, loadState(storage(), BOARD_WIDTH, BOARD_HEIGHT));
   if (!unlockedAtoms(state.book).includes(state.selected)) state.selected = 'H';
+  asker = makeAsker({ onAnswer: answered });
 
   setupTools();
   buildPalette();
@@ -257,7 +351,73 @@ export function initChem() {
   new ResizeObserver(resizeCanvas).observe(frame);
   resizeCanvas();
   fetchDatabase();
-  window.addEventListener('online', fetchDatabase);
+  askAboutBigOnes();
+  window.addEventListener('online', () => {
+    fetchDatabase();
+    askAboutBigOnes();
+  });
+}
+
+/**
+ * Ask PubChem about every big molecule still waiting (⏳), and every big
+ * 💡 invention it hasn't been asked about (inventions from before PubChem
+ * names, which might be real molecules). Runs when the page opens and
+ * when the internet comes back.
+ * @returns {void}
+ */
+function askAboutBigOnes() {
+  asker.retry();
+  /**
+   * Too big for our list, and PubChem hasn't answered about it yet?
+   * @param {string} label - a molecule
+   * @returns {boolean} true if we should ask
+   */
+  const big = (label) => heavyCount(label) > FULL_SEARCH_MAX && !Object.hasOwn(state.book.asked, label);
+  for (const { label } of [...state.book.pending, ...state.book.inventions]) if (big(label)) asker.ask(label);
+}
+
+/**
+ * PubChem answered about a big molecule (or didn't: answer null).
+ * @param {string} label - which molecule
+ * @param {{cid: number, name?: string}|null} answer - its answer
+ * @returns {void}
+ */
+function answered(label, answer) {
+  if (answer) state.book.asked[label] = answer;
+  else if (awaitingCard.has(label)) {
+    // No answer (no internet?): show the ⏳ card now, and look it up later.
+    awaitingCard.delete(label);
+    const item = state.book.pending.find((p) => p.label === label);
+    state.cards.push({ ...cardWords({ kind: 'pending' }, { again: false, name: null }), layout: item?.layout ?? createBoard(1, 1), sound: CHEER });
+  }
+  settle();
+}
+
+/**
+ * Sort out everything we can now that something new is known (the big
+ * list arrived, or PubChem answered): ⏳ molecules get their names, and
+ * 💡 inventions PubChem knows become 🌟. Shows name cards for molecules
+ * finished just now, and unlock cards.
+ * @returns {void}
+ */
+function settle() {
+  /**
+   * What a molecule is, with everything we know right now.
+   * @param {string} label - a molecule
+   * @returns {object} its lookup result
+   */
+  const look = (label) => lookUp(label, kids, state.database, state.book.asked);
+  const { unlocked, settled } = resolvePending(state.book, look);
+  const promoted = promoteInventions(state.book, look);
+  for (const { label, layout, result, recorded } of settled) {
+    if (!awaitingCard.delete(label)) continue; // finished long ago: no card
+    state.cards.push({ ...cardWords(result, recorded), layout, sound: CHEER });
+  }
+  const opened = [...unlocked, ...promoted.unlocked];
+  for (const el of opened) queueUnlockCard(el);
+  save();
+  if (opened.length) buildPalette();
+  showNextCard();
 }
 
 /**
@@ -288,13 +448,9 @@ function save() {
 async function fetchDatabase() {
   if (state.database) return;
   const database = await loadDatabase();
-  if (!database) return; // offline: we'll try again when the internet comes back
+  if (!database || state.database) return; // offline: we'll try again when the internet comes back
   state.database = database;
-  const unlocked = resolvePending(state.book, (label) => lookUp(label, kids, database));
-  for (const el of unlocked) queueUnlockCard(el);
-  save();
-  buildPalette();
-  showNextCard();
+  settle();
 }
 
 // ---- Tools and palette ----
@@ -348,7 +504,7 @@ function buildPalette() {
         state.selected = el;
         setTool('place');
         markSelected();
-        speak(`${ATOM_INFO[el].name}. ${HANDS[el]} ${HANDS[el] === 1 ? 'hand' : 'hands'}.`);
+        speak(handWords(el).replace(' with 🔗', ' with the bond tool'));
       });
     }
     palette.append(button);
@@ -392,14 +548,15 @@ function atomPicture(el) {
  */
 function resizeCanvas() {
   const border = BOARD_BORDER_PX * 2;
-  const cell = fitCellSize(frame.clientWidth - border, frame.clientHeight - border, BOARD_WIDTH, BOARD_HEIGHT);
+  const cell = fitCellSize(frame.clientWidth - border, frame.clientHeight - border, state.board);
   if (cell === state.cell) return;
   state.cell = cell;
   const ratio = window.devicePixelRatio || 1;
-  canvas.style.width = `${cell * BOARD_WIDTH}px`;
-  canvas.style.height = `${cell * BOARD_HEIGHT}px`;
-  canvas.width = Math.round(cell * BOARD_WIDTH * ratio);
-  canvas.height = Math.round(cell * BOARD_HEIGHT * ratio);
+  const size = pictureSize(state.board, cell);
+  canvas.style.width = `${size.width}px`;
+  canvas.style.height = `${size.height}px`;
+  canvas.width = Math.round(size.width * ratio);
+  canvas.height = Math.round(size.height * ratio);
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   draw();
 }
@@ -452,9 +609,14 @@ function changeBoard(change) {
 function finished(group) {
   const label = canonLabel(groupGraph(state.board, group.cells));
   const layout = groupLayout(state.board, group.cells);
-  const result = lookUp(label, kids, state.database);
+  const result = lookUp(label, kids, state.database, state.book.asked);
   const recorded = record(state.book, label, layout, result);
-  state.cards.push({ ...cardWords(result, recorded), layout, sound: CHEER });
+  if (result.ask) {
+    // Too big for our list: ask PubChem, and show the card when it answers.
+    awaitingCard.add(label);
+    asker.retry(); // if it got no answer before, ask again now
+    asker.ask(label);
+  } else state.cards.push({ ...cardWords(result, recorded), layout, sound: CHEER });
   for (const el of recorded.unlocked) queueUnlockCard(el);
   if (recorded.unlocked.length) buildPalette();
 }
@@ -470,7 +632,7 @@ function queueUnlockCard(el) {
   state.cards.push({
     name: `${ATOM_INFO[el].name}!`,
     badge: '🔓 New atom!',
-    fact: `${ATOM_INFO[el].name} has ${HANDS[el]} ${HANDS[el] === 1 ? 'hand' : 'hands'}.`,
+    fact: handWords(el),
     layout,
     hands: true,
     sound: FANFARE,
@@ -524,10 +686,7 @@ function setupPointer() {
  * @returns {number|null} the cell number
  */
 function cellAt(point) {
-  const x = Math.floor(point.x / state.cell);
-  const y = Math.floor(point.y / state.cell);
-  if (x < 0 || y < 0 || x >= BOARD_WIDTH || y >= BOARD_HEIGHT) return null;
-  return y * BOARD_WIDTH + x;
+  return cellAtPoint(state.board, point.x / state.cell, point.y / state.cell);
 }
 
 /**
@@ -549,9 +708,7 @@ function pointFrom(event) {
 function paintLine(from, to) {
   changeBoard(() => {
     let changed = false;
-    for (const [x, y] of cellsAlongLine(from.x, from.y, to.x, to.y, state.cell)) {
-      if (x < 0 || y < 0 || x >= BOARD_WIDTH || y >= BOARD_HEIGHT) continue;
-      const i = y * BOARD_WIDTH + x;
+    for (const i of cellsAlong(state.board, from, to, state.cell)) {
       changed = (state.tool === 'place' ? placeAtom(state.board, i, state.selected) : removeAtom(state.board, i)) || changed;
     }
     return changed;
@@ -559,15 +716,24 @@ function paintLine(from, to) {
 }
 
 /**
- * 🔗 BOND, while the finger is down: work out which two atoms it means,
- * and show them glowing with what will happen (🔗 ✂️ or 🚫).
+ * 🔗 BOND, while the finger is down: work out which two atoms it means
+ * (or which sulfur/phosphorus atom), and show them glowing with what will
+ * happen (🔗 ✂️ ✋ ✊ or 🚫).
  * @param {{x: number, y: number}|null} point - where the finger is (null = stop aiming)
  * @param {number|null} from - the cell the finger first touched
  * @returns {void}
  */
 function aimBond(point, from) {
-  const pair = point && bondTarget(point.x, point.y, state.cell, state.board, from);
-  state.aim = point ? { from, pair, will: pair && bondPreview(state.board, ...pair) } : null;
+  if (!point) state.aim = null;
+  else {
+    // Still on the middle of the sulfur/phosphorus it started on: its hands.
+    const atom = atomTarget(point.x, point.y, state.cell, state.board);
+    if (atom !== null && atom === from) state.aim = { from, pair: null, atom, will: handsPreview(state.board, atom) };
+    else {
+      const pair = bondTarget(point.x, point.y, state.cell, state.board, from);
+      state.aim = { from, pair, atom: null, will: pair && bondPreview(state.board, ...pair) };
+    }
+  }
   draw();
 }
 
@@ -581,10 +747,12 @@ function bondNow() {
   if (aim?.will === 'nothing') flash(frame, 'nope', 400); // 🚫: those two can't change
   if (aim?.pair) {
     changeBoard(() => {
-      const before = [state.board.right, state.board.down].join();
+      const before = bondsText(state.board);
       tapBond(state.board, ...aim.pair);
-      return [state.board.right, state.board.down].join() !== before;
+      return bondsText(state.board) !== before;
     });
+  } else if (aim?.atom !== null && aim?.atom !== undefined) {
+    changeBoard(() => tapAtom(state.board, aim.atom) > 0);
   }
   draw(); // takes the glow away
 }
@@ -626,6 +794,7 @@ function showNextCard() {
   const card = state.cards.shift();
   byId('card-badge').textContent = card.badge;
   byId('card-name').textContent = card.name;
+  byId('card-name').classList.toggle('long-name', card.name.length > LONG_NAME); // smaller letters for long PubChem names
   byId('card-fact').textContent = card.fact;
   byId('card-picture').replaceChildren(picture(card.layout, card.hands, CARD_CELL_PX));
   dialog.showModal();
@@ -645,10 +814,11 @@ function picture(layout, hands = false, cell = PICTURE_CELL_PX) {
   const ratio = window.devicePixelRatio || 1;
   const pic = document.createElement('canvas');
   pic.className = 'molecule-picture';
-  pic.width = layout.width * cell * ratio;
-  pic.height = layout.height * cell * ratio;
-  pic.style.width = `${layout.width * cell}px`;
-  pic.style.height = `${layout.height * cell}px`;
+  const size = pictureSize(layout, cell); // old square pictures and new six-sided ones
+  pic.width = Math.round(size.width * ratio);
+  pic.height = Math.round(size.height * ratio);
+  pic.style.width = `${size.width}px`;
+  pic.style.height = `${size.height}px`;
   const pctx = pic.getContext('2d');
   pctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   drawBoard(pctx, layout, cell, { grid: false, hands });
@@ -784,7 +954,7 @@ function showBookTab(tab) {
     }
   } else if (tab === 'rare') {
     for (const item of state.book.pending) list.append(tile(item.layout, '⏳ …', null));
-    for (const item of state.book.rare) list.append(tile(item.layout, item.name, item.name));
+    for (const item of state.book.rare) list.append(tile(item.layout, item.name, item.name, item.realName));
     const credit = document.createElement('p');
     credit.className = 'credit';
     credit.textContent = 'Rare names come from PubChem (pubchem.ncbi.nlm.nih.gov).';
@@ -823,9 +993,10 @@ function foundTile(entry) {
  * @param {object|null} layout - the picture, or null for a ❓
  * @param {string} text - the words under it
  * @param {string|null} say - what to say when tapped (null = nothing)
+ * @param {string} [small] - smaller words under those (a 🌟's real name, when Caleb named it himself)
  * @returns {HTMLElement} the tile
  */
-function tile(layout, text, say) {
+function tile(layout, text, say, small) {
   const button = document.createElement('button');
   button.type = 'button'; // a plain button: tapping it mustn't close the book
   button.className = 'book-tile';
@@ -839,6 +1010,12 @@ function tile(layout, text, say) {
   const words = document.createElement('span');
   words.textContent = text;
   button.append(words);
+  if (small) {
+    const real = document.createElement('small');
+    real.className = 'real-name';
+    real.textContent = small;
+    button.append(real);
+  }
   if (say) button.addEventListener('click', () => speak(say));
   return button;
 }

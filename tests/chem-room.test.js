@@ -4,11 +4,13 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { APART, createBoard, placeAtom } from '../js/chem/board.js';
+import { APART, cellCentre, createBoard, neighbors, placeAtom } from '../js/chem/board.js';
 import { ATOM_INFO, drawBoard, pictureSize } from '../js/chem/chem-art.js';
 import { ALL_ATOMS } from '../js/chem/book.js';
 import { HANDS } from '../js/chem/smiles.js';
-import { atomHint, bondPreview, bondTarget, cardWords, fitCellSize, primeSpeech } from '../js/chem/room.js';
+import {
+  atomHint, atomTarget, bondPreview, bondTarget, cardWords, cellsAlong, fitCellSize, handsPreview, handWords, primeSpeech,
+} from '../js/chem/room.js';
 
 /**
  * A pretend canvas "context" that counts drawing calls.
@@ -26,10 +28,11 @@ function fakeContext() {
   return ctx;
 }
 
-test('fitCellSize keeps the whole board on screen', () => {
-  assert.equal(fitCellSize(1200, 900, 12, 9), 100);
-  assert.equal(fitCellSize(600, 900, 12, 9), 50);
-  assert.equal(fitCellSize(5, 5, 12, 9), 1);
+test('fitCellSize keeps the whole six-sided board on screen', () => {
+  const board = createBoard(12, 10); // 12.5 cells across, 1 + 9 × 0.87 ≈ 8.79 cells down
+  assert.equal(fitCellSize(1250, 2000, board), 100);
+  assert.equal(fitCellSize(5000, 879, board), 99);
+  assert.equal(fitCellSize(5, 5, board), 1);
 });
 
 /**
@@ -45,35 +48,83 @@ function boardWith(width, height, atoms) {
   return board;
 }
 
-test('bondTarget picks the gap nearest the finger, between two atoms', () => {
-  // 10-px cells on a 4×3 board; atoms at (1,1)=5, its right (6) and below (9).
-  const board = boardWith(4, 3, { 5: 'C', 6: 'C', 9: 'C' });
-  assert.deepEqual(bondTarget(19, 15, 10, board), [5, 6]); // right edge of (1,1)
-  assert.deepEqual(bondTarget(15, 19, 10, board), [5, 9]); // bottom edge
-  assert.deepEqual(bondTarget(24, 15, 10, board), [5, 6]); // middle of the right atom: its only gap
-  assert.deepEqual(bondTarget(11, 17, 10, board), [5, 9]); // its empty left side: its nearest real gap
-  assert.equal(bondTarget(5, 15, 10, board), null); // the empty cell to its left: too far from any gap
-  assert.equal(bondTarget(35, 5, 10, board), null); // far from any atoms
+/**
+ * Where on a board (in pixels, 10-px cells) a point between two cells' middles is.
+ * @param {ReturnType<typeof createBoard>} board - the board
+ * @param {number} a - one cell
+ * @param {number} b - another cell
+ * @param {number} [share] - how far from a towards b (0.5 = halfway)
+ * @returns {[number, number]} x and y in pixels
+ */
+function between(board, a, b, share = 0.5) {
+  const [ax, ay] = cellCentre(board, a);
+  const [bx, by] = cellCentre(board, b);
+  return [(ax + (bx - ax) * share) * 10, (ay + (by - ay) * share) * 10];
+}
+
+test('bondTarget picks the gap nearest the finger, between two touching atoms', () => {
+  // A 4×3 board (row 1 is pushed right): atoms at 5 = (1,1), its right 6,
+  // its below-left 9 = (1,2), and 10 = (2,2), below both 5 and 6.
+  const board = boardWith(4, 3, { 5: 'C', 6: 'C', 9: 'C', 10: 'C' });
+  assert.deepEqual(bondTarget(...between(board, 5, 6, 0.45), 10, board), [5, 6]);
+  assert.deepEqual(bondTarget(...between(board, 5, 9, 0.55), 10, board), [5, 9]);
+  assert.deepEqual(bondTarget(...between(board, 6, 10), 10, board), [6, 10]);
+  assert.deepEqual(bondTarget(...between(board, 9, 10), 10, board), [9, 10]);
+  assert.equal(bondTarget(...cellCentre(board, 0).map((v) => v * 10), 10, board), null); // a far empty corner
   assert.equal(bondTarget(-3, 5, 10, board), null); // off the board
 });
 
 test('bondTarget: a tap on an atom with ONE neighbor means that neighbor', () => {
-  // The old aim picked a side by a hair's width, and often hit an empty cell.
-  const board = boardWith(3, 3, { 4: 'O', 1: 'O' }); // middle, and above it
-  for (const [x, y] of [[15, 15], [13, 17], [17, 13], [18, 16]]) {
-    assert.deepEqual(bondTarget(x, y, 10, board), [1, 4], `${x},${y}`);
+  const board = boardWith(3, 3, { 4: 'O', 1: 'O' }); // middle, and above it (they touch)
+  const [x, y] = cellCentre(board, 4).map((v) => v * 10);
+  for (const [dx, dy] of [[0, 0], [-2, 2], [2, -2], [3, 1]]) {
+    assert.deepEqual(bondTarget(x + dx, y + dy, 10, board), [1, 4], `${dx},${dy}`);
   }
 });
 
-test('bondTarget: sliding from one atom onto its neighbor means those two', () => {
-  const board = boardWith(3, 3, { 4: 'C', 1: 'C', 5: 'C', 7: 'C' });
-  // Started on the middle (4), now on the right one (5), near the gap below it.
-  assert.deepEqual(bondTarget(25, 19, 10, board, 4), [4, 5]);
-  assert.deepEqual(bondTarget(15, 25, 10, board, 4), [4, 7]); // slid down
-  // Still on the start atom: the nearest gap, as for a tap.
-  assert.deepEqual(bondTarget(15, 11, 10, board, 4), [1, 4]);
-  // Slid onto an empty corner: no slide pair, so the nearest gap again.
-  assert.deepEqual(bondTarget(21, 21, 10, board, 4), [4, 5]);
+test('bondTarget: sliding from one atom onto a touching atom means those two', () => {
+  const board = boardWith(4, 3, { 5: 'C', 6: 'C', 9: 'C', 1: 'C' });
+  const on = (i) => cellCentre(board, i).map((v) => v * 10);
+  assert.deepEqual(bondTarget(...on(6), 10, board, 5), [5, 6]); // slid right
+  assert.deepEqual(bondTarget(...on(9), 10, board, 5), [5, 9]); // slid down-left
+  assert.deepEqual(bondTarget(...on(9), 10, board, 1), [5, 9]); // 1 and 9 don't touch: nearest gap instead
+});
+
+test('atomTarget: the middle of a sulfur or phosphorus atom, not its edge, not other atoms', () => {
+  const board = boardWith(3, 2, { 0: 'S', 1: 'C', 2: 'P' });
+  const on = (i) => cellCentre(board, i).map((v) => v * 10);
+  assert.equal(atomTarget(...on(0), 10, board), 0);
+  assert.equal(atomTarget(...on(2), 10, board), 2);
+  assert.equal(atomTarget(...on(1), 10, board), null); // carbon can't grow hands
+  const [x, y] = on(0);
+  assert.equal(atomTarget(x + 4, y, 10, board), null); // near its edge: that's for gaps
+});
+
+test('handsPreview says what tapping a sulfur or phosphorus atom will do', () => {
+  const board = createBoard(3, 3);
+  placeAtom(board, 4, 'S');
+  assert.equal(handsPreview(board, 4), 'grow');
+  board.extra[4] = 4;
+  assert.equal(handsPreview(board, 4), 'shrink');
+  const full = createBoard(3, 3);
+  placeAtom(full, 4, 'P');
+  full.extra[4] = 2;
+  for (const { cell } of neighbors(full, 4).slice(0, 5)) placeAtom(full, cell, 'H'); // 5 hands held
+  assert.equal(handsPreview(full, 4), 'nothing');
+});
+
+test('cellsAlong: a finger sliding along a row passes over each cell once', () => {
+  const board = createBoard(6, 2);
+  const [x0, y0] = cellCentre(board, 0).map((v) => v * 10);
+  const [x1, y1] = cellCentre(board, 5).map((v) => v * 10);
+  assert.deepEqual(cellsAlong(board, { x: x0, y: y0 }, { x: x1, y: y1 }, 10), [0, 1, 2, 3, 4, 5]);
+  assert.deepEqual(cellsAlong(board, { x: x0, y: y0 }, { x: x0, y: y0 }, 10), [0]); // a tap
+});
+
+test('handWords: sulfur and phosphorus say they can grow more hands', () => {
+  assert.equal(handWords('O'), 'Oxygen has 2 hands.');
+  assert.equal(handWords('H'), 'Hydrogen has 1 hand.');
+  assert.equal(handWords('P'), 'Phosphorus has 3 hands. Tap it with 🔗 to give it more!');
 });
 
 test('bondPreview says what 🔗 will do, without changing the board', () => {

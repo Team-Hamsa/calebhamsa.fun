@@ -667,6 +667,10 @@ main {
 .chem-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .chem-dialog form { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .chem-dialog h2 { margin: 0; font-size: clamp(14px, 3.5vw, 20px); line-height: 1.5; }
+/* PubChem names can be long ("N,N-Dimethyltryptamine"): wrap anywhere, and
+   use a smaller size for names too long for one line. */
+.chem-dialog h2 { overflow-wrap: anywhere; max-width: 100%; }
+.chem-dialog h2.long-name { font-size: clamp(10px, 2.6vw, 14px); }
 .chem-dialog p { margin: 0; font-family: 'Andika', sans-serif; font-size: 18px; line-height: 1.4; }
 .chem-dialog .card-badge { font-family: var(--pixel-font); font-size: 14px; }
 #card[open] { animation: cheer 700ms ease-out; }
@@ -711,6 +715,8 @@ main {
 }
 .book-tile.not-found { opacity: 0.6; }
 .book-tile .mystery { font-size: 32px; }
+/* A 🌟 Caleb named himself: PubChem's real name, small, under his. */
+.book-tile .real-name { font-size: 11px; opacity: 0.75; }
 .molecule-picture { display: block; max-width: 100%; height: auto; }
 .book-tile .molecule-picture { max-width: 168px; }
 

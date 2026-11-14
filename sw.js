@@ -26,7 +26,7 @@
  * 🧪 Change the number (v1 → v2) after adding or renaming files in PRECACHE
  *    below, so every device fetches a fresh set.
  */
-const CACHE_NAME = 'caleb-v10';
+const CACHE_NAME = 'caleb-v11';
 
 /**
  * Files to save straight away, the first time the site is opened, so
@@ -77,6 +77,7 @@ const PRECACHE = [
   './js/type/progress.js',
   './js/type/game.js',
   './js/chem/smiles.js',
+  './js/chem/pubchem.js',
   './manifest.webmanifest',
   './favicon.ico',
   './img/icon.svg',
@@ -118,7 +119,7 @@ const NETWORK_TIMEOUT_MS = 3000;
 function strategyFor(request) {
   if (request.method !== 'GET') return 'skip'; // only "fetch me a file" requests
   const url = new URL(request.url);
-  // Big data files (the chemistry room's name list: 0.8 MB to download)
+  // Big data files (the chemistry room's name list: 3 MB to download, in 16 parts)
   // hardly ever change, and on slow Wi-Fi they'd never beat
   // NETWORK_TIMEOUT_MS, so they'd never get saved. Saved copy first;
   // refresh in the background.
