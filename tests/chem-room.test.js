@@ -5,7 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { APART, createBoard, placeAtom } from '../js/chem/board.js';
-import { ATOM_INFO, drawBoard } from '../js/chem/chem-art.js';
+import { ATOM_INFO, drawBoard, pictureSize } from '../js/chem/chem-art.js';
+import { ALL_ATOMS } from '../js/chem/book.js';
 import { HANDS } from '../js/chem/smiles.js';
 import { atomHint, bondPreview, bondTarget, cardWords, fitCellSize, primeSpeech } from '../js/chem/room.js';
 
@@ -109,7 +110,7 @@ test('cardWords: the name card for each kind of find', () => {
 });
 
 test('every atom has a look, a name and an emoji', () => {
-  for (const el of Object.keys(HANDS)) {
+  for (const el of [...Object.keys(HANDS), ...ALL_ATOMS]) {
     assert.ok(ATOM_INFO[el]?.color && ATOM_INFO[el].name && ATOM_INFO[el].emoji, el);
   }
 });
@@ -157,4 +158,27 @@ test('primeSpeech says one silent word on the first real tap, then stops listeni
 test('primeSpeech does nothing in a browser with no speech', () => {
   const target = { addEventListener: () => assert.fail('should not listen'), removeEventListener() {} };
   primeSpeech(target, undefined, undefined);
+});
+
+test('pictureSize: old square book pictures and new six-sided ones', () => {
+  const square = { width: 3, height: 2, atoms: [], right: [], down: [] }; // saved before the triangle board
+  assert.deepEqual(pictureSize(square, 10), { width: 30, height: 20 });
+  assert.deepEqual(pictureSize(createBoard(3, 2), 10), { width: 35, height: Math.ceil(10 * (Math.sqrt(3) / 2 + 1)) });
+});
+
+test('drawBoard still draws an old square book picture: balls and sticks', () => {
+  const water = { width: 3, height: 1, atoms: ['H', 'O', 'H'], right: [1, 1, 0], down: [0, 0, 0] };
+  const ctx = fakeContext();
+  drawBoard(ctx, water, 20, { grid: false, hands: false });
+  assert.equal(ctx.count.arc, 3);
+  assert.equal(ctx.count.stroke > 3, true); // two sticks, and each ball's outline
+});
+
+test('drawBoard draws free hands: a lone sulfur with 6 hands has 6 stubs', () => {
+  const board = createBoard(3, 3);
+  placeAtom(board, 4, 'S');
+  board.extra[4] = 4;
+  const ctx = fakeContext();
+  drawBoard(ctx, board, 40, { grid: false });
+  assert.equal(ctx.count.arc, 7); // 6 little hands and the ball
 });

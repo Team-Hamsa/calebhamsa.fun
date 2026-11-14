@@ -362,6 +362,20 @@ export function groupGraph(board, cells) {
 }
 
 /**
+ * Every bond with sticks on the board (for drawing them).
+ * @param {ReturnType<typeof createBoard>} board - the board
+ * @returns {{a: number, b: number, order: number}[]} the two cells and how many sticks
+ */
+export function stickList(board) {
+  const sticks = [];
+  board.atoms.forEach((el, i) => {
+    if (!el) return;
+    for (const { cell, list } of forward(board, i)) if (list[i] > 0 && board.atoms[cell]) sticks.push({ a: i, b: cell, order: list[i] });
+  });
+  return sticks;
+}
+
+/**
  * Cut a group out of the board as a small picture of itself, for the
  * collection book: just the rows and columns around it, with its atoms
  * and sticks. The little board remembers whether its top row is pushed
