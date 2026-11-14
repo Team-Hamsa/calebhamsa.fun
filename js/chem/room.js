@@ -398,9 +398,24 @@ function answered(label, answer) {
       betterName(state.book, answer.cid, before.name, answer.name);
     }
   } else if (answer) state.book.asked[label] = answer;
-  else waitingCard(label); // no answer (no internet?): show the ⏳ card now, and look it up later
+  else {
+    waitingCard(label); // no answer (no internet? PubChem busy?): show the ⏳ card now
+    // ...and ask again in a minute (PubChem says "busy" when lots of people ask at once).
+    pubchemRetry ??= setTimeout(() => {
+      pubchemRetry = null;
+      askAboutBigOnes();
+    }, PUBCHEM_RETRY_MS);
+  }
   settle();
 }
+
+/**
+ * How long to wait before asking PubChem again after it didn't answer, in ms.
+ */
+const PUBCHEM_RETRY_MS = 60000;
+
+/** The timer for asking PubChem again (null = none). */
+let pubchemRetry = null;
 
 /**
  * Stop waiting for a molecule's name: show its ⏳ card now (the book
