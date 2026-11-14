@@ -308,7 +308,11 @@ const state = {
   aim: null, // 🔗 while a finger is down: {from, pair, atom, will}
 };
 
-/** Big molecules finished just now, waiting for PubChem before their name card shows. */
+/**
+ * Molecules finished just now, waiting before their name card shows: big
+ * ones wait for PubChem, small ones for the name list (if it's still
+ * downloading).
+ */
 const awaitingCard = new Set();
 
 /** Asks PubChem about big molecules, one at a time (made in initChem). */
@@ -394,14 +398,38 @@ function answered(label, answer) {
       betterName(state.book, answer.cid, before.name, answer.name);
     }
   } else if (answer) state.book.asked[label] = answer;
-  else if (awaitingCard.has(label)) {
-    // No answer (no internet?): show the ⏳ card now, and look it up later.
-    awaitingCard.delete(label);
-    const item = state.book.pending.find((p) => p.label === label);
-    state.cards.push({ ...cardWords({ kind: 'pending' }, { again: false, name: null }), layout: item?.layout ?? createBoard(1, 1), sound: CHEER });
-  }
+  else waitingCard(label); // no answer (no internet?): show the ⏳ card now, and look it up later
   settle();
 }
+
+/**
+ * Stop waiting for a molecule's name: show its ⏳ card now (the book
+ * still gets its name later). Does nothing if its card already showed.
+ * @param {string} label - which molecule
+ * @returns {boolean} true if a ⏳ card was added
+ */
+function waitingCard(label) {
+  if (!awaitingCard.delete(label)) return false;
+  const item = state.book.pending.find((p) => p.label === label);
+  state.cards.push({ ...cardWords({ kind: 'pending' }, { again: false, name: null }), layout: item?.layout ?? createBoard(1, 1), sound: CHEER });
+  return true;
+}
+
+/**
+ * How long a small molecule's card waits for the name list to finish
+ * downloading before showing ⏳ instead, in ms.
+ * 🧪 Try this! Make it 0: while the list downloads, every card says ⏳.
+ */
+const LIST_WAIT_MS = 15000;
+
+/**
+ * How long to wait before trying the name list again after it couldn't be
+ * downloaded, in ms.
+ */
+const LIST_RETRY_MS = 20000;
+
+/** The timer for trying the name list again (null = none). */
+let listRetry = null;
 
 /**
  * Sort out everything we can now that something new is known (the big
@@ -460,7 +488,14 @@ async function fetchDatabase() {
   loading = loadDatabase();
   const database = await loading;
   loading = null;
-  if (!database) return; // offline: we'll try again when the internet comes back
+  if (!database) {
+    // Offline, or a part didn't come: try again in a bit (and when the internet comes back).
+    listRetry ??= setTimeout(() => {
+      listRetry = null;
+      fetchDatabase();
+    }, LIST_RETRY_MS);
+    return;
+  }
   state.database = database;
   settle();
 }
@@ -631,6 +666,14 @@ function finished(group) {
     awaitingCard.add(label);
     asker.retry(); // if it got no answer before, ask again now
     asker.ask(label);
+  } else if (result.kind === 'pending') {
+    // Small, but the name list is still downloading: the card shows when
+    // it arrives (settle), or ⏳ if it takes too long.
+    awaitingCard.add(label);
+    setTimeout(() => {
+      if (waitingCard(label)) showNextCard();
+    }, LIST_WAIT_MS);
+    fetchDatabase();
   } else state.cards.push({ ...cardWords(result, recorded), layout, sound: CHEER });
   for (const el of recorded.unlocked) queueUnlockCard(el);
   if (recorded.unlocked.length) buildPalette();

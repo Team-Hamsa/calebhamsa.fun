@@ -103,17 +103,27 @@ export function lookUp(label, kids, database, asked = {}) {
 }
 
 /**
- * Fetch the big list, one part after another (so the page gets a
- * breather between parts). Never throws: no internet just means null.
+ * Fetch the big list. All the parts download at the same time (much
+ * faster on slow Wi-Fi), but they're read one after another, so the page
+ * gets a breather between parts. Never throws: no internet just means null.
  * @param {Function} [fetchFn] - fetch (the tests hand in a pretend one)
  * @returns {Promise<{parts: Record<string, string>[]}|null>} the list, or null if any part couldn't be loaded
  */
 export async function loadDatabase(fetchFn = globalThis.fetch) {
+  // Start every download now. A part that can't be fetched becomes null
+  // (not an error), so nothing is left failing with no one listening.
+  const downloads = Array.from({ length: DATABASE_PARTS }, (_, part) => {
+    try {
+      return Promise.resolve(fetchFn(partUrl(part))).catch(() => null);
+    } catch {
+      return Promise.resolve(null);
+    }
+  });
   const parts = [];
   try {
-    for (let part = 0; part < DATABASE_PARTS; part += 1) {
-      const response = await fetchFn(partUrl(part));
-      if (!response.ok) return null;
+    for (const download of downloads) {
+      const response = await download;
+      if (!response?.ok) return null;
       const list = await response.json();
       if (!list || typeof list !== 'object' || Array.isArray(list)) return null;
       parts.push(list);

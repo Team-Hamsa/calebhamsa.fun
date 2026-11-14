@@ -27,7 +27,7 @@ function loadServiceWorker() {
   const code = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
   // The last line hands back the pieces we test (a script's `const`s
   // aren't visible from outside, but its final expression's value is).
-  return vm.runInContext(`${code}\n;({ strategyFor, missingFiles, fontFilesIn, PRECACHE, FONT_STYLESHEETS });`, world);
+  return vm.runInContext(`${code}\n;({ strategyFor, missingFiles, fontFilesIn, oldCaches, PRECACHE, FONT_STYLESHEETS });`, world);
 }
 
 test('our own pages and code: try the internet first, so edits show up straight away', () => {
@@ -39,7 +39,7 @@ test('our own pages and code: try the internet first, so edits show up straight 
 
 test('big data files: use the saved copy, and refresh it in the background', () => {
   const { strategyFor } = loadServiceWorker();
-  assert.equal(strategyFor({ method: 'GET', url: `${SITE}/data/molecules.json` }), 'stale-while-revalidate');
+  assert.equal(strategyFor({ method: 'GET', url: `${SITE}/data/molecules/3.json` }), 'saved-data');
   assert.equal(strategyFor({ method: 'GET', url: `${SITE}/chem.html` }), 'network-first');
 });
 
@@ -116,4 +116,11 @@ test('every page and every js file is saved for offline use', () => {
   for (const path of [...scripts, './index.html', './music.html', './draw.html', './build.html', './chem.html', './type.html']) {
     assert.ok(PRECACHE.includes(path), `PRECACHE is missing ${path}`);
   }
+});
+
+test('an update throws away old boxes, but keeps the data box (no downloading the name list again)', () => {
+  const { oldCaches } = loadServiceWorker();
+  const code = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
+  const current = code.match(/const CACHE_NAME = '([^']+)'/)[1];
+  assert.deepEqual(oldCaches(['caleb-v1', current, 'caleb-data']), ['caleb-v1']);
 });

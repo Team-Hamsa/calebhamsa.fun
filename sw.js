@@ -26,7 +26,15 @@
  * 🧪 Change the number (v1 → v2) after adding or renaming files in PRECACHE
  *    below, so every device fetches a fresh set.
  */
-const CACHE_NAME = 'caleb-v13';
+const CACHE_NAME = 'caleb-v14';
+
+/**
+ * A separate box for the big data files (the chemistry name list, 24 MB).
+ * It is NOT thrown away when CACHE_NAME changes, so a code update doesn't
+ * make the iPad download the whole list again. (The files in it still
+ * refresh themselves in the background.)
+ */
+const DATA_CACHE = 'caleb-data';
 
 /**
  * Files to save straight away, the first time the site is opened, so
@@ -114,7 +122,8 @@ const NETWORK_TIMEOUT_MS = 3000;
  * It only looks at the request, so tests/sw.test.js can check it.
  *
  * @param {{method: string, url: string}} request - what the page asked for
- * @returns {'network-first'|'stale-while-revalidate'|'skip'} what to do
+ * @returns {'network-first'|'stale-while-revalidate'|'saved-data'|'skip'} what to do
+ *   ('saved-data' is stale-while-revalidate, kept in DATA_CACHE)
  */
 function strategyFor(request) {
   if (request.method !== 'GET') return 'skip'; // only "fetch me a file" requests
@@ -123,7 +132,7 @@ function strategyFor(request) {
   // hardly ever change, and on slow Wi-Fi they'd never beat
   // NETWORK_TIMEOUT_MS, so they'd never get saved. Saved copy first;
   // refresh in the background.
-  if (url.origin === self.location.origin && url.pathname.startsWith('/data/')) return 'stale-while-revalidate';
+  if (url.origin === self.location.origin && url.pathname.startsWith('/data/')) return 'saved-data';
   if (url.origin === self.location.origin) return 'network-first';
   if (FONT_HOSTS.includes(url.hostname)) return 'stale-while-revalidate';
   return 'skip';
@@ -153,10 +162,11 @@ async function networkFirst(request) {
  * Answer from the saved copy if there is one, and fetch a fresh copy in
  * the background for next time.
  * @param {Request} request - what the page asked for
+ * @param {string} [cacheName] - which box to keep it in
  * @returns {Promise<Response>} the answer to give the page
  */
-async function staleWhileRevalidate(request) {
-  const cache = await caches.open(CACHE_NAME);
+async function staleWhileRevalidate(request, cacheName = CACHE_NAME) {
+  const cache = await caches.open(cacheName);
   // ignoreVary: Google says its answer depends on who asked (the page or
   // this helper), but the files are the same, so either saved copy will do.
   const saved = await cache.match(request, { ignoreVary: true });
@@ -182,6 +192,16 @@ async function staleWhileRevalidate(request) {
 function missingFiles(wanted, savedUrls, base) {
   const saved = new Set(savedUrls);
   return wanted.filter((file) => !saved.has(new URL(file, base).href));
+}
+
+/**
+ * Which boxes are from older versions, and can be thrown away? Every box
+ * except this version's and the data box.
+ * @param {string[]} names - every box's name
+ * @returns {string[]} the ones to throw away
+ */
+function oldCaches(names) {
+  return names.filter((name) => name !== CACHE_NAME && name !== DATA_CACHE);
 }
 
 /**
@@ -235,11 +255,11 @@ self.addEventListener('install', (event) => {
   self.skipWaiting(); // start helping right away instead of waiting for every tab to close
 });
 
-// "activate": throw away boxes from older versions, then look after open pages.
+// "activate": throw away boxes from older versions (but not the data box), then look after open pages.
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((names) => Promise.all(names.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))))
+      .then((names) => Promise.all(oldCaches(names).map((name) => caches.delete(name))))
       .then(() => self.clients.claim()),
   );
 });
@@ -262,5 +282,6 @@ self.addEventListener('fetch', (event) => {
   const strategy = strategyFor(event.request);
   if (strategy === 'network-first') event.respondWith(networkFirst(event.request));
   if (strategy === 'stale-while-revalidate') event.respondWith(staleWhileRevalidate(event.request));
+  if (strategy === 'saved-data') event.respondWith(staleWhileRevalidate(event.request, DATA_CACHE));
   // 'skip': do nothing, and the browser fetches it the normal way.
 });
