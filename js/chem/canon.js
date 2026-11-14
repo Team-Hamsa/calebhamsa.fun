@@ -220,8 +220,6 @@ function bigLabel(kinds, links) {
  * @returns {number[]} the new teams
  */
 function refine(color, links) {
-  // Padded numbers, so "10" sorts after "9" like a number would.
-  const pad = (k) => String(k).padStart(4, '0');
   let count = new Set(color).size;
   for (;;) {
     const next = rankStrings(color.map((c, h) => {
@@ -236,13 +234,22 @@ function refine(color, links) {
 }
 
 /**
+ * A team number written with zeros in front, so "0010" sorts after
+ * "0009" the way 10 comes after 9.
+ * @param {number} k - a team number
+ * @returns {string} e.g. '0010'
+ */
+function pad(k) {
+  return String(k).padStart(4, '0');
+}
+
+/**
  * Put one atom first in its team (in a little team of its own).
  * @param {number[]} color - each atom's team
  * @param {number} chosen - the atom to go first
  * @returns {number[]} the new teams
  */
 function pickFirst(color, chosen) {
-  const pad = (k) => String(k).padStart(4, '0');
   return rankStrings(color.map((c, h) => `${pad(c)}${h === chosen ? 'a' : 'b'}`));
 }
 
@@ -272,6 +279,11 @@ function symmetryBetween(placeA, placeB) {
  */
 function sameUnderSymmetry(h, tried, path, symmetries, n) {
   const group = Array.from({ length: n }, (_, k) => k); // "union-find": each atom's group leader
+  /**
+   * Follow the chain of leaders to the top one (and shorten the chain).
+   * @param {number} k - an atom
+   * @returns {number} its group's top leader
+   */
   const leader = (k) => {
     while (group[k] !== k) k = group[k] = group[group[k]];
     return k;
