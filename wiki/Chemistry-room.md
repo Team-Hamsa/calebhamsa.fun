@@ -55,7 +55,9 @@ below). That means rings of any size fit.
 - **Big molecules** (more than 8 atoms that aren't H): the room asks
   [PubChem](https://pubchem.ncbi.nlm.nih.gov) on the internet. If PubChem
   knows it, you get its real name (DMT, caffeine, melatonin…); if not, it's
-  your invention. With no internet it waits ⏳ and asks again later.
+  your invention. If PubChem's main name is a chemist's name full of numbers
+  ("3-(1-Methylpyrrolidin-2-yl)pyridine"), the room looks through its other
+  names for the everyday one ("Nicotine"). With no internet it waits ⏳ and asks again later.
 - **Naming your inventions:** open the 📖 book, go to 💡, and tap an invention.
   Its window shows it big: 🔊 says its name, ✏️ lets you type a new name
   (up to 30 letters), ✅ saves it. Make it again and the card uses your name.

@@ -24,13 +24,13 @@ import {
   neighbors, newlyFinished, placeAtom, removeAtom, tapAtom, tapBond, touching,
 } from './board.js';
 import {
-  ALL_ATOMS, LADDER, createBook, INVENTION_NAME_MAX, promoteInventions, record, renameInvention, resolvePending, unlockAll, unlockedAtoms,
+  ALL_ATOMS, LADDER, betterName, createBook, INVENTION_NAME_MAX, promoteInventions, record, renameInvention, resolvePending, unlockAll, unlockedAtoms,
 } from './book.js';
 import { canonLabel, FULL_SEARCH_MAX, heavyCount } from './canon.js';
 import { ATOM_INFO, drawAtom, drawBoard, pictureSize } from './chem-art.js';
 import { KID_MOLECULES } from './kid-names.js';
 import { kidIndex, labelsOf, loadDatabase, lookUp } from './lookup.js';
-import { makeAsker } from './pubchem.js';
+import { looksSystematic, makeAsker } from './pubchem.js';
 import { loadState, saveState } from './save.js';
 import { HAND_STEPS, HANDS, parseSmiles } from './smiles.js';
 import { choose, flash } from '../ui.js';
@@ -374,6 +374,9 @@ function askAboutBigOnes() {
    */
   const big = (label) => heavyCount(label) > FULL_SEARCH_MAX && !Object.hasOwn(state.book.asked, label);
   for (const { label } of [...state.book.pending, ...state.book.inventions]) if (big(label)) asker.ask(label);
+  // Names PubChem gave before we knew to look for the everyday one
+  // ("3-(1-Methylpyrrolidin-2-yl)pyridine"): ask again, for "Nicotine".
+  for (const [label, answer] of Object.entries(state.book.asked)) if (answer.name && looksSystematic(answer.name)) asker.ask(label);
 }
 
 /**
@@ -383,7 +386,14 @@ function askAboutBigOnes() {
  * @returns {void}
  */
 function answered(label, answer) {
-  if (answer) state.book.asked[label] = answer;
+  const before = state.book.asked[label];
+  if (before?.name && answer) {
+    // Asked again for a better name: keep the old answer unless this one has a name.
+    if (answer.name) {
+      state.book.asked[label] = answer;
+      betterName(state.book, answer.cid, before.name, answer.name);
+    }
+  } else if (answer) state.book.asked[label] = answer;
   else if (awaitingCard.has(label)) {
     // No answer (no internet?): show the ⏳ card now, and look it up later.
     awaitingCard.delete(label);

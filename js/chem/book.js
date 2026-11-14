@@ -219,6 +219,31 @@ export function promoteInventions(book, look) {
 }
 
 /**
+ * PubChem gave a better name for a 🌟 molecule ("Nicotine" instead of
+ * "3-(1-Methylpyrrolidin-2-yl)pyridine"): use it everywhere the old
+ * name was. A name Caleb gave it himself is never changed.
+ * @param {ReturnType<typeof createBook>} book - the book (changed in place)
+ * @param {number} cid - the molecule's PubChem number
+ * @param {string} oldName - the name PubChem gave before
+ * @param {string} newName - the better name
+ * @returns {number} how many 🌟 entries changed
+ */
+export function betterName(book, cid, oldName, newName) {
+  let changed = 0;
+  for (const entry of book.rare) {
+    if (!cid || entry.cid !== cid || oldName === newName) continue;
+    if (entry.name === oldName) {
+      entry.name = newName;
+      changed += 1;
+    } else if (entry.realName === oldName) {
+      entry.realName = newName;
+      changed += 1;
+    }
+  }
+  return changed;
+}
+
+/**
  * The longest name an invention can have, so it still fits under its
  * picture in the book.
  * 🧪 Try this! Make it 10 and see a long name get cut short.

@@ -33,6 +33,73 @@ const ANSWER_MS = 8000;
 const CATALOG_CODE = /^(CID \d+|NSC \d+|(SCHEMBL|CHEMBL|ZINC|DTXSID|DTXCID|AKOS|MFCD|BDBM|HMS|MLS|SMR|NCGC|EINECS|UNII)[-\dA-Z]*\d|[A-Za-z]+:\S+)$/;
 
 /**
+ * "This name is for both mirror-image twins": DL-, (+-), (±), rac-.
+ * The board is flat, so it can't tell the twins apart anyway: we drop it
+ * ("DL-Nicotine" → "Nicotine").
+ */
+const BOTH_TWINS = /^(?:(?:dl|rac)-|\((?:\+-|\+\/-|±|rs|r,s)\)-?)\s*/i;
+
+/**
+ * The longest name we'll pick from PubChem's other names (same as the
+ * longest name Caleb can type for an invention).
+ */
+const PLAIN_NAME_MAX = 30;
+
+/**
+ * How many of PubChem's other names to look through. They come most-used
+ * first, so the plain name (if there is one) is near the top.
+ */
+const SYNONYMS_LOOKED_AT = 15;
+
+/**
+ * Is this a chemist's "address" name, full of numbers and brackets, like
+ * "3-(1-Methylpyrrolidin-2-yl)pyridine"? (Nicotine's real name!)
+ * @param {string} name - a name
+ * @returns {boolean} true if it has a digit or a bracket in it
+ */
+export function looksSystematic(name) {
+  return /[\d()[\]{}]/.test(name);
+}
+
+/**
+ * Tidy a name from PubChem: drop "DL-", and fix SHOUTING or all-small
+ * letters ("DIMETHYLTRYPTAMINE", "nicotine") to start with one capital.
+ * @param {string} name - a name from PubChem
+ * @returns {string} the tidy name
+ */
+export function tidyName(name) {
+  const bare = name.replace(BOTH_TWINS, '').trim();
+  if (bare.length > 5 && bare === bare.toUpperCase()) return bare[0] + bare.slice(1).toLowerCase();
+  if (bare === bare.toLowerCase()) return bare[0].toUpperCase() + bare.slice(1);
+  return bare;
+}
+
+/**
+ * Pick the everyday name from PubChem's list of other names: the first
+ * one that's only letters, spaces and dashes (no numbers, brackets or
+ * commas), and not too long.
+ * @param {string[]} synonyms - PubChem's other names, most-used first
+ * @returns {string|null} the tidy everyday name, or null if there isn't one
+ */
+export function plainName(synonyms) {
+  for (const synonym of synonyms.slice(0, SYNONYMS_LOOKED_AT)) {
+    if (typeof synonym !== 'string') continue;
+    const name = synonym.replace(BOTH_TWINS, '').trim();
+    if (/^[A-Za-z][A-Za-z -]*[A-Za-z]$/.test(name) && name.length <= PLAIN_NAME_MAX && !CATALOG_CODE.test(name)) return tidyName(name);
+  }
+  return null;
+}
+
+/**
+ * The address that asks PubChem for all of a molecule's other names.
+ * @param {number} cid - its PubChem number
+ * @returns {string} the full https address
+ */
+export function synonymsUrl(cid) {
+  return `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/synonyms/JSON`;
+}
+
+/**
  * How long to wait between two questions, in ms.
  */
 const GAP_MS = 300;
@@ -49,6 +116,11 @@ export function pubchemUrl(smiles) {
 
 /**
  * Ask PubChem for one molecule's name. Never throws.
+ *
+ * PubChem's main name is sometimes a chemist's address name, because the
+ * board is flat: nicotine without its 3D shape is filed as
+ * "3-(1-Methylpyrrolidin-2-yl)pyridine". Then we ask a second time, for
+ * its other names, and use the everyday one ("Nicotine") if there is one.
  * @param {string} smiles - the molecule
  * @param {Function} [fetchFn] - fetch (the tests hand in a pretend one)
  * @param {number} [timeoutMs] - how long to wait for an answer
@@ -73,8 +145,19 @@ export async function askPubChem(smiles, fetchFn = globalThis.fetch, timeoutMs =
     const body = await Promise.race([response.json(), tooSlow]);
     const first = body?.PropertyTable?.Properties?.[0];
     if (!first) return null;
-    const name = typeof first.Title === 'string' && !CATALOG_CODE.test(first.Title) ? first.Title : null;
-    return first.CID && name ? { cid: first.CID, name } : { cid: 0 };
+    const name = typeof first.Title === 'string' && !CATALOG_CODE.test(first.Title) ? tidyName(first.Title) : null;
+    if (!first.CID || !name) return { cid: 0 };
+    if (!looksSystematic(name)) return { cid: first.CID, name };
+    // A second, small question: its other names. No answer? Keep the address name.
+    let synonyms = null;
+    try {
+      const more = await Promise.race([fetchFn(synonymsUrl(first.CID), { signal: controller?.signal }), tooSlow]);
+      const list = more?.ok ? await Promise.race([more.json(), tooSlow]) : null;
+      synonyms = list?.InformationList?.Information?.[0]?.Synonym;
+    } catch {
+      synonyms = null;
+    }
+    return { cid: first.CID, name: (Array.isArray(synonyms) && plainName(synonyms)) || name };
   } catch {
     return null;
   } finally {

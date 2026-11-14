@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { canonLabel } from '../js/chem/canon.js';
-import { askPubChem, makeAsker, pubchemUrl } from '../js/chem/pubchem.js';
+import { askPubChem, looksSystematic, makeAsker, plainName, pubchemUrl, synonymsUrl, tidyName } from '../js/chem/pubchem.js';
 import { parseSmiles } from '../js/chem/smiles.js';
 
 /**
@@ -46,6 +46,51 @@ test('a molecule PubChem has never heard of: CID 0, an invention', async () => {
   }
   const real = { PropertyTable: { Properties: [{ CID: 5, Title: 'Bicyclo[2.2.1]heptan-7-amine' }] } };
   assert.equal((await askPubChem('CCCC', async () => reply(200, real))).name, 'Bicyclo[2.2.1]heptan-7-amine');
+});
+
+/** Nicotine without its 3D shape, as PubChem really answers (checked 2026-11-14). */
+const NICOTINE_TITLE = { PropertyTable: { Properties: [{ CID: 942, Title: '3-(1-Methylpyrrolidin-2-yl)pyridine' }] } };
+const NICOTINE_SYNONYMS = { InformationList: { Information: [{ CID: 942, Synonym: ['3-(1-methylpyrrolidin-2-yl)pyridine', 'DL-Nicotine', 'DTXSID3048154', 'CHEBI:138000'] }] } };
+
+test('a chemist\'s address name: ask for its other names and use the everyday one', async () => {
+  const urls = [];
+  const fetchFn = async (url) => {
+    urls.push(url);
+    return reply(200, url.includes('/synonyms/') ? NICOTINE_SYNONYMS : NICOTINE_TITLE);
+  };
+  assert.deepEqual(await askPubChem('CN1CCCC1C1=CN=CC=C1', fetchFn), { cid: 942, name: 'Nicotine' });
+  assert.equal(urls[1], synonymsUrl(942));
+  assert.equal(synonymsUrl(942), 'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/942/synonyms/JSON');
+});
+
+test('a plain name is used straight away: no second question', async () => {
+  const urls = [];
+  const fetchFn = async (url) => { urls.push(url); return reply(200, KNOWN); };
+  assert.equal((await askPubChem('CN(C)CCC1=CNC2=CC=CC=C12', fetchFn)).name, 'N,N-Dimethyltryptamine');
+  assert.equal(urls.length, 1);
+});
+
+test('no everyday name, or no answer to the second question: keep the address name', async () => {
+  const none = { InformationList: { Information: [{ Synonym: ['3-(1-methylpyrrolidin-2-yl)pyridine', '54-11-5'] }] } };
+  for (const second of [async () => reply(200, none), async () => reply(503), async () => { throw new TypeError('offline'); }]) {
+    const fetchFn = async (url) => (url.includes('/synonyms/') ? second() : reply(200, NICOTINE_TITLE));
+    assert.deepEqual(await askPubChem('CN1CCCC1C1=CN=CC=C1', fetchFn), { cid: 942, name: '3-(1-Methylpyrrolidin-2-yl)pyridine' });
+  }
+});
+
+test('names: address names spotted, DL- dropped, SHOUTING fixed, the everyday name picked', () => {
+  assert.ok(looksSystematic('3-(1-Methylpyrrolidin-2-yl)pyridine'));
+  assert.ok(!looksSystematic('N,N-Dimethyltryptamine'));
+  assert.equal(tidyName('Dl-Tryptophan'), 'Tryptophan');
+  assert.equal(tidyName('(+-)NICOTINE'), 'Nicotine');
+  assert.equal(tidyName('DIMETHYLTRYPTAMINE'), 'Dimethyltryptamine');
+  assert.equal(tidyName('nicotine'), 'Nicotine');
+  assert.equal(tidyName('DMT'), 'DMT');
+  assert.equal(tidyName('Dlxyz'), 'Dlxyz'); // only "DL-" with its dash
+  assert.equal(plainName(['2-amino-3-(1H-indol-3-yl)propanoic acid', 'Tryptophan, DL', 'DL-Tryptophan']), 'Tryptophan');
+  assert.equal(plainName(['50-78-2', 'CHEMBL25', 'aspirin']), 'Aspirin');
+  assert.equal(plainName(['1-phenylpropan-2-amine', '300-62-9']), null);
+  assert.equal(plainName([...new Array(15).fill('1-x'), 'Late']), null); // only the first 15 count
 });
 
 test('PubChem could not read our SMILES (400/404): an invention, not asked again, and a warning for grown-ups', async (t) => {

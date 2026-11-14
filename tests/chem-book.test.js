@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  WATER, climbLadder, countWith, createBook, elementsIn, INVENTION_NAME_MAX, promoteInventions, record, renameInvention, resolvePending,
+  WATER, betterName, climbLadder, countWith, createBook, elementsIn, INVENTION_NAME_MAX, promoteInventions, record, renameInvention, resolvePending,
   unlockAll, unlockedAtoms,
 } from '../js/chem/book.js';
 import { canonLabel } from '../js/chem/canon.js';
@@ -241,4 +241,14 @@ test('an invention Caleb named is never lost, even when PubChem says the same mo
   assert.equal(book.rare.length, 1); // one molecule, counted once
   assert.equal(book.rare[0].name, 'Rocket'); // Caleb's name wins
   assert.equal(book.rare[0].realName, 'Naphthalene');
+});
+
+test('a better PubChem name replaces the old one, but never a name Caleb gave', () => {
+  const book = createBook();
+  const address = '3-(1-Methylpyrrolidin-2-yl)pyridine';
+  book.rare.push({ label: 'a', name: address, layout: null, cid: 942 });
+  book.rare.push({ label: 'b', name: 'Smoky', realName: address, layout: null, cid: 942 });
+  book.rare.push({ label: 'c', name: address, layout: null, cid: 7 }); // another molecule
+  assert.equal(betterName(book, 942, address, 'Nicotine'), 2);
+  assert.deepEqual(book.rare.map((r) => [r.name, r.realName]), [['Nicotine', undefined], ['Smoky', 'Nicotine'], [address, undefined]]);
 });
