@@ -186,7 +186,12 @@ export function writeSmiles(graph) {
       used[b] += order;
     }
   }
-  const start = atoms.findIndex(({ el }) => el !== 'H');
+  // Start at an end (the non-H atom with the fewest non-H neighbors), so
+  // a chain is written straight along: CCCC, not C(C)CC.
+  let start = -1;
+  atoms.forEach(({ el }, i) => {
+    if (el !== 'H' && (start < 0 || links[i].length < links[start].length)) start = i;
+  });
 
   // Pass 1: walk the molecule (depth first). A bond back to an atom
   // already visited is a ring bond: it gets a number instead.
