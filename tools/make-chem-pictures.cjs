@@ -87,6 +87,12 @@ async function drawInPage(cellPx) {
     art.drawBoard(canvas.getContext('2d'), layout, cellPx, { grid: false, hands: false, glow: new Set(layout.atoms.map((_, i) => i)) });
     return canvas.toDataURL('image/png');
   };
+  /**
+   * The cell number of (x, y) on an 8-wide board.
+   * @param {number} x - across
+   * @param {number} y - down
+   * @returns {number} the cell
+   */
   const at = (x, y) => y * 8 + x;
   const pictures = {};
 
