@@ -446,12 +446,17 @@ function save() {
  * @returns {Promise<void>} finishes when tried
  */
 async function fetchDatabase() {
-  if (state.database) return;
-  const database = await loadDatabase();
-  if (!database || state.database) return; // offline: we'll try again when the internet comes back
+  if (state.database || loading) return; // got it, or already fetching it (only one copy at a time!)
+  loading = loadDatabase();
+  const database = await loading;
+  loading = null;
+  if (!database) return; // offline: we'll try again when the internet comes back
   state.database = database;
   settle();
 }
+
+/** The big list while it's being fetched (null when not fetching). */
+let loading = null;
 
 // ---- Tools and palette ----
 
@@ -849,6 +854,7 @@ function setupDialogs() {
     if (!window.confirm('Erase the whole collection book and the board? This can’t be undone.')) return;
     state.board = createBoard(BOARD_WIDTH, BOARD_HEIGHT);
     state.book = createBook();
+    asker = makeAsker({ onAnswer: answered }); // a fresh asker: the old one remembers what it asked
     state.selected = 'H';
     save();
     buildPalette();

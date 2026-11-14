@@ -27,6 +27,12 @@ const PUBCHEM_ADDRESS = 'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smil
 const ANSWER_MS = 8000;
 
 /**
+ * Some PubChem "titles" are just a number from a catalog, not a name
+ * ("CID 123", "SCHEMBL12345", "GlyTouCan:G26468BC"). Those count as "no name".
+ */
+const CATALOG_CODE = /^(CID \d+|NSC \d+|(SCHEMBL|CHEMBL|ZINC|DTXSID|DTXCID|AKOS|MFCD|BDBM|HMS|MLS|SMR|NCGC|EINECS|UNII)[-\dA-Z]*\d|[A-Za-z]+:\S+)$/;
+
+/**
  * How long to wait between two questions, in ms.
  */
 const GAP_MS = 300;
@@ -58,15 +64,16 @@ export async function askPubChem(smiles, fetchFn = globalThis.fetch, timeoutMs =
     const response = await Promise.race([fetchFn(pubchemUrl(smiles), { signal: controller?.signal }), tooSlow]);
     if (!response) return null;
     if (response.status === 400 || response.status === 404) {
-      // PubChem couldn't read what we sent: our SMILES writer has a bug.
-      console.warn(`PubChem could not read ${smiles} (${response.status})`);
+      // PubChem couldn't read what we sent: either it can't be a real
+      // molecule (like a sulfur holding 4 H's), or our SMILES writer has a bug.
+      console.warn(`PubChem could not read ${smiles} (${response.status}): not a real molecule, or a SMILES writer bug`);
       return { cid: 0 };
     }
     if (!response.ok) return null;
     const body = await Promise.race([response.json(), tooSlow]);
     const first = body?.PropertyTable?.Properties?.[0];
     if (!first) return null;
-    const name = typeof first.Title === 'string' && !/^CID \d+$/.test(first.Title) ? first.Title : null;
+    const name = typeof first.Title === 'string' && !CATALOG_CODE.test(first.Title) ? first.Title : null;
     return first.CID && name ? { cid: first.CID, name } : { cid: 0 };
   } catch {
     return null;
@@ -109,7 +116,11 @@ export function makeAsker({ fetchFn = globalThis.fetch, onAnswer, gapMs = GAP_MS
           answer = null;
         }
         if (answer === null) unanswered.add(label);
-        onAnswer(label, answer);
+        try {
+          onAnswer(label, answer);
+        } catch (error) {
+          console.error(error); // a mistake handling one answer mustn't stop the questions after it
+        }
         await pause(gapMs);
       });
       return line;

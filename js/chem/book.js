@@ -198,8 +198,16 @@ export function promoteInventions(book, look) {
   book.inventions = book.inventions.filter((invention) => {
     const result = look(invention.label);
     if (result.kind !== 'rare') return true;
-    if (!book.rare.some((r) => r.label === invention.label || (result.cid && r.cid === result.cid))) {
-      const named = !/^Invention #\d+$/.test(invention.name);
+    const named = !/^Invention #\d+$/.test(invention.name);
+    const same = book.rare.find((r) => r.label === invention.label || (result.cid && r.cid === result.cid));
+    if (same) {
+      // Already a 🌟 (the same molecule, built another way). Never lose a
+      // name Caleb gave it: if the 🌟 still has PubChem's name, it takes his.
+      if (named && !same.realName) {
+        same.realName = same.name;
+        same.name = invention.name;
+      }
+    } else {
       const entry = { label: invention.label, name: named ? invention.name : result.name, layout: invention.layout, cid: result.cid };
       if (named) entry.realName = result.name;
       book.rare.unshift(entry);

@@ -40,6 +40,12 @@ test('a molecule PubChem has never heard of: CID 0, an invention', async () => {
   assert.deepEqual(await askPubChem('CCCC', async () => reply(200, unnamed)), { cid: 0 }); // known, but no name
   const numbered = { PropertyTable: { Properties: [{ CID: 123, Title: 'CID 123' }] } };
   assert.deepEqual(await askPubChem('CCCC', async () => reply(200, numbered)), { cid: 0 }); // a number is no name
+  for (const code of ['GlyTouCan:G26468BC', 'SCHEMBL12345', 'CHEMBL998', 'ZINC000012345', 'DTXSID9020', 'AKOS015912345', 'MFCD00001234', 'NSC 1234']) {
+    const coded = { PropertyTable: { Properties: [{ CID: 123, Title: code }] } };
+    assert.deepEqual(await askPubChem('CCCC', async () => reply(200, coded)), { cid: 0 }, code); // a catalog code is no name either
+  }
+  const real = { PropertyTable: { Properties: [{ CID: 5, Title: 'Bicyclo[2.2.1]heptan-7-amine' }] } };
+  assert.equal((await askPubChem('CCCC', async () => reply(200, real))).name, 'Bicyclo[2.2.1]heptan-7-amine');
 });
 
 test('PubChem could not read our SMILES (400/404): an invention, not asked again, and a warning for grown-ups', async (t) => {
@@ -108,4 +114,17 @@ test('a label with no answer can be asked again after retry()', async () => {
   asker.retry();
   await asker.ask(DMT);
   assert.deepEqual(answers, [null, { cid: 6089, name: 'N,N-Dimethyltryptamine' }]);
+});
+
+test('a mistake while handling one answer doesn’t stop the questions after it', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const seen = [];
+  const asker = makeAsker({
+    fetchFn: async () => reply(200, UNKNOWN),
+    onAnswer: (label) => { seen.push(label); if (seen.length === 1) throw new Error('oops'); },
+    gapMs: 0,
+  });
+  asker.ask(DMT);
+  await asker.ask(CAFFEINE);
+  assert.deepEqual(seen, [DMT, CAFFEINE]);
 });

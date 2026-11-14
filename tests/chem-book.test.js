@@ -229,3 +229,16 @@ test('loadDatabase gives null instead of crashing when offline or broken', async
   // One part missing: no list yet (the room tries again later).
   assert.equal(await loadDatabase(async (url) => (url.endsWith('/7.json') ? { ok: false } : { ok: true, json: async () => ({}) })), null);
 });
+
+test('an invention Caleb named is never lost, even when PubChem says the same molecule is already a 🌟', () => {
+  const book = createBook();
+  record(book, 'A', layout, { kind: 'invention' }); // Invention #1
+  record(book, 'B', layout, { kind: 'invention' }); // the same molecule, double bonds the other way
+  renameInvention(book, 'A', 'Rocket'); // the older one: it's looked at last
+  const look = (l) => ({ kind: 'rare', name: 'Naphthalene', cid: 931, l });
+  promoteInventions(book, look);
+  assert.equal(book.inventions.length, 0);
+  assert.equal(book.rare.length, 1); // one molecule, counted once
+  assert.equal(book.rare[0].name, 'Rocket'); // Caleb's name wins
+  assert.equal(book.rare[0].realName, 'Naphthalene');
+});
