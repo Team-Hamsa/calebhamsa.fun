@@ -19,11 +19,20 @@
  *      ends up at that same "first" list.
  *
  * Step 3 gets slow fast: a ring of 12 identical atoms has 479 million
- * orders. Molecules in the name lists have 8 non-H atoms at most, so only
- * those get step 3. Bigger ones (Caleb can draw a big ring on the board!)
- * get a quicker label made from their teams alone. It's still the same
- * however the molecule is built; two different big inventions might
- * share one, which is harmless (they're inventions either way).
+ * orders. Molecules in the built-in list have 8 non-H atoms at most, so
+ * only those get step 3 (and their labels must never change: the list
+ * is keyed by them).
+ *
+ * Bigger ones (Caleb can build DMT, with 14!) get a cleverer search
+ * (bigLabel below) that gives the same kind of label: still exact, so two
+ * different molecules never share one, but it skips most of the orders:
+ *   * Instead of trying every order of a whole team at once, pick ONE
+ *     atom of the first team to go first, and let that split the other
+ *     teams (atoms near it now look different from atoms far away).
+ *     Repeat until every atom is in a team of its own: that's one order.
+ *   * When two orders write the SAME bond list, the molecule has a
+ *     symmetry (like a ring you can turn). Turning it can't give anything
+ *     new, so choices that the symmetry turns into each other are skipped.
  */
 
 /**
@@ -76,11 +85,7 @@ export function canonLabel(graph) {
   }
 
   if (heavy.length > FULL_SEARCH_MAX) {
-    // Too big to try every order: describe each atom by its team and its
-    // neighbors' teams, and sort those descriptions.
-    const kinds = heavy.map((index, h) => `${atoms[index].el}${hCount[h]}`);
-    const described = heavy.map((_, h) => `${color[h]}<${links[h].map(({ to, order }) => `${color[to]}:${order}`).sort().join(',')}>`);
-    return `${kinds.sort().join(',')}|~${described.sort().join(';')}`;
+    return bigLabel(heavy.map((index, h) => `${atoms[index].el}${hCount[h]}`), links);
   }
 
   // Step 3: teams in order; try every order inside each team.
@@ -152,4 +157,164 @@ function permutations(items) {
     for (const order of permutations(rest)) all.push([item, ...order]);
   });
   return all;
+}
+
+/**
+ * The exact label for a big molecule (more than FULL_SEARCH_MAX non-H
+ * atoms), found by splitting teams one atom at a time and skipping
+ * choices that a symmetry makes the same. (Chemists' computers do it this
+ * way too; the trick is called "individualization–refinement".)
+ * @param {string[]} kinds - per non-H atom: element and H count, like 'C3'
+ * @param {{to: number, order: number}[][]} links - bonds per non-H atom
+ * @returns {string} the label: the same text format as small molecules
+ */
+function bigLabel(kinds, links) {
+  const n = kinds.length;
+  let best = null; // the first bond list (alphabetically) found so far
+  let first = null; // the first order found, and its bond list
+  const symmetries = []; // each one: atom → the atom it swaps with
+
+  /**
+   * Try every useful way to finish splitting these teams.
+   * @param {number[]} color - each atom's team (teams are numbered in order)
+   * @param {number[]} path - atoms already picked to go first in their team
+   * @returns {void}
+   */
+  const search = (color, path) => {
+    const sizes = new Map();
+    for (const c of color) sizes.set(c, (sizes.get(c) ?? 0) + 1);
+    if (sizes.size === n) {
+      // Every atom has its own team: team number = place in the label.
+      const text = bondText(links, color);
+      if (first === null) first = { text, color };
+      else if (text === first.text) symmetries.push(symmetryBetween(first.color, color));
+      if (best === null || text < best) best = text;
+      return;
+    }
+    // The first team that still has more than one atom.
+    let team = Infinity;
+    for (const [c, size] of sizes) if (size > 1 && c < team) team = c;
+    const members = [];
+    color.forEach((c, h) => { if (c === team) members.push(h); });
+    const tried = [];
+    for (const h of members) {
+      if (tried.length && sameUnderSymmetry(h, tried, path, symmetries, n)) continue;
+      tried.push(h);
+      search(refine(pickFirst(color, h), links), [...path, h]);
+    }
+  };
+
+  search(refine(rankStrings(kinds), links), []);
+  // Every order puts the same kinds of atom in the same places, so any
+  // order gives the atom list. The first one will do.
+  const atomText = kinds.map((kind, h) => [first.color[h], kind]).sort((x, y) => x[0] - y[0]).map(([, kind]) => kind).join(',');
+  return `${atomText}|${best}`;
+}
+
+/**
+ * Keep splitting teams by their neighbors' teams until nothing changes.
+ * Team numbers keep their order: a team that splits becomes neighboring
+ * numbers in the same spot.
+ * @param {number[]} color - each atom's team
+ * @param {{to: number, order: number}[][]} links - bonds per atom
+ * @returns {number[]} the new teams
+ */
+function refine(color, links) {
+  // Padded numbers, so "10" sorts after "9" like a number would.
+  const pad = (k) => String(k).padStart(4, '0');
+  let count = new Set(color).size;
+  for (;;) {
+    const next = rankStrings(color.map((c, h) => {
+      const around = links[h].map(({ to, order }) => `${pad(color[to])}:${order}`).sort();
+      return `${pad(c)}|${around.join(',')}`;
+    }));
+    const nextCount = new Set(next).size;
+    if (nextCount === count) return next;
+    color = next;
+    count = nextCount;
+  }
+}
+
+/**
+ * Put one atom first in its team (in a little team of its own).
+ * @param {number[]} color - each atom's team
+ * @param {number} chosen - the atom to go first
+ * @returns {number[]} the new teams
+ */
+function pickFirst(color, chosen) {
+  const pad = (k) => String(k).padStart(4, '0');
+  return rankStrings(color.map((c, h) => `${pad(c)}${h === chosen ? 'a' : 'b'}`));
+}
+
+/**
+ * Two orders that wrote the same bond list show a symmetry: the atom in
+ * place k of one order swaps with the atom in place k of the other.
+ * @param {number[]} placeA - each atom's place in the first order
+ * @param {number[]} placeB - each atom's place in the second order
+ * @returns {number[]} atom → the atom it swaps with
+ */
+function symmetryBetween(placeA, placeB) {
+  const atomAt = [];
+  placeB.forEach((place, h) => { atomAt[place] = h; });
+  return placeA.map((place) => atomAt[place]);
+}
+
+/**
+ * Can a symmetry we already know turn atom h into an atom we already
+ * tried (without moving the atoms picked so far)? Then trying h would
+ * only find the same labels again.
+ * @param {number} h - the atom we might try
+ * @param {number[]} tried - atoms already tried in this team
+ * @param {number[]} path - atoms already picked (the symmetry must keep them still)
+ * @param {number[][]} symmetries - the symmetries found so far
+ * @param {number} n - how many atoms
+ * @returns {boolean} true if h can be skipped
+ */
+function sameUnderSymmetry(h, tried, path, symmetries, n) {
+  const group = Array.from({ length: n }, (_, k) => k); // "union-find": each atom's group leader
+  const leader = (k) => {
+    while (group[k] !== k) k = group[k] = group[group[k]];
+    return k;
+  };
+  for (const symmetry of symmetries) {
+    if (!path.every((p) => symmetry[p] === p)) continue;
+    symmetry.forEach((to, from) => { group[leader(from)] = leader(to); });
+  }
+  return tried.some((t) => leader(t) === leader(h));
+}
+
+/**
+ * How many non-H atoms a label's molecule has.
+ * @param {string} label - a label from canonLabel
+ * @returns {number} 0 for hydrogen gas
+ */
+export function heavyCount(label) {
+  if (/^H\d+$/.test(label)) return 0;
+  return label.split('|')[0].split(',').length;
+}
+
+/**
+ * Turn a label back into a molecule graph (with every H written out),
+ * so a molecule remembered only by its label can be written as SMILES.
+ * @param {string} label - a label from canonLabel
+ * @returns {{atoms: {el: string}[], bonds: {a: number, b: number, order: number}[]}} the molecule
+ */
+export function labelGraph(label) {
+  if (/^H\d+$/.test(label)) return { atoms: [{ el: 'H' }, { el: 'H' }], bonds: [{ a: 0, b: 1, order: 1 }] };
+  const [atomText, bondList] = label.split('|');
+  const atoms = [];
+  const bonds = [];
+  const kinds = atomText.split(',').map((kind) => kind.match(/^([A-Z][a-z]?)(\d+)$/));
+  for (const [, el] of kinds) atoms.push({ el });
+  for (const part of bondList ? bondList.split(',') : []) {
+    const [, a, b, order] = part.match(/^(\d+)-(\d+):(\d)$/).map(Number);
+    bonds.push({ a, b, order });
+  }
+  kinds.forEach(([, , h], index) => {
+    for (let k = 0; k < Number(h); k += 1) {
+      bonds.push({ a: index, b: atoms.length, order: 1 });
+      atoms.push({ el: 'H' });
+    }
+  });
+  return { atoms, bonds };
 }

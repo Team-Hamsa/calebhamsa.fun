@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canonLabel } from '../js/chem/canon.js';
+import { canonLabel, heavyCount, labelGraph } from '../js/chem/canon.js';
 import { parseSmiles } from '../js/chem/smiles.js';
 
 /**
@@ -94,4 +94,51 @@ test('a big ring drawn on the board (more than 8 atoms) is labelled quickly', ()
   assert.ok(Date.now() - started < 200, `took ${Date.now() - started} ms`);
   assert.equal(canonLabel(shuffle(ring, 7)), first); // still the same however it's numbered
   assert.notEqual(canonLabel(parseSmiles('OOOOOOOOOOO')), first); // a chain is not a ring
+});
+
+test('labels of small molecules (8 non-H atoms or fewer) never change: the big list is keyed by them', () => {
+  // Written down on 2026-11-14 from the labels the room has used since it began.
+  assert.equal(label('CCO'), 'C2,C3,O1|0-1:1,0-2:1');
+  assert.equal(label('C1=CC=CC=C1'), 'C1,C1,C1,C1,C1,C1|0-1:1,0-2:2,1-3:2,2-4:1,3-5:1,4-5:2');
+  assert.equal(label('CC(C)=O'), 'C0,C3,C3,O0|0-1:1,0-2:1,0-3:2');
+  assert.equal(label('CC1=CC=CC=C1C'), 'C0,C0,C1,C1,C1,C1,C3,C3|0-1:1,0-2:2,0-6:1,1-3:2,1-7:1,2-4:1,3-5:1,4-5:2');
+  assert.equal(label('O'), 'O2|');
+});
+
+test('big molecules get exact labels: two different ones never share a label', () => {
+  // Decalin and bicyclopentyl both have 2 CH and 8 CH2. The old quick
+  // label for big molecules gave them the same label.
+  assert.notEqual(label('C1CCC2CCCCC2C1'), label('C1CCC(C1)C1CCCC1'));
+  for (const smiles of [label('C1CCC2CCCCC2C1'), label('CN(C)CCC1=CNC2=CC=CC=C12')]) assert.ok(!smiles.includes('~'));
+});
+
+test('a big molecule written different ways gets one label (DMT, 14 non-H atoms)', () => {
+  const dmt = label('CN(C)CCC1=CNC2=CC=CC=C12');
+  assert.equal(label('C1=CC=C2C(=C1)C(=CN2)CCN(C)C'), dmt);
+  for (let seed = 1; seed <= 10; seed += 1) {
+    assert.equal(canonLabel(shuffle(parseSmiles('CN(C)CCC1=CNC2=CC=CC=C12'), seed)), dmt, `seed ${seed}`);
+  }
+});
+
+test('labelGraph turns a label back into the molecule', () => {
+  for (const smiles of ['O', '[H][H]', 'C1=CC=CC=C1', 'FS(F)(F)(F)(F)F', 'CN(C)CCC1=CNC2=CC=CC=C12', 'CN1C=NC2=C1C(=O)N(C(=O)N2C)C']) {
+    const original = label(smiles);
+    assert.equal(canonLabel(labelGraph(original)), original, smiles);
+  }
+  assert.equal(heavyCount(label('CN(C)CCC1=CNC2=CC=CC=C12')), 14);
+  assert.equal(heavyCount('H2'), 0);
+  assert.equal(heavyCount(label('O')), 1);
+});
+
+test('very symmetric big molecules are still labelled quickly', () => {
+  // Four tert-butyl groups on one carbon: 17 non-H atoms that can be
+  // swapped around 31,104 ways. And a ring of 30 carbons.
+  const molecules = ['C(C(C)(C)C)(C(C)(C)C)(C(C)(C)C)C(C)(C)C', `C1${'C'.repeat(28)}C1`];
+  for (const smiles of molecules) {
+    const graph = parseSmiles(smiles);
+    const started = Date.now();
+    const first = canonLabel(graph);
+    assert.ok(Date.now() - started < 500, `${smiles} took ${Date.now() - started} ms`);
+    for (let seed = 1; seed <= 5; seed += 1) assert.equal(canonLabel(shuffle(graph, seed)), first, `${smiles} seed ${seed}`);
+  }
 });
